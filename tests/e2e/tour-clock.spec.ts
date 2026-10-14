@@ -401,7 +401,14 @@ test("Finish of the eclipse story restores the settings from before it", async (
     await story.getByRole("button", { name: "Next" }).click();
     await expect(story).toHaveAttribute("data-tour-step", stepId);
   }
+  // Finish shows the ending, so a child who clicks through still sees the
+  // eye-safety rule; Fly home leaves the story.
   await story.getByRole("button", { name: "Finish" }).click();
+  await expect(story).toHaveAttribute("data-tour-ended", "true");
+  await expect(
+    story.getByText("Never look at the Sun without certified eclipse glasses."),
+  ).toBeVisible();
+  await story.getByRole("button", { name: "Fly home" }).click();
   await expect(story).toHaveCount(0);
   await expectSettingsRestoredAfterTour(page, settings);
 });
@@ -524,15 +531,15 @@ test("the scale tour ends with an ending card and Fly home restores the settings
   await tour.getByRole("button", { name: "Resume tour" }).click();
   // The last step's 28 s timer ends the tour.
   await expect(
-    tour.getByRole("heading", { name: "You went from Earth to the next star" }),
+    tour.getByRole("heading", {
+      name: "You went from Earth out toward the nearest stars.",
+    }),
   ).toBeVisible({ timeout: 45_000 });
   await expect(tour).toHaveAttribute("data-tour-ended", "true");
   await expect(tour.getByText("The end of the tour")).toBeVisible();
-  await expect(
-    tour.getByText(
-      "Light from the nearest star system takes 4.3 years to reach us.",
-    ),
-  ).toBeVisible();
+  await expect(tour.locator(".tour-kid-line")).toHaveText(
+    "Light takes 4.3 years to get there. Voyager 1 would need about 75,000 years.",
+  );
   await expect(tour.locator(".tour-actions button")).toHaveText([
     "Fly home",
     "Watch the eclipse",
@@ -612,4 +619,127 @@ test("the scale tour ending starts the eclipse story, which fits a phone to its 
   await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
   await expect(story).toHaveAttribute("data-tour-ended", "false");
   await expect(story).toHaveAttribute("data-tour-playing", "true");
+});
+
+const ECLIPSE_STEP_COUNT_AFTER_ALIGNMENT =
+  ECLIPSE_STEP_IDS_AFTER_ALIGNMENT.length;
+
+async function finishBy(dialog: Locator, nextClicks: number): Promise<void> {
+  for (let click = 0; click < nextClicks; click += 1) {
+    await dialog.getByRole("button", { name: "Next" }).click();
+  }
+  await dialog.getByRole("button", { name: "Finish" }).click();
+  await expect(dialog).toHaveAttribute("data-tour-ended", "true");
+}
+
+test("Finish shows the ending, and Fly home after a chain of stories restores the settings", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openApp(page, "reduce");
+  const settings = { playback: "reverse" } as const;
+  await chooseSettingsBeforeTour(page, settings);
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await finishBy(story, ECLIPSE_STEP_COUNT_AFTER_ALIGNMENT);
+  await expect(
+    story.getByRole("heading", { name: "The eclipse is over" }),
+  ).toBeVisible();
+  await expect(story).toHaveAttribute("data-tour-step", "london-final-contact");
+  // Finish had focus; the ending moves it to Fly home, not to the page.
+  await expect(story.getByRole("button", { name: "Fly home" })).toBeFocused();
+
+  await story.getByRole("button", { name: "Take the Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await expect(tour).toHaveAttribute("data-tour-ended", "false");
+  await finishBy(tour, SCALE_STEP_IDS_AFTER_EARTH.length);
+  await expect(
+    tour.getByRole("heading", {
+      name: "You went from Earth out toward the nearest stars.",
+    }),
+  ).toBeVisible();
+
+  await tour.getByRole("button", { name: "Watch the eclipse" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await finishBy(story, ECLIPSE_STEP_COUNT_AFTER_ALIGNMENT);
+  await story.getByRole("button", { name: "Watch again" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await expect(story).toHaveAttribute("data-tour-ended", "false");
+  await finishBy(story, ECLIPSE_STEP_COUNT_AFTER_ALIGNMENT);
+
+  await story.getByRole("button", { name: "Fly home" }).click();
+  await expect(story).toHaveCount(0);
+  await expectSettingsRestoredAfterTour(page, settings);
+});
+
+test("Escape at the ending restores the settings from before the story", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const settings = { playback: "paused" } as const;
+  await chooseSettingsBeforeTour(page, settings);
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await finishBy(story, ECLIPSE_STEP_COUNT_AFTER_ALIGNMENT);
+  await page.keyboard.press("Escape");
+  await expect(story).toHaveCount(0);
+  await expectSettingsRestoredAfterTour(page, settings);
+});
+
+test("Start again replays the scale tour from the time the tour began", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openApp(page, "reduce");
+  const validity = page.locator("[data-outside-validated-window]");
+  await expect(validity).toHaveAttribute(
+    "data-outside-validated-window",
+    "false",
+  );
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  // Reduced motion holds the clock near the time the tour began; the start
+  // time is read at the click, a few frames earlier.
+  const tourStartSeconds = await clockSeconds(page);
+  for (const stepId of SCALE_STEP_IDS_AFTER_EARTH) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expect(tour).toHaveAttribute("data-tour-step", stepId);
+  }
+  // The last step runs 28 s at 30 days per second, past the ±1 year window.
+  await tour.getByRole("button", { name: "Resume tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-ended", "true", {
+    timeout: 45_000,
+  });
+  await expect(validity).toHaveAttribute(
+    "data-outside-validated-window",
+    "true",
+  );
+
+  await tour.getByRole("button", { name: "Start again" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await expect(tour).toHaveAttribute("data-tour-ended", "false");
+  await expect
+    .poll(async () => Math.abs((await clockSeconds(page)) - tourStartSeconds), {
+      timeout: 30_000,
+    })
+    .toBeLessThan(86_400);
+  await expect(validity).toHaveAttribute(
+    "data-outside-validated-window",
+    "false",
+  );
+  await expect(
+    page.getByText("Outside ±1 year ephemeris validation"),
+  ).toHaveCount(0);
 });

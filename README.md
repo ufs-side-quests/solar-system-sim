@@ -279,9 +279,11 @@ The tour can auto-advance, pause, resume after manual camera control, move step 
 While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
 The Scale tour clock waits at the time the step began, because Scale steps set no time; the Eclipse story clock waits at the step's time.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
-Any way out of a tour (Exit, Finish, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
-Exit, Finish, and Escape also reset the view of the current object at 1x and run the clock, even if it was paused before the tour, so a child never comes back to a frozen screen.
-When the last step's time runs out, the card shows an ending in place of the step: Fly home works like Finish, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
+Any way out of a tour (Exit, Fly home, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
+Exit, Fly home, and Escape also reset the view of the current object at 1x and run the clock, even if it was paused before the tour, so a child never comes back to a frozen screen.
+When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
+When focus was inside the tour card, it moves to Fly home.
+A Scale tour started from an ending replays from the clock time when the first tour began, or from the epoch when that time lies outside the validated window.
 A story started from an ending keeps the settings from before the first tour, so Fly home always returns to them.
 The Eclipse story ending repeats the eye-safety rule.
 The heliosphere diagram explains the solar wind, termination shock, heliopause, measured Voyager crossings, and the boundary's directional and time-varying nature.

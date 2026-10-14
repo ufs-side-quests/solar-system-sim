@@ -130,7 +130,7 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     eyebrow: "Establish the three bodies",
     title: "Watch the Moon cross the Sun-Earth line",
     kidLine:
-      "An eclipse happens when the Moon moves between the Sun and Earth.",
+      "A solar eclipse happens when the Moon passes exactly between the Sun and Earth.",
     scale: "Moon: 384,000 km away · Sun: 150 million km away",
     description:
       "This view starts before alignment. The yellow guide fixes the Sun's direction while the Moon crosses it on its physical orbit.",
@@ -188,7 +188,7 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     },
     eyebrow: "London · 18:17 BST",
     title: "First contact: the Moon touches the Sun",
-    kidLine: "The Moon starts to cover the Sun. This part lasts 56 minutes.",
+    kidLine: "The Moon starts to cover the Sun. The bite grows for 56 minutes.",
     scale: "The Sun is about 19° above the western horizon",
     description:
       "The Moon's leading edge meets the Sun's edge. The partial eclipse now grows for 56 minutes as the Moon moves across the solar disc.",
@@ -284,7 +284,7 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     cameraDistanceAu: "observer-separation",
     cameraZoom: 32,
     timeRateSecondsPerSecond: 1,
-    timeRateLabel: "real time · totality lasts about 1 minute 49 seconds here",
+    timeRateLabel: "real time · totality lasts almost 2 minutes here",
     timeUtc: "2026-08-12T18:28:00.000Z",
     timeSeconds: simulationSecondsForUtc("2026-08-12T18:28:00.000Z"),
     viewMode: "reality",
@@ -297,11 +297,13 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     },
     eyebrow: "Northern Spain centre line · 20:28 CEST",
     title: "On the centre line, the Moon covers the Sun",
-    kidLine:
-      "In northern Spain the Sun is fully hidden for about 1 minute 49 seconds.",
+    kidLine: "In northern Spain the Sun is fully hidden for almost 2 minutes.",
     scale: "The Sun is about 10° above the western horizon",
+    // NASA's path table (ECLIPSE_PATH_SOURCE_URL, the "NASA data" link on this
+    // step) gives 01m49.3s on the central line at 18:28 UT, 43°22.3'N
+    // 6°11.3'W. astronomy-engine gives 111.4 s for the same observer.
     description:
-      "This observer stands on the Moon's central shadow line. The slightly larger lunar disc hides the photosphere and briefly reveals the solar corona.",
+      "This observer stands on the Moon's central shadow line. The slightly larger lunar disc hides the photosphere and briefly reveals the solar corona. Totality lasts almost 2 minutes: NASA predicts about 1 min 49 s here; this model gives about 1 min 51 s.",
     visualKey:
       "True apparent sizes · 32× optical view · corona shape is illustrative · NASA centre-line coordinates",
     narration: narrationFor("spain-totality"),
@@ -336,3 +338,13 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     narration: narrationFor("london-final-contact"),
   },
 ];
+
+// The card the story shows in place of the step when its last step's time
+// runs out, or when the child presses Finish.
+export const ECLIPSE_STORY_ENDING = Object.freeze({
+  eyebrow: "The end of the story",
+  title: "The eclipse is over",
+  kidLine:
+    "London saw about 91% of the Sun hidden. In northern Spain the Moon hid all of it.",
+  safety: "Never look at the Sun without certified eclipse glasses.",
+});

@@ -257,7 +257,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     eyebrow: "Look back toward home",
     title: "Earth seen from Jupiter",
     kidLine:
-      "From Jupiter, the whole Earth is smaller than one dot on your screen.",
+      "From Jupiter, the whole Earth is smaller than a single dot on your screen.",
     scale: "Only a sub-pixel point at true scale",
     description:
       "Across several astronomical units, Earth shrinks below the resolution of a screen pixel. Its label marks the calculated direction of home; the planet itself has not been enlarged.",
@@ -289,7 +289,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     eyebrow: "A vast ring system",
     title: "Saturn's rings dwarf Earth",
     kidLine:
-      "Saturn's rings are more than 21 Earths wide, but made of countless tiny pieces.",
+      "Saturn's rings are more than 21 Earths wide, made of ice chunks from dust to house size.",
     scale: "273,560 km across the observed main rings",
     description:
       "The observed main rings span more than 21 Earth diameters but are extraordinarily thin. They are countless orbiting particles, rendered from a Cassini radial mosaic rather than as a solid disc.",
@@ -320,11 +320,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Beyond Titan's haze",
     title: "Saturn seen from Titan",
-    kidLine:
-      "Titan, the moon we watch from, is bigger than the planet Mercury.",
+    kidLine: "Titan, the moon we watch from, is wider than the planet Mercury.",
     scale: "The rings span several degrees of sky",
     description:
-      "Titan orbits about 1.2 million kilometres from Saturn. Above its dense orange atmosphere, Saturn and its rings would stretch across several degrees of sky.",
+      "Titan is 5,150 km across, wider than Mercury's 4,879 km, and orbits about 1.2 million kilometres from Saturn. Above its dense orange atmosphere, Saturn and its rings would stretch across several degrees of sky.",
     visualKey:
       "Physical sizes and live separation · clear-space observer at Titan",
     narration: narrationFor("saturn-from-titan"),
@@ -353,7 +352,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     eyebrow: "The outer planets",
     title: "Neptune is thirty times farther out",
     kidLine:
-      "Neptune is 30 times farther from the Sun than Earth. Its year lasts nearly 165 of ours.",
+      "Neptune is 30 times farther from the Sun than Earth. Its year lasts nearly 165 Earth years.",
     scale: "About 30 AU from the Sun",
     description:
       "The camera moves to Neptune's sunward side, where its physical globe remains visible while the Sun wayfinder carries the full distance. Sunlight takes roughly four hours to arrive, and one orbit lasts nearly 165 Earth years.",
@@ -452,7 +451,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     eyebrow: "The Sun's wind bubble",
     title: "The heliosphere is not the edge of the Solar System",
     kidLine:
-      "The Sun's wind blows a giant bubble around the planets. Both Voyagers have left it.",
+      "The Sun's particles flow out and make a giant bubble around the planets. Both Voyagers have left it.",
     scale: "Voyager crossings reveal a boundary around 120 AU",
     description:
       "The solar wind inflates a magnetised region called the heliosphere. Its outer boundary, the heliopause, separates solar-wind plasma from interstellar space; both Voyagers have crossed it.",
@@ -531,3 +530,12 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     presentation: "interstellar-scale",
   },
 ] as const;
+
+// The card the tour shows in place of the step when its last step's time runs
+// out, or when the child presses Finish.
+export const SCALE_TOUR_ENDING = Object.freeze({
+  eyebrow: "The end of the tour",
+  title: "You went from Earth out toward the nearest stars.",
+  kidLine:
+    "Light takes 4.3 years to get there. Voyager 1 would need about 75,000 years.",
+});
