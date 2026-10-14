@@ -1081,6 +1081,7 @@ export function App() {
   // the clock was still at the epoch.
   const tourChainStartTimeSecondsRef = useRef<number | undefined>(undefined);
   const tourPanelRef = useRef<HTMLElement>(null);
+  const selectedBodyPanelRef = useRef<HTMLElement>(null);
   const tourFlyHomeRef = useRef<HTMLButtonElement>(null);
   // The ending replaces the buttons a child may have focused; it takes focus
   // only from inside the tour panel.
@@ -3108,6 +3109,30 @@ export function App() {
     ? apolloLandingSiteById.get(selectedBodyId)
     : undefined;
 
+  // The scene moves its subject into the open sky right of the open tour card
+  // or selected-body card. A minimised panel, or the phone layout with its
+  // card along the bottom edge, leaves the sky alone.
+  const leftPanelOpen =
+    !phoneLayout &&
+    (activeTourStep === undefined
+      ? selectedBodyDetail !== undefined &&
+        !surfaceObserverEnabled &&
+        !selectedBodyPanelCollapsed
+      : !tourMinimised);
+  const leftPanelRef =
+    activeTourStep === undefined ? selectedBodyPanelRef : tourPanelRef;
+  const [measuredLeftPanelInsetPx, setMeasuredLeftPanelInsetPx] = useState(0);
+  useEffect(() => {
+    const panel = leftPanelRef.current;
+    if (!leftPanelOpen || panel === null) return;
+    const observer = new ResizeObserver(() => {
+      setMeasuredLeftPanelInsetPx(panel.offsetLeft + panel.offsetWidth);
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [leftPanelOpen, leftPanelRef]);
+  const leftPanelInsetPx = leftPanelOpen ? measuredLeftPanelInsetPx : 0;
+
   // A looping shot only runs forward from the epoch: going backward ends it.
   const startPlaying = (nextDirection: -1 | 1): void => {
     if (nextDirection === -1) {
@@ -3481,6 +3506,7 @@ export function App() {
               objectVisibility={objectVisibility}
               surfaceObserver={surfaceObserverConfiguration}
               surfaceObserverLookResetToken={surfaceObserverLookResetToken}
+              leftPanelInsetPx={leftPanelInsetPx}
               visualQuality={visualQuality}
               exposureMode={exposureMode}
               manualExposureEv={manualExposureEv}
@@ -3984,6 +4010,7 @@ export function App() {
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
           <aside
+            ref={selectedBodyPanelRef}
             className={
               selectedBodyPanelCollapsed
                 ? "selected-body-detail is-collapsed"

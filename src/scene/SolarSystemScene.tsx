@@ -99,6 +99,7 @@ import type {
 } from "./gravity-potential";
 import type { SimulationFrame } from "./interpolation";
 import { placeBodyLabel, type LabelRectangle } from "./label-placement";
+import { easeLensShiftPx, lensShiftTargetPx } from "./lens-shift";
 import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
@@ -631,6 +632,8 @@ type SolarSystemSceneProps = Readonly<{
   objectVisibility: ObjectVisibility;
   surfaceObserver: SurfaceObserverConfiguration | null;
   surfaceObserverLookResetToken: number;
+  // The right edge in CSS px of an open left-hand panel over the scene, or 0.
+  leftPanelInsetPx: number;
   visualQuality: VisualQuality;
   exposureMode: ExposureMode;
   manualExposureEv: number;
@@ -702,6 +705,7 @@ export function SolarSystemScene({
   objectVisibility,
   surfaceObserver,
   surfaceObserverLookResetToken,
+  leftPanelInsetPx,
   visualQuality,
   exposureMode,
   manualExposureEv,
@@ -764,6 +768,7 @@ export function SolarSystemScene({
   const gravityWellScaleRef = useRef(gravityWellScale);
   const objectVisibilityRef = useRef(objectVisibility);
   const surfaceObserverRef = useRef(surfaceObserver);
+  const leftPanelInsetPxRef = useRef(leftPanelInsetPx);
   const surfaceObserverLookResetTokenRef = useRef(
     surfaceObserverLookResetToken,
   );
@@ -817,6 +822,7 @@ export function SolarSystemScene({
   gravityWellScaleRef.current = gravityWellScale;
   objectVisibilityRef.current = objectVisibility;
   surfaceObserverRef.current = surfaceObserver;
+  leftPanelInsetPxRef.current = leftPanelInsetPx;
   surfaceObserverLookResetTokenRef.current = surfaceObserverLookResetToken;
   visualQualityRef.current = visualQuality;
   exposureModeRef.current = exposureMode;
@@ -4163,6 +4169,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let frameIntervalEmaMs = 1000 / 60;
 
     let labelFontPx = Number.NaN;
+    // The lens shift moves the whole picture right, so the subject sits in
+    // the open sky beside a left-hand panel. It shifts the projection itself,
+    // so labels, picking, guides and the GPU layer all follow it.
+    let lensShiftPx = 0;
+    const applyLensShift = (width: number, height: number): void => {
+      if (lensShiftPx === 0) {
+        camera.clearViewOffset();
+      } else {
+        camera.setViewOffset(width, height, -lensShiftPx, 0, width, height);
+      }
+      container.dataset["lensShiftPx"] = lensShiftPx.toFixed(1);
+    };
     const resize = (width: number, height: number): void => {
       // The render loop fails when this is not a positive size.
       labelFontPx = Number.parseFloat(getComputedStyle(issLabel).fontSize);
@@ -4170,7 +4188,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         return;
       }
       camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+      applyLensShift(width, height);
       renderer.setSize(width, height, false);
       lastSunGuideUpdateAt = Number.NEGATIVE_INFINITY;
     };
@@ -5525,6 +5543,23 @@ float saturnRingTransmission(vec3 surfacePosition) {
       );
       lastRenderedAtMs = frameRenderStartedAtMs;
       frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
+      // Surface view keeps its deliberate framing. A drag holds the shift
+      // still, so the sky does not slide under the child's finger.
+      if (canvasPresses.size === 0) {
+        const lensWidth = container.clientWidth;
+        const lensHeight = container.clientHeight;
+        const nextLensShiftPx = easeLensShiftPx(
+          lensShiftPx,
+          surfaceObserverRef.current === null
+            ? lensShiftTargetPx(leftPanelInsetPxRef.current, lensWidth)
+            : 0,
+          frameIntervalMs,
+        );
+        if (nextLensShiftPx !== lensShiftPx && lensWidth > 0 && lensHeight > 0) {
+          lensShiftPx = nextLensShiftPx;
+          applyLensShift(lensWidth, lensHeight);
+        }
+      }
       const activeVisualQuality = visualQualityRef.current;
       if (activeVisualQuality !== lastVisualQuality) {
         applyVisualQuality(activeVisualQuality);
@@ -7782,7 +7817,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           const focusScreen =
             focusPosition === undefined ||
             cameraTargetBodyIdRef.current !== undefined
-              ? { x: viewportWidth / 2, y: viewportHeight / 2 }
+              ? { x: viewportWidth / 2 + lensShiftPx, y: viewportHeight / 2 }
               : (() => {
                   const projected = focusPosition.clone().project(camera);
                   return {
