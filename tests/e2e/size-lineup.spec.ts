@@ -141,6 +141,13 @@ test("compare sizes draws every body at one true scale and selects by tap", asyn
     "Surface: Radar map of the ground under the clouds",
   );
 
+  await dialog.getByRole("button", { name: /^Saturn, / }).click();
+  await expect(scene).toHaveAttribute("data-focus-body", "saturn");
+  await expect(dialog.locator(".size-lineup-comparison small")).toHaveText([
+    "Surface: NASA artwork of its cloud tops",
+    "Rings: real Cassini pictures of the main rings",
+  ]);
+
   await dialog.getByRole("button", { name: /^Mars, / }).click();
   await expect(scene).toHaveAttribute("data-focus-body", "mars");
   await expect(card.getByText("Mars", { exact: true })).toBeVisible();
@@ -260,18 +267,24 @@ for (const viewport of [
 test("camera dock buttons stay at least 44 px wide on a phone", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
-  await waitForScene(page);
-  const buttons = page
-    .getByRole("navigation", { name: "Camera navigation" })
-    .getByRole("button");
-  expect(await buttons.count()).toBeGreaterThan(0);
-  for (const button of await buttons.all()) {
-    const target = await button.boundingBox();
-    expect(target?.width ?? 0, await button.innerText()).toBeGreaterThanOrEqual(
-      44,
-    );
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await waitForScene(page);
+    const buttons = page
+      .getByRole("navigation", { name: "Camera navigation" })
+      .getByRole("button");
+    expect(await buttons.count()).toBeGreaterThan(0);
+    for (const button of await buttons.all()) {
+      const target = await button.boundingBox();
+      expect(
+        target?.width ?? 0,
+        `${await button.innerText()} at ${String(viewport.width)} px`,
+      ).toBeGreaterThanOrEqual(44);
+    }
   }
 });
 

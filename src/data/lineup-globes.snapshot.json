@@ -30,8 +30,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -62,8 +66,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -94,8 +102,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -126,8 +138,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -158,8 +174,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -198,8 +218,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -227,8 +251,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -259,8 +287,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -291,8 +323,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     },
@@ -323,8 +359,12 @@
         "sunAngleDeg": 0.53,
         "ambientStrength": 0.06,
         "samples": 64,
+        "seed": 0,
+        "adaptiveSampling": false,
+        "denoising": false,
         "transparentBounces": 16,
-        "webpQuality": 88
+        "webpQuality": 88,
+        "platform": "darwin arm64"
       },
       "limitations": "Rendered globe view from the authority map; lighting is illustrative."
     }

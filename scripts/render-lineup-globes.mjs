@@ -48,8 +48,12 @@ const render = {
   sunAngleDeg: 0.53,
   ambientStrength: 0.06,
   samples: 64,
+  seed: 0,
+  adaptiveSampling: false,
+  denoising: false,
   transparentBounces: 16,
   webpQuality: 88,
+  platform: `${process.platform} ${process.arch}`,
 };
 
 /** The 3D globe flattens only these bodies; the rest are spheres. */
