@@ -920,64 +920,142 @@ function formatAngularDiameter(degrees: number): string {
   return `${(arcminutes * 60).toLocaleString(undefined, { maximumFractionDigits: 2 })}″`;
 }
 
-function useDisplayedSimulationState(
-  frame: SimulationFrame | undefined,
-): Readonly<{
+// React shows the clock and the facts at most this often; the scene reads
+// every solver frame and displayed state from refs on each animation frame.
+const REACT_PRESENTATION_INTERVAL_MS = 100;
+// Trail states wait here until the scene draws them. While the scene is not
+// mounted (the schematic map) nobody drains them, so only the newest are kept.
+const MAXIMUM_PENDING_TRAIL_STATES = 64;
+
+type PresentedSimulation = Readonly<{
+  frame: SimulationFrame | undefined;
   state: SimulationState | undefined;
+  // Achieved simulated seconds per second, measured by the playback loop.
+  effectiveRate: number;
+}>;
+
+function useSimulationFrames(): Readonly<{
+  presented: PresentedSimulation;
+  frameRef: RefObject<SimulationFrame | undefined>;
   stateRef: RefObject<SimulationState | undefined>;
+  trailStatesRef: RefObject<SimulationState[]>;
+  publishFrame: (frame: SimulationFrame) => void;
+  reportEffectiveRate: (rate: number) => void;
 }> {
-  const [displayedState, setDisplayedState] = useState<SimulationState>();
-  const displayedStateRef = useRef<SimulationState | undefined>(undefined);
-  useEffect(() => {
-    if (frame === undefined) {
-      displayedStateRef.current = undefined;
-      setDisplayedState(undefined);
+  const [presented, setPresented] = useState<PresentedSimulation>({
+    frame: undefined,
+    state: undefined,
+    effectiveRate: 0,
+  });
+  const frameRef = useRef<SimulationFrame | undefined>(undefined);
+  const effectiveRateRef = useRef(0);
+  const stateRef = useRef<SimulationState | undefined>(undefined);
+  const trailStatesRef = useRef<SimulationState[]>([]);
+  const animationFrameRef = useRef(0);
+  const presentTimerRef = useRef<number | undefined>(undefined);
+  const lastPresentedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const present = useCallback((): void => {
+    window.clearTimeout(presentTimerRef.current);
+    presentTimerRef.current = undefined;
+    lastPresentedAtRef.current = performance.now();
+    setPresented({
+      frame: frameRef.current,
+      state: stateRef.current,
+      effectiveRate: effectiveRateRef.current,
+    });
+  }, []);
+  // The latest state always reaches React, at most one interval late.
+  const schedulePresent = useCallback((): void => {
+    if (presentTimerRef.current !== undefined) {
       return;
     }
-    if (
-      frame.transitionDurationMs <= 0 ||
-      frame.start.timeSeconds === frame.end.timeSeconds
-    ) {
-      displayedStateRef.current = frame.end;
-      setDisplayedState(frame.end);
-      return;
-    }
-    const startedAt = performance.now();
-    let lastReactPresentationAt = Number.NEGATIVE_INFINITY;
-    let animationFrame = 0;
-    const present = (now: number): void => {
-      const fraction = Math.min(
-        1,
-        Math.max(0, (now - startedAt) / frame.transitionDurationMs),
-      );
-      const nextState = interpolateDisplayedSimulationFrame(frame, fraction);
-      displayedStateRef.current = nextState;
-      if (now - lastReactPresentationAt >= 100 || fraction === 1) {
-        lastReactPresentationAt = now;
-        setDisplayedState(nextState);
+    presentTimerRef.current = window.setTimeout(
+      present,
+      Math.max(
+        0,
+        lastPresentedAtRef.current +
+          REACT_PRESENTATION_INTERVAL_MS -
+          performance.now(),
+      ),
+    );
+  }, [present]);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(animationFrameRef.current);
+      window.clearTimeout(presentTimerRef.current);
+    },
+    [],
+  );
+  const publishFrame = useCallback(
+    (frame: SimulationFrame): void => {
+      const previousFrame = frameRef.current;
+      frameRef.current = frame;
+      cancelAnimationFrame(animationFrameRef.current);
+      if (frame.end.timeSeconds !== previousFrame?.end.timeSeconds) {
+        const trailStates = trailStatesRef.current;
+        trailStates.push(...(frame.trailStates ?? [frame.end]));
+        trailStates.splice(
+          0,
+          Math.max(0, trailStates.length - MAXIMUM_PENDING_TRAIL_STATES),
+        );
       }
-      if (fraction < 1) {
-        animationFrame = requestAnimationFrame(present);
+      if (
+        frame.transitionDurationMs <= 0 ||
+        frame.start.timeSeconds === frame.end.timeSeconds
+      ) {
+        stateRef.current = frame.end;
+        present();
+        return;
       }
-    };
-    animationFrame = requestAnimationFrame(present);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [frame]);
-  return { state: displayedState, stateRef: displayedStateRef };
+      const startedAt = performance.now();
+      const interpolate = (now: number): void => {
+        const fraction = Math.min(
+          1,
+          Math.max(0, (now - startedAt) / frame.transitionDurationMs),
+        );
+        stateRef.current = interpolateDisplayedSimulationFrame(frame, fraction);
+        schedulePresent();
+        if (fraction < 1) {
+          animationFrameRef.current = requestAnimationFrame(interpolate);
+        }
+      };
+      animationFrameRef.current = requestAnimationFrame(interpolate);
+    },
+    [present, schedulePresent],
+  );
+  const reportEffectiveRate = useCallback(
+    (rate: number): void => {
+      effectiveRateRef.current = rate;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
+  return {
+    presented,
+    frameRef,
+    stateRef,
+    trailStatesRef,
+    publishFrame,
+    reportEffectiveRate,
+  };
 }
 
 const DISCOVERY_TOAST_DURATION_MS = 6_000;
 
 export function App() {
   const audio = useInterfaceAudio();
-  const [frame, setFrame] = useState<SimulationFrame>();
-  const { state, stateRef: displayedStateRef } =
-    useDisplayedSimulationState(frame);
+  const {
+    presented: { frame, state, effectiveRate },
+    frameRef,
+    stateRef: displayedStateRef,
+    trailStatesRef,
+    publishFrame,
+    reportEffectiveRate,
+  } = useSimulationFrames();
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
   const [timeRateIndex, setTimeRateIndex] = useState(4);
-  const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
   const [bodyVisibilityPercent, setBodyVisibilityPercent] = useState(100);
@@ -1224,7 +1302,7 @@ export function App() {
       rateSampleTime = performance.now();
       rateSampleSimulationTime = simulationTime;
       if (isActive()) {
-        setEffectiveRate(0);
+        reportEffectiveRate(0);
       }
     };
 
@@ -1235,7 +1313,7 @@ export function App() {
         return;
       }
       if (isActive()) {
-        setEffectiveRate(
+        reportEffectiveRate(
           ((simulationTime - rateSampleSimulationTime) * 1_000) / elapsedMs,
         );
       }
@@ -1260,7 +1338,7 @@ export function App() {
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
         if (isActive()) {
-          setFrame({
+          publishFrame({
             start: previousState,
             end: previousState,
             transitionDurationMs: 0,
@@ -1278,7 +1356,7 @@ export function App() {
             previousState = nextState;
             resetMeasuredRate(nextState.timeSeconds);
             if (isActive()) {
-              setFrame({
+              publishFrame({
                 start: nextState,
                 end: nextState,
                 transitionDurationMs: 0,
@@ -1423,11 +1501,11 @@ export function App() {
                 pendingTrailStates.push(rawNextState);
                 continue;
               }
-              const frameStartState = withKnownSatellites(previousState);
               const nextState = withKnownSatellites(rawNextState);
               if (isActive()) {
-                setFrame({
-                  start: frameStartState,
+                publishFrame({
+                  // previousState already carries the propagated satellites.
+                  start: previousState,
                   end: nextState,
                   transitionDurationMs,
                   trailStates: [...pendingTrailStates, nextState],
@@ -1699,15 +1777,6 @@ export function App() {
           setSimulationRunToken((current) => current + 1);
         }
       }
-      setFrame((currentFrame) =>
-        currentFrame === undefined
-          ? currentFrame
-          : {
-              ...currentFrame,
-              start: withKnownSatellites(currentFrame.start),
-              end: withKnownSatellites(currentFrame.end),
-            },
-      );
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
         setCameraOrientation(
@@ -1745,15 +1814,6 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-    setFrame((currentFrame) =>
-      currentFrame === undefined
-        ? currentFrame
-        : {
-            ...currentFrame,
-            start: withKnownSatellites(currentFrame.start),
-            end: withKnownSatellites(currentFrame.end),
-          },
-    );
   };
 
   const navigateToParent = (): void => {
@@ -3061,7 +3121,8 @@ export function App() {
         ) : (
           <Suspense fallback={<p className="loading">Loading view...</p>}>
             <SolarSystemScene
-              frame={frame}
+              frameRef={frameRef}
+              trailStatesRef={trailStatesRef}
               displayedStateRef={displayedStateRef}
               bodyVisibility={
                 viewMode === "reality" ? 0 : bodyVisibilityPercent / 100
