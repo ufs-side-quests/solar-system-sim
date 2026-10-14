@@ -501,6 +501,42 @@ test("a tour ends the planets racing shot", async ({ page }) => {
   await expect(racingButton).toHaveAttribute("aria-pressed", "false");
 });
 
+test("a surface view entered during a shot opens in Reality", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  // The view from before the shot is Orrery, which the shot's end restores.
+  await page.getByRole("button", { name: "Orrery", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+  await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
+
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+  await page
+    .getByRole("dialog", { name: "Display controls" })
+    .getByText("Surface observer", { exact: true })
+    .click();
+  await page.getByRole("button", { name: "Enter surface view" }).click();
+
+  await expect(scene).toHaveAttribute("data-surface-observer-body", "earth");
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  await expect(
+    page.getByRole("button", { name: "Reality", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
 test("the shot caption hides while the clock is paused", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await startPlanetsRacing(page);

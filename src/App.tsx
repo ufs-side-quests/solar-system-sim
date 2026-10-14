@@ -2214,6 +2214,7 @@ export function App() {
   };
 
   const startScaleTour = (): void => {
+    tourFocusReturnRef.current = document.activeElement;
     // From an ending the clock may stand years past the chain's start (the
     // last Scale steps run at 30 days per second). Replay from that start, or
     // from the epoch when the start lies outside the validated window.
@@ -2257,6 +2258,7 @@ export function App() {
   };
 
   const startEclipseStory = (): void => {
+    tourFocusReturnRef.current = document.activeElement;
     rememberDisplaySettingsBeforeTour();
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -2277,6 +2279,9 @@ export function App() {
 
   const enterSurfaceObserver = (): void => {
     endTour();
+    // A shot's end restores the view from before it, so it ends before this
+    // sets Reality.
+    endCinematicShot();
     // The child enters the observer place the panel shows, even a tour's.
     setSurfaceObserverBodyId(surfaceObserverBodyId);
     setSurfaceObserverTargetBodyId(surfaceObserverTargetBodyId);
@@ -2338,6 +2343,7 @@ export function App() {
       throw new Error(`Apollo landing site ${siteId} has no installed data`);
     }
     endTour();
+    endCinematicShot();
     setOrbitViewEnabled(false);
     setShowApolloSites(true);
     setApolloInspectionSiteId(null);
@@ -2381,6 +2387,46 @@ export function App() {
       tourFlyHomeRef.current?.focus();
     }
   }, [tourEnded]);
+
+  // A tour hides the camera dock that holds its start button, so focus moves
+  // into the tour card, and goes back to that button when the tour ends.
+  const tourFocusReturnRef = useRef<Element | null>(null);
+  useEffect(() => {
+    const returnTo = tourFocusReturnRef.current;
+    if (tourKind !== null) {
+      requestAnimationFrame(() => {
+        if (returnTo instanceof HTMLElement && !returnTo.checkVisibility()) {
+          tourPanelRef.current?.focus();
+        }
+      });
+      return;
+    }
+    tourFocusReturnRef.current = null;
+    requestAnimationFrame(() => {
+      if (
+        document.activeElement === document.body &&
+        returnTo instanceof HTMLElement &&
+        returnTo.checkVisibility()
+      ) {
+        returnTo.focus();
+      }
+    });
+  }, [tourKind]);
+
+  // Stop removes the shot caption that holds it, so focus goes back to the
+  // button that started the shot.
+  const shotFocusReturnRef = useRef<Element | null>(null);
+  const stopCinematicShot = (): void => {
+    const returnTo = shotFocusReturnRef.current;
+    shotFocusReturnRef.current = null;
+    endCinematicShot();
+    requestResetView();
+    requestAnimationFrame(() => {
+      if (returnTo instanceof HTMLElement && returnTo.checkVisibility()) {
+        returnTo.focus();
+      }
+    });
+  };
 
   const advanceScaleTour = useCallback(
     (direction: -1 | 1): void => {
@@ -2646,6 +2692,9 @@ export function App() {
     // No shot starts during a tour: a tour hides every shot button
     // (.is-tour-story). A shot after a shot keeps the view and rate from
     // before the first one.
+    if (viewBeforeShotRef.current === null) {
+      shotFocusReturnRef.current = document.activeElement;
+    }
     viewBeforeShotRef.current ??= {
       viewMode,
       bodyVisibilityPercent,
@@ -3559,10 +3608,8 @@ export function App() {
             </p>
             <button
               type="button"
-              onClick={() => {
-                endCinematicShot();
-                requestResetView();
-              }}
+              aria-label={`Stop ${activeCinematicShot.name}`}
+              onClick={stopCinematicShot}
             >
               Stop
             </button>
@@ -3929,6 +3976,7 @@ export function App() {
         {activeTourStep === undefined || tourStepIndex === null ? null : (
           <aside
             ref={tourPanelRef}
+            tabIndex={-1}
             className={tourMinimised ? "scale-tour is-minimised" : "scale-tour"}
             role="dialog"
             aria-modal="false"

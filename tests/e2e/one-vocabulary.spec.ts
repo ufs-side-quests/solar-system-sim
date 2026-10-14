@@ -191,6 +191,48 @@ for (const viewport of [
   });
 }
 
+test("a keyboard start of the Scale tour keeps focus in its card and Escape returns it", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const start = page.getByRole("button", { name: "Scale tour" });
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  // The tour hides the dock that holds the start button.
+  await expect(start).toBeHidden();
+  await expect
+    .poll(() => tour.evaluate((card) => card.contains(document.activeElement)))
+    .toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(tour).toHaveCount(0);
+  await expect(start).toBeFocused();
+});
+
+test("Stop returns focus to the button that started the shot", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const racing = page.getByRole("button", {
+    name: "Planets racing",
+    exact: true,
+  });
+  await racing.focus();
+  await page.keyboard.press("Enter");
+  await expect(racing).toHaveAttribute("aria-pressed", "true");
+  const stop = page.getByRole("button", { name: "Stop Planets racing" });
+  await stop.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".cinematic-shot-caption")).toHaveCount(0);
+  await expect(racing).toBeFocused();
+});
+
 const RACE_WAYS_OUT = {
   Home: (page: Page) =>
     page.getByRole("button", { name: "Home", exact: true }).click(),
