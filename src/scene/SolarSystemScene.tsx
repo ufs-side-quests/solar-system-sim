@@ -211,6 +211,7 @@ import {
   nasaSurfaceNormalByBodyId,
   nasaSurfaceRoughnessByBodyId,
   nasaTextureByBodyId,
+  SUNLIGHT_COLOR,
 } from "./visual-assets";
 import type { ReferenceFrame, SemanticZoomLevel, ViewMode } from "./view-mode";
 import {
@@ -1194,10 +1195,10 @@ export function SolarSystemScene({
       container.dataset["cameraOrientation"] = "custom";
     };
     controls.addEventListener("start", handleControlStart);
-    const sunlight = new PointLight(0xfff8ec, 7, 0, 2);
+    const sunlight = new PointLight(SUNLIGHT_COLOR, 7, 0, 2);
     sunlight.name = "Sunlight direction source";
     scene.add(sunlight);
-    const localModelSunlight = new DirectionalLight(0xfff8ec, 7);
+    const localModelSunlight = new DirectionalLight(SUNLIGHT_COLOR, 7);
     localModelSunlight.name = "Focused model solar shadow light";
     localModelSunlight.castShadow = true;
     localModelSunlight.layers.set(2);

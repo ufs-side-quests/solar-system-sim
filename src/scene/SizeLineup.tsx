@@ -10,6 +10,7 @@ import {
 } from "./body-physical-facts";
 import { lineupGlobePicture, lineupGlobeSnapshot } from "./lineup-globe-assets";
 import { sizeLineupLayout, type SizeLineupCircle } from "./size-lineup";
+import { SUNLIGHT_COLOR } from "./visual-assets";
 
 const LAYOUT = sizeLineupLayout(majorBodySnapshot.bodies);
 // Built at module load, so a lineup body without a picture or wording fails
@@ -25,8 +26,6 @@ const BODY_COLUMNS = LAYOUT.circles.map((circle) => {
     surface,
   };
 });
-/** The Sun has no picture: a plain disc in the 3D scene's sunlight colour. */
-const SUN_FILL = "#fff8ec";
 const SUN_SURFACE = "Plain colour";
 
 /** True when the lineup draws this body, so the card can offer it. */
@@ -122,7 +121,8 @@ export function SizeLineup({
             style={
               {
                 "--lineup-radius": LAYOUT.sun.radius,
-                background: SUN_FILL,
+                // The Sun has no picture: a plain disc in the 3D scene's sunlight colour.
+                background: SUNLIGHT_COLOR,
               } as CSSProperties
             }
           />,
@@ -173,6 +173,9 @@ export function SizeLineup({
             EARTH_MEAN_RADIUS_M,
           )}
           <small>Surface: {selected.surface}</small>
+          {selected.circle.id === "saturn" ? (
+            <small>Rings: real Cassini pictures of the main rings</small>
+          ) : null}
         </p>
       )}
     </aside>

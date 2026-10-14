@@ -116,3 +116,6 @@ export const nasaSurfaceRoughnessByBodyId = new Map(
     .filter((asset) => asset.role === "surface-roughness")
     .map((asset) => [asset.id.replace(/-roughness$/u, ""), asset] as const),
 );
+
+/** The colour of sunlight in the 3D scene, and of the Sun in the size lineup. */
+export const SUNLIGHT_COLOR = "#fff8ec";

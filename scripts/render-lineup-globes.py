@@ -50,9 +50,9 @@ def reset_scene(job):
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
     scene.cycles.samples = job["samples"]
-    scene.cycles.use_adaptive_sampling = False
-    scene.cycles.use_denoising = False
-    scene.cycles.seed = 0
+    scene.cycles.use_adaptive_sampling = job["adaptiveSampling"]
+    scene.cycles.use_denoising = job["denoising"]
+    scene.cycles.seed = job["seed"]
     scene.cycles.max_bounces = job["transparentBounces"]
     scene.cycles.diffuse_bounces = 0
     scene.cycles.glossy_bounces = 0
