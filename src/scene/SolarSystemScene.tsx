@@ -179,10 +179,7 @@ import {
   type SurfaceObserverConfiguration,
   type SurfaceObserverFrame,
 } from "./surface-observer";
-import {
-  isPhysicalBodyResolvable,
-  nonOverlappingDisplayedRadiusAu,
-} from "./scale";
+import { isPhysicalBodyResolvable, orreryLayout } from "./scale";
 import { SmallBodyGpuLayer } from "./SmallBodyGpuLayer";
 import type { SmallBodyGpuStatus } from "./SmallBodyGpuLayer";
 import { pointInsideViewport, rayToViewportEdge } from "./sun-guide";
@@ -562,6 +559,21 @@ function parentBodyId(bodyId: string): string | undefined {
                 ? "sun"
                 : (knownSatelliteById.get(bodyId)?.parentId ??
                   PARENT_BODY_ID[bodyId]);
+}
+
+// The planet or dwarf planet whose system holds the focus, so the Orrery
+// shows its moons. A spacecraft counts with the body it orbits. The Sun, the
+// overview and heliocentric objects open no system.
+function orrerySystemRootId(focusBodyId: string | null): string | undefined {
+  let bodyId = focusBodyId ?? undefined;
+  while (bodyId !== undefined && bodyId !== "sun") {
+    const definition = majorBodyById.get(bodyId);
+    if (definition?.type === "planet" || definition?.type === "dwarf-planet") {
+      return bodyId;
+    }
+    bodyId = parentBodyId(bodyId);
+  }
+  return undefined;
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -4021,6 +4033,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastNavigationMapUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSmallBodiesVisible: boolean | undefined;
     let lastSceneMutationKey = "";
+    // Moons that the Orrery layout does not draw because they would crowd an
+    // enlarged body, for example the Moon inside an enlarged Earth.
+    let orreryHiddenBodyIds: ReadonlySet<string> = new Set();
     let lastVisualQuality: VisualQuality | undefined;
     let currentExposure = renderer.toneMappingExposure;
     let lastReportedExposureEv = Number.NaN;
@@ -5585,8 +5600,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             )} J/kg`;
           }
         }
-        const currentFocusBodyId = focusBodyIdRef.current;
+        const layout = orreryLayout(
+          majorBodySnapshot.bodies,
+          additionalAvailableKnownSatellites,
+          sceneBodyPositions,
+          orrerySystemRootId(focusBodyIdRef.current),
+          bodyVisibilityRef.current,
+        );
+        orreryHiddenBodyIds = layout.hiddenIds;
         let visibleKnownMoonPointCount = 0;
+        let hiddenKnownMoonPointCount = 0;
         for (const system of knownMoonSystems.values()) {
           const visible =
             currentVisibility.moons && viewModeRef.current === "orrery";
@@ -5594,22 +5617,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
           if (!visible) {
             continue;
           }
-          for (const [index, definition] of system.definitions.entries()) {
+          // Drawn points are packed first; the draw range leaves out moons
+          // that would crowd an enlarged body.
+          let drawnPointCount = 0;
+          for (const definition of system.definitions) {
             const position = sceneBodyPositions.get(definition.id);
             if (position === undefined) {
               throw new Error(
                 `Integrated state is missing known moon ${definition.name}`,
               );
             }
-            system.positions[index * 3] = position.x;
-            system.positions[index * 3 + 1] = position.y;
-            system.positions[index * 3 + 2] = position.z;
+            if (layout.hiddenIds.has(definition.id)) {
+              hiddenKnownMoonPointCount += 1;
+              continue;
+            }
+            system.positions[drawnPointCount * 3] = position.x;
+            system.positions[drawnPointCount * 3 + 1] = position.y;
+            system.positions[drawnPointCount * 3 + 2] = position.z;
+            drawnPointCount += 1;
           }
           const attribute = system.geometry.getAttribute("position");
           if (!(attribute instanceof BufferAttribute)) {
             throw new Error("Known-moon position attribute is unavailable");
           }
           attribute.needsUpdate = true;
+          system.geometry.setDrawRange(0, drawnPointCount);
           system.geometry.computeBoundingSphere();
           visibleKnownMoonPointCount += system.definitions.length;
         }
@@ -5619,43 +5651,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
         container.dataset["knownMoonPointCount"] = String(
           visibleKnownMoonPointCount,
         );
+        container.dataset["knownMoonPointHiddenCount"] = String(
+          hiddenKnownMoonPointCount,
+        );
+        container.dataset["orreryClearanceScale"] =
+          layout.clearanceScale.toPrecision(9);
         for (const body of majorBodySnapshot.bodies) {
           const bodyState = bodyStateById(current, body.id);
           const mesh = bodyMeshes.get(body.id);
           if (bodyState !== undefined && mesh !== undefined) {
             mesh.position.copy(scenePosition(bodyState.positionM));
-            const bodyPosition = sceneBodyPositions.get(body.id);
-            if (bodyPosition === undefined) {
-              throw new Error(`Scene position is missing body ${body.id}`);
+            const radius = layout.radiusAuById.get(body.id);
+            if (radius === undefined) {
+              throw new Error(`Orrery layout is missing body ${body.id}`);
             }
-            let nearestBodyDistanceAu = Number.POSITIVE_INFINITY;
-            for (const [otherBodyId, otherPosition] of sceneBodyPositions) {
-              const otherBodyIsSpacecraft =
-                otherBodyId === ISS_BODY_ID ||
-                isVoyagerBodyId(otherBodyId) ||
-                isOperationalSpacecraftBodyId(otherBodyId);
-              if (otherBodyId !== body.id && !otherBodyIsSpacecraft) {
-                const otherMajorBody = majorBodyById.get(otherBodyId);
-                const isHiddenOverviewMoon =
-                  (currentFocusBodyId === null ||
-                    currentFocusBodyId === "sun") &&
-                  body.type !== "moon" &&
-                  (otherMajorBody?.type === "moon" ||
-                    knownSatelliteById.has(otherBodyId));
-                if (isHiddenOverviewMoon) {
-                  continue;
-                }
-                nearestBodyDistanceAu = Math.min(
-                  nearestBodyDistanceAu,
-                  bodyPosition.distanceTo(otherPosition),
-                );
-              }
-            }
-            const radius = nonOverlappingDisplayedRadiusAu(
-              body,
-              bodyVisibilityRef.current,
-              nearestBodyDistanceAu,
-            );
             if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
               const meanRadiusKm = body.meanRadiusM / 1_000;
               const equatorialRadiusKm =
@@ -7874,8 +7883,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         const bodyRendered =
           bodyLayerVisible &&
-          (viewModeRef.current === "orrery" ||
-            isPhysicalBodyResolvable(radiusPixels));
+          (viewModeRef.current === "orrery"
+            ? !orreryHiddenBodyIds.has(body.id)
+            : isPhysicalBodyResolvable(radiusPixels));
         mesh.visible = bodyRendered;
         label.dataset["bodyRendered"] = String(bodyRendered);
         const isInCameraFrustum =

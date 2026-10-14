@@ -61,7 +61,18 @@ Playback rate is independent of solver keyframe size: continuous playback integr
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
-It also caps enhanced radii against the nearest major-body separation, preventing a readability setting from merging neighboring bodies.
+At full boost every planet, dwarf planet and moon has a readable radius of 0.02 AU times the square root of its radius in Earth radii.
+The Sun has a fixed readable radius of 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.
+Natural bodies form systems: the Sun, and each planet or dwarf planet with its moons.
+The open system is the one that holds the focus; a spacecraft counts with the body it orbits, and the overview, the Sun and heliocentric objects open no system.
+The Sun, every planet and dwarf planet, and every moon of the open system (catalogue moons as points) take part in the scale rule: each pair fills at most 40% of the distance between their centres.
+Every body uses one shared factor on its readable radius, the smallest that the scale rule needs, and no body is drawn smaller than its true radius.
+Because the factor is shared, every drawn natural body keeps its true size order, in the overview and in every focus view.
+A moon of any other system, whether a major moon or a catalogue point, is not drawn when it and an enlarged body would fill more than 40% of their separation; in the overview at full boost this hides the Moon inside Earth and the large moons inside the giant planets.
+So every pair of drawn natural bodies fills at most 40% of the distance between their centres, unless one of them is drawn at its true radius.
+Such a pair still does not overlap while the bodies sit farther apart than 1.67 true radii of the larger one; at the snapshot epoch the closest sourced pair is Jupiter and Metis, at about 1.8 Jupiter radii.
+A unit test checks these rules over the snapshot epoch positions in the overview and in Jupiter, Earth and Pluto focus views.
+Spacecraft and fictional objects never limit the drawn size of a natural body.
 
 The International Space Station is a separate massless spacecraft state around the live REBOUND Earth position.
 Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in UTC, transformed from TEME through true equator of date into the J2000 mean-equator frame, and then translated by Earth's barycentric state.

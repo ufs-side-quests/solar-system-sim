@@ -214,3 +214,122 @@ test("switches between physical, orrery, and schematic views without changing ph
     animations: "disabled",
   });
 });
+
+test("draws Orrery bodies in their true size order", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Pause" }).click();
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const displayedRadii = async (
+    bodyIds: readonly string[],
+  ): Promise<number[]> =>
+    Promise.all(
+      bodyIds.map(async (bodyId) =>
+        Number(
+          await page
+            .locator(`[data-body-id="${bodyId}"]`)
+            .getAttribute("data-displayed-radius-au"),
+        ),
+      ),
+    );
+  const expectLargestFirst = async (bodyIds: readonly string[]) => {
+    await expect
+      .poll(async () => {
+        const radii = await displayedRadii(bodyIds);
+        return radii.every(
+          (radius, index) =>
+            Number.isFinite(radius) &&
+            radius > 0 &&
+            (index === 0 || radius < (radii[index - 1] ?? 0)),
+        );
+      })
+      .toBe(true);
+  };
+
+  await page.getByRole("button", { name: "Orrery" }).hover();
+  await expect(
+    page.getByRole("tooltip", {
+      name: /Sizes are squeezed so small worlds stay visible\. The real Sun is about 10 times wider than Jupiter and 109 times wider than Earth\./u,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Orrery" }).click();
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+  // In the overview the Moon and the large moons would sit inside their
+  // planets, so they are not drawn.
+  for (const moonId of ["moon", "callisto", "titan", "charon"]) {
+    await expect(page.locator(`[data-body-id="${moonId}"]`)).toHaveAttribute(
+      "data-body-rendered",
+      "false",
+    );
+  }
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-known-moon-point-hidden-count")),
+    )
+    .toBeGreaterThan(0);
+  await expectLargestFirst([
+    "sun",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "earth",
+    "venus",
+    "mars",
+    "mercury",
+    "pluto",
+  ]);
+  await page.screenshot({
+    path: testInfo.outputPath("orrery-size-order.png"),
+  });
+
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Jupiter");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 20_000 },
+  );
+  await expectLargestFirst([
+    "jupiter",
+    "saturn",
+    "earth",
+    "ganymede",
+    "callisto",
+    "io",
+    "europa",
+  ]);
+  await page.screenshot({
+    path: testInfo.outputPath("orrery-jupiter-focus.png"),
+  });
+
+  for (const [focusName, focusId, largestFirst] of [
+    ["Earth", "earth", ["jupiter", "earth", "venus", "moon"]],
+    ["Pluto", "pluto", ["jupiter", "earth", "pluto", "charon"]],
+  ] as const) {
+    await focus.fill(focusName);
+    await focus.press("Enter");
+    await expect(scene).toHaveAttribute("data-focus-body", focusId);
+    await expect(scene).toHaveAttribute(
+      "data-camera-transition-phase",
+      "settled",
+      { timeout: 20_000 },
+    );
+    await expect(
+      page.locator(`[data-body-id="${largestFirst[3]}"]`),
+    ).toHaveAttribute("data-body-rendered", "true");
+    await expectLargestFirst(largestFirst);
+    await page.screenshot({
+      path: testInfo.outputPath(`orrery-${focusId}-focus.png`),
+    });
+  }
+});
