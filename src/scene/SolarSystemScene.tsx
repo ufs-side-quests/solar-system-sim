@@ -1177,23 +1177,22 @@ export function SolarSystemScene({
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
     let interruptCameraTransition: () => void = () => undefined;
-    // A press that begins on the canvas during a camera flight counts as a tap
-    // until it moves past TAP_SLOP_PX: children touch the screen while they
-    // wait, and a tap must not strand them mid-flight. A drag past it, a
-    // second finger, or the wheel still hands the camera to the child at once.
+    // A press that begins on the canvas counts as a tap until it moves past
+    // TAP_SLOP_PX: children touch the screen while they watch, and a tap must
+    // not strand them mid-flight, pause a tour, or end orbit view. A drag past
+    // it, a second finger, or the wheel still hands the camera to the child.
     const canvasPresses = new Map<number, { x: number; y: number }>();
-    let flightTapPending = false;
+    let tapPending = false;
     const handleCanvasPressDown = (event: PointerEvent): void => {
       if (event.target !== renderer.domElement) return;
       canvasPresses.set(event.pointerId, {
         x: event.clientX,
         y: event.clientY,
       });
-      flightTapPending =
-        canvasPresses.size === 1 && activeCameraTransition !== undefined;
+      tapPending = canvasPresses.size === 1;
     };
     const handleCanvasPressMove = (event: PointerEvent): void => {
-      if (!flightTapPending) return;
+      if (!tapPending) return;
       const press = canvasPresses.get(event.pointerId);
       if (press === undefined) return;
       if (
@@ -1201,16 +1200,18 @@ export function SolarSystemScene({
         TAP_SLOP_PX
       ) {
         // OrbitControls never sees the jitter, so it adds no rotation or
-        // damping that would fight the flight.
+        // damping that would fight a flight or move a settled view.
         event.stopPropagation();
         return;
       }
-      flightTapPending = false;
-      handleControlStart();
+      tapPending = false;
+      // Surface view disables the controls: its drag is free look, which
+      // turns the observer's head and keeps a story playing.
+      if (controls.enabled) handleControlStart();
     };
     const handleCanvasPressEnd = (event: PointerEvent): void => {
       canvasPresses.delete(event.pointerId);
-      if (canvasPresses.size === 0) flightTapPending = false;
+      if (canvasPresses.size === 0) tapPending = false;
     };
     // Capture on the container runs before the canvas listeners and before
     // OrbitControls' document listeners, so a dropped move reaches neither.
@@ -1219,12 +1220,16 @@ export function SolarSystemScene({
     container.addEventListener("pointerup", handleCanvasPressEnd, true);
     container.addEventListener("pointercancel", handleCanvasPressEnd, true);
     const handleControlStart = (): void => {
-      if (flightTapPending) return;
+      if (tapPending) return;
       interruptCameraTransition();
       if (orbitViewEnabledRef.current) {
         orbitViewEnabledRef.current = false;
         onOrbitViewChangeRef.current(false);
       }
+      // A drag past the tap slop starts in a pointermove, which React renders
+      // later than a press: the frame loop must stop applying the old preset
+      // at once, or it pulls the camera back before the new props arrive.
+      orientationPresetRef.current = "custom";
       onOrientationChange("custom");
       container.dataset["cameraOrientation"] = "custom";
     };
@@ -1527,6 +1532,13 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.textContent = "Umbra";
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
+    const eclipseShadowLeftEarth = document.createElement("p");
+    eclipseShadowLeftEarth.className = "eclipse-shadow-status";
+    eclipseShadowLeftEarth.setAttribute("role", "status");
+    eclipseShadowLeftEarth.textContent =
+      "The Moon's dark shadow is not on Earth now";
+    eclipseShadowLeftEarth.hidden = true;
+    labelLayer.append(eclipseShadowLeftEarth);
 
     // An easter egg near the focused or selected body shows its label as a
     // hidden surprise, unless that body hides it from the camera. Tour steps
@@ -4313,7 +4325,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         : position.sub(scenePosition(originState.positionM));
     };
 
-    const updateTrail = (exactState: SimulationState): void => {
+    const updateTrail = (
+      exactState: SimulationState,
+      jumped: boolean,
+    ): void => {
       const requestedReferenceFrame = referenceFrameRef.current;
       if (requestedReferenceFrame !== activeReferenceFrame) {
         activeReferenceFrame = requestedReferenceFrame;
@@ -4339,15 +4354,35 @@ float saturnRingTransmission(vec3 surfacePosition) {
         lastMoonTrailTime === undefined
           ? 0
           : Math.sign(exactState.timeSeconds - lastMoonTrailTime);
-      if (
+      const reversed =
         trailDirection !== 0 &&
         lastTrailDirection !== 0 &&
-        trailDirection !== lastTrailDirection
-      ) {
-        clearTrails();
-      }
-      if (trailDirection !== 0) {
-        lastTrailDirection = trailDirection;
+        trailDirection !== lastTrailDirection;
+      if (reversed && jumped) {
+        // A jump back along the trail, such as Pause holding the clock at
+        // the state on screen behind the frame the trail reached, keeps the
+        // trail up to the new time.
+        const dropPointsBeyond = (points: { timeSeconds: number }[]): void => {
+          while (
+            Math.sign(
+              (points.at(-1)?.timeSeconds ?? exactState.timeSeconds) -
+                exactState.timeSeconds,
+            ) === lastTrailDirection
+          ) {
+            points.pop();
+          }
+        };
+        dropPointsBeyond(moonTrailPoints);
+        for (const trail of planetTrails.values()) {
+          dropPointsBeyond(trail.points);
+        }
+      } else {
+        if (reversed) {
+          clearTrails();
+        }
+        if (trailDirection !== 0) {
+          lastTrailDirection = trailDirection;
+        }
       }
       const moonState = bodyStateById(exactState, "moon");
       if (moonState === undefined) {
@@ -4495,6 +4530,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       };
     };
 
+    // The last footprint relative to Earth, where the shadow camera holds
+    // while the shadow axis misses Earth.
+    let heldShadowFootprintOffsetAu: Vector3 | undefined;
     const eclipseShadowFootprintPosition = (
       current: SimulationState,
     ): Vector3 => {
@@ -4523,14 +4561,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const earthRadiusAu =
         eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
       if (alongAxisAu <= 0 || axisOffsetAu >= earthRadiusAu) {
-        throw new Error("The live lunar shadow axis does not intersect Earth");
+        // Before and after the eclipse the axis misses Earth: a true state,
+        // not a fault. The camera holds over the spot where the shadow left;
+        // with no such spot yet, over the point nearest the axis.
+        return earthPosition
+          .clone()
+          .add(
+            heldShadowFootprintOffsetAu ??
+              closestAxisPoint
+                .clone()
+                .sub(earthPosition)
+                .setLength(earthRadiusAu),
+          );
       }
       const surfaceOffsetAu = Math.sqrt(
         earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
       );
-      return closestAxisPoint.sub(
+      const footprint = closestAxisPoint.sub(
         shadowDirection.clone().multiplyScalar(surfaceOffsetAu),
       );
+      heldShadowFootprintOffsetAu = footprint.clone().sub(earthPosition);
+      return footprint;
     };
 
     const observerTargetPosition = (
@@ -5550,7 +5601,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         for (const trailState of requestedFrame.trailStates ?? [
           requestedFrame.end,
         ]) {
-          updateTrail(trailState);
+          updateTrail(trailState, requestedFrame.transitionDurationMs <= 0);
         }
       }
       const current = displayedStateRef.current;
@@ -5683,6 +5734,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
               trailFadeRef.current,
               clearTrailsTokenRef.current,
               resetViewTokenRef.current,
+              // An eclipse step's shadow camera and umbra start when its
+              // clock lands, which can leave the time unchanged.
+              observerCameraStyleRef.current,
+              eclipseShadowVisibleRef.current,
               sourcedModelsLoadedCount,
             ].join("|");
       if (current !== undefined && sceneMutationKey !== lastSceneMutationKey) {
@@ -6006,6 +6061,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               outwardNormal,
             );
             eclipseShadowGroup.visible = true;
+            eclipseShadowLeftEarth.hidden = true;
             container.dataset["eclipseShadowVisible"] = "true";
             container.dataset["eclipseUmbraRadiusKm"] = (
               umbraRadiusM / 1_000
@@ -6020,6 +6076,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           } else {
             eclipseShadowGroup.visible = false;
             eclipseShadowLocator.hidden = true;
+            eclipseShadowLeftEarth.hidden = false;
             container.dataset["eclipseShadowVisible"] = "false";
             delete container.dataset["eclipseShadowLatitudeDeg"];
             delete container.dataset["eclipseShadowLongitudeDeg"];
@@ -6027,6 +6084,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         } else {
           eclipseShadowGroup.visible = false;
           eclipseShadowLocator.hidden = true;
+          eclipseShadowLeftEarth.hidden = true;
           container.dataset["eclipseShadowVisible"] = "false";
           delete container.dataset["eclipseShadowLatitudeDeg"];
           delete container.dataset["eclipseShadowLongitudeDeg"];
