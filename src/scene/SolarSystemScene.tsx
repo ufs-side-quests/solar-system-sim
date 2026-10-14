@@ -1183,23 +1183,22 @@ export function SolarSystemScene({
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
     let interruptCameraTransition: () => void = () => undefined;
-    // A press that begins on the canvas during a camera flight counts as a tap
-    // until it moves past TAP_SLOP_PX: children touch the screen while they
-    // wait, and a tap must not strand them mid-flight. A drag past it, a
-    // second finger, or the wheel still hands the camera to the child at once.
+    // A press that begins on the canvas counts as a tap until it moves past
+    // TAP_SLOP_PX: children touch the screen while they watch, and a tap must
+    // not strand them mid-flight, pause a tour, or end orbit view. A drag past
+    // it, a second finger, or the wheel still hands the camera to the child.
     const canvasPresses = new Map<number, { x: number; y: number }>();
-    let flightTapPending = false;
+    let tapPending = false;
     const handleCanvasPressDown = (event: PointerEvent): void => {
       if (event.target !== renderer.domElement) return;
       canvasPresses.set(event.pointerId, {
         x: event.clientX,
         y: event.clientY,
       });
-      flightTapPending =
-        canvasPresses.size === 1 && activeCameraTransition !== undefined;
+      tapPending = canvasPresses.size === 1;
     };
     const handleCanvasPressMove = (event: PointerEvent): void => {
-      if (!flightTapPending) return;
+      if (!tapPending) return;
       const press = canvasPresses.get(event.pointerId);
       if (press === undefined) return;
       if (
@@ -1207,16 +1206,16 @@ export function SolarSystemScene({
         TAP_SLOP_PX
       ) {
         // OrbitControls never sees the jitter, so it adds no rotation or
-        // damping that would fight the flight.
+        // damping that would fight a flight or move a settled view.
         event.stopPropagation();
         return;
       }
-      flightTapPending = false;
+      tapPending = false;
       handleControlStart();
     };
     const handleCanvasPressEnd = (event: PointerEvent): void => {
       canvasPresses.delete(event.pointerId);
-      if (canvasPresses.size === 0) flightTapPending = false;
+      if (canvasPresses.size === 0) tapPending = false;
     };
     // Capture on the container runs before the canvas listeners and before
     // OrbitControls' document listeners, so a dropped move reaches neither.
@@ -1225,12 +1224,16 @@ export function SolarSystemScene({
     container.addEventListener("pointerup", handleCanvasPressEnd, true);
     container.addEventListener("pointercancel", handleCanvasPressEnd, true);
     const handleControlStart = (): void => {
-      if (flightTapPending) return;
+      if (tapPending) return;
       interruptCameraTransition();
       if (orbitViewEnabledRef.current) {
         orbitViewEnabledRef.current = false;
         onOrbitViewChangeRef.current(false);
       }
+      // A drag past the tap slop starts in a pointermove, which React renders
+      // later than a press: the frame loop must stop applying the old preset
+      // at once, or it pulls the camera back before the new props arrive.
+      orientationPresetRef.current = "custom";
       onOrientationChange("custom");
       container.dataset["cameraOrientation"] = "custom";
     };
@@ -5598,6 +5601,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
               trailFadeRef.current,
               clearTrailsTokenRef.current,
               resetViewTokenRef.current,
+              // An eclipse step's shadow camera and umbra start when its
+              // clock lands, which can leave the time unchanged.
+              observerCameraStyleRef.current,
+              eclipseShadowVisibleRef.current,
               sourcedModelsLoadedCount,
             ].join("|");
       if (current !== undefined && sceneMutationKey !== lastSceneMutationKey) {

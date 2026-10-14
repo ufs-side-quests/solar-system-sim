@@ -475,9 +475,15 @@ test("a focus after the planets race brings back the rate from before it", async
   await focus.fill("Jupiter");
   await focus.press("Enter");
   await expect(rate).toHaveText("1 hour / second");
-  // At 30 days per second the clock would leave the one-year window in 15 s.
-  await page.waitForTimeout(15_000);
+  // At 30 days per second the clock would cover 60 days in 2 s; at 1 hour
+  // per second it covers a few hours. The readout trails the solver by up to
+  // 100 ms, 3 days of the race.
+  const secondsAfterFocus = await clockSeconds(page);
+  await page.waitForTimeout(2_000);
   await expect(rate).toHaveText("1 hour / second");
+  expect(await clockSeconds(page)).toBeLessThan(
+    secondsAfterFocus + 10 * DAY_SECONDS,
+  );
   expect(await outsideValidatedWindow(page)).toBe("false");
 });
 
@@ -613,4 +619,370 @@ test("a scale step's time on screen starts when the camera arrives", async ({
     timeout: 40_000,
   });
   expect(Date.now() - cameraSettledAt).toBeGreaterThanOrEqual(27_000);
+});
+
+const playbackRate = (page: Page) =>
+  page.locator(".playback-rate-control output");
+const racingButton = (page: Page) =>
+  page.getByRole("button", { name: "Planets racing", exact: true });
+const runStatus = (page: Page) =>
+  page.getByRole("region", { name: "Time controls" }).locator(".run-status");
+
+async function startRace(page: Page): Promise<void> {
+  await racingButton(page).click();
+  await expect(racingButton(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(playbackRate(page)).toHaveText("30 days / second");
+}
+
+test("a rate picked during the planets race outlasts a focus", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  await startRace(page);
+  await page.getByRole("slider", { name: "Playback rate" }).fill("3");
+  await expect(playbackRate(page)).toHaveText("1 day / second");
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Jupiter");
+  await focus.press("Enter");
+  await expect(page.locator(sceneSelector)).toHaveAttribute(
+    "data-focus-body",
+    "jupiter",
+  );
+  await expect(playbackRate(page)).toHaveText("1 day / second");
+});
+
+test("a tour started during the planets race returns to the rate from before the race", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  await startRace(page);
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await tour.getByRole("button", { name: "Exit" }).click();
+  await expect(tour).toHaveCount(0);
+  await expect(playbackRate(page)).toHaveText("1 hour / second");
+  await expect(runStatus(page)).toContainText("1 hour/s requested");
+});
+
+test("a camera drag during the planets race only moves the camera", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "no-preference");
+  const sequenceBeforeRace = await cameraSequence(page);
+  await startRace(page);
+  await clockAtSettle(page, sequenceBeforeRace);
+  const bounds = await page.locator("canvas.major-body-layer").boundingBox();
+  if (bounds === null) {
+    throw new Error("Major-body canvas is unavailable for a camera drag");
+  }
+  const start = {
+    x: bounds.x + bounds.width * 0.8,
+    y: bounds.y + bounds.height * 0.3,
+  };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 80, start.y + 40, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator(sceneSelector)).toHaveAttribute(
+    "data-camera-orientation",
+    "custom",
+  );
+  await page.waitForTimeout(500);
+  await expect(racingButton(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
+  await expect(playbackRate(page)).toHaveText("30 days / second");
+});
+
+test("a tour from a shot started in a tour restores the settings from just before it", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const scene = page.locator(sceneSelector);
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await startRace(page);
+  await expect(tour).toHaveCount(0);
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+
+  // Before this tour the screen showed the race's Orrery view.
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  await tour.getByRole("button", { name: "Exit" }).click();
+  await expect(tour).toHaveCount(0);
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+  await expect(playbackRate(page)).toHaveText("1 hour / second");
+});
+
+test("Step backward during the planets race steps by the rate that comes back", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  await startRace(page);
+  await expect
+    .poll(() => clockSeconds(page), { timeout: 10_000 })
+    .toBeGreaterThan(40 * DAY_SECONDS);
+  const secondsAtStep = await page.evaluate(() => {
+    const seconds = Number(
+      document.querySelector<HTMLElement>("time.global-simulation-clock")
+        ?.dataset.timeSeconds,
+    );
+    [...document.querySelectorAll<HTMLButtonElement>(".time-actions button")]
+      .find((button) => button.textContent === "Step backward")
+      ?.click();
+    return seconds;
+  });
+  await expect(playbackRate(page)).toHaveText("1 hour / second");
+  await expect(runStatus(page)).toHaveText("Paused");
+  // One hour back from where the race stopped, not 30 days back. The race
+  // stops a few frames after the click, and the readout trails the solver by
+  // up to 100 ms (3 race days).
+  const secondsAfterStep = await clockSeconds(page);
+  expect(secondsAfterStep).toBeLessThan(secondsAtStep + 10 * DAY_SECONDS);
+  expect(secondsAfterStep).toBeGreaterThan(secondsAtStep - 10 * DAY_SECONDS);
+});
+
+test("an eclipse step's seek asked for during a long step still shows Seeking until it lands", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  await page.getByRole("slider", { name: "Playback rate" }).fill("6");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(runStatus(page)).toHaveText("Paused");
+  // Sum the time on screen where the story is open, its clock has not
+  // landed, and the status does not say Seeking. The landing frame and the
+  // clock readout arrive one render apart, so a single short frame of
+  // "Paused" before the new time is the readout catching up.
+  await page.evaluate(() => {
+    const seen = { notSeekingMs: 0 };
+    (window as unknown as { landingSeen: typeof seen }).landingSeen = seen;
+    let previousAt = performance.now();
+    const sample = (now: number): void => {
+      const story = document.querySelector<HTMLElement>("aside.scale-tour");
+      const stepSeconds = Number(story?.dataset.tourTimeSeconds);
+      const clock = Number(
+        document.querySelector<HTMLElement>("time.global-simulation-clock")
+          ?.dataset.timeSeconds,
+      );
+      const status = document.querySelector(".run-status")?.textContent ?? "";
+      if (
+        story !== null &&
+        Number.isFinite(stepSeconds) &&
+        Math.abs(clock - stepSeconds) > 86_400 &&
+        status !== "Seeking"
+      ) {
+        seen.notSeekingMs += now - previousAt;
+      }
+      previousAt = now;
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // A one-year step at 1 year per second runs for several seconds, one day
+  // at a time: each day is a solver answer, then a 16 ms frame. The story
+  // starts a few milliseconds after a solver answer, inside that frame, so
+  // its time is asked for while the step's frame is on screen.
+  await page.evaluate(() => {
+    const post: unknown = Reflect.get(Worker.prototype, "postMessage");
+    if (typeof post !== "function") {
+      throw new Error("Worker.postMessage is unavailable");
+    }
+    const hooked = new WeakSet<Worker>();
+    const control = { armed: false };
+    (window as unknown as { storyClick: typeof control }).storyClick = control;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      if (!hooked.has(this)) {
+        hooked.add(this);
+        this.addEventListener("message", () => {
+          if (!control.armed) return;
+          control.armed = false;
+          window.setTimeout(() => {
+            [...document.querySelectorAll<HTMLButtonElement>("button")]
+              .find((button) => button.textContent === "Eclipse story")
+              ?.click();
+          }, 4);
+        });
+      }
+      Reflect.apply(post, this, args);
+    };
+  });
+  await page.getByRole("button", { name: "Step forward" }).click();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    (window as unknown as { storyClick: { armed: boolean } }).storyClick.armed =
+      true;
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const stepSeconds = Number(
+    await story.getAttribute("data-tour-time-seconds"),
+  );
+  await expect
+    .poll(async () => Math.abs((await clockSeconds(page)) - stepSeconds), {
+      timeout: 30_000,
+    })
+    .toBeLessThan(1);
+  // The seek runs for seconds; without the guard all of it shows Paused.
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { landingSeen: { notSeekingMs: number } })
+          .landingSeen.notSeekingMs,
+    ),
+  ).toBeLessThan(500);
+});
+
+test("Restart simulation keeps the eclipse step's time", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  // The next call to the physics worker fails, as a solver error would.
+  await page.evaluate(() => {
+    const post: unknown = Reflect.get(Worker.prototype, "postMessage");
+    if (typeof post !== "function") {
+      throw new Error("Worker.postMessage is unavailable");
+    }
+    let failed = false;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      if (!failed) {
+        failed = true;
+        throw new Error("test solver failure");
+      }
+      Reflect.apply(post, this, args);
+    };
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await expect(page.getByText(/Simulation stopped/u)).toBeVisible();
+  const stepSeconds = Number(
+    await story.getAttribute("data-tour-time-seconds"),
+  );
+  await page.getByRole("button", { name: "Restart simulation" }).click();
+  await expect
+    .poll(async () => Math.abs((await clockSeconds(page)) - stepSeconds), {
+      timeout: 30_000,
+    })
+    .toBeLessThan(1);
+  await expect(story.getByText("exact model time")).toBeVisible();
+});
+
+test("a quick Exit from the eclipse story leaves the clock where it was", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "reduce");
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  for (const exitAfterMs of [0, 300]) {
+    const secondsBefore = await clockSeconds(page);
+    await page.getByRole("button", { name: "Eclipse story" }).click();
+    await page.waitForTimeout(exitAfterMs);
+    await story.getByRole("button", { name: "Exit" }).click();
+    await expect(story).toHaveCount(0);
+    await page.waitForTimeout(4_000);
+    await expect(runStatus(page)).toContainText("requested");
+    // The story's 12 August 2026 is about 220 days after the epoch.
+    expect(Math.abs((await clockSeconds(page)) - secondsBefore)).toBeLessThan(
+      DAY_SECONDS,
+    );
+  }
+});
+
+test("a step forward and back at once leaves the clock idle, not seeking", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openApp(page, "reduce");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("slider", { name: "Playback rate" }).fill("4");
+  await expect(runStatus(page)).toHaveText("Paused");
+  const secondsBefore = await clockSeconds(page);
+  await page.evaluate(() => {
+    const button = (name: string): HTMLButtonElement => {
+      const found = [
+        ...document.querySelectorAll<HTMLButtonElement>(".time-actions button"),
+      ].find((candidate) => candidate.textContent === name);
+      if (found === undefined) {
+        throw new Error(`${name} is unavailable`);
+      }
+      return found;
+    };
+    button("Step forward").click();
+    button("Step backward").click();
+  });
+  await expect(runStatus(page)).toHaveText("Paused", { timeout: 3_000 });
+  expect(await clockSeconds(page)).toBe(secondsBefore);
+});
+
+test("a new playback rate during the planets race ends the race", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openApp(page, "reduce");
+  await startRace(page);
+  await page.getByRole("slider", { name: "Playback rate" }).fill("0");
+  await expect(racingButton(page)).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".cinematic-shot-caption")).toHaveCount(0);
+  await expect(playbackRate(page)).toHaveText("1 second / second");
+});
+
+// Back is disabled during a tour: each step starts a fresh focus history.
+for (const way of ["Home", "Focus"] as const) {
+  test(`${way} during a scale tour ends it with the clock running`, async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await openApp(page, "no-preference");
+    const tour = page.getByRole("dialog", {
+      name: "Scale of the Solar System tour",
+    });
+    await page.getByRole("button", { name: "Scale tour" }).click();
+    await expect(tour).toHaveAttribute("data-tour-step", "earth");
+    if (way === "Focus") {
+      const focus = page.getByRole("combobox", { name: "Focus" });
+      await focus.fill("Jupiter");
+      await focus.press("Enter");
+    } else {
+      await page.getByRole("button", { name: way, exact: true }).click();
+    }
+    await expect(tour).toHaveCount(0);
+    await expect(runStatus(page)).toContainText("1 hour/s requested");
+    const secondsAfter = await clockSeconds(page);
+    await expect
+      .poll(() => clockSeconds(page), { timeout: 5_000 })
+      .toBeGreaterThan(secondsAfter + 3_600);
+  });
+}
+
+test("the rate slider sits at the nearest stop for a shot's own rate", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openApp(page, "reduce");
+  await page.getByRole("button", { name: "Display" }).click();
+  await page.getByRole("tab", { name: "Camera" }).click();
+  await page
+    .getByRole("button", { name: "Moon in sunlight", exact: true })
+    .click();
+  await expect(playbackRate(page)).toHaveText("10 minutes / second");
+  // 10 minutes per second is nearest the 1 hour stop, not the 1 second one.
+  await expect(page.getByRole("slider", { name: "Playback rate" })).toHaveValue(
+    "2",
+  );
 });

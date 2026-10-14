@@ -183,3 +183,47 @@ test("a mouse wheel during a flight gives the child control", async ({
   );
   await expect(scene).toHaveAttribute("data-camera-orientation", "custom");
 });
+
+test("a tap or click on the sky after the camera settles keeps a tour playing", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  const scene = sceneOf(page);
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
+  await expect(tour).toHaveAttribute("data-tour-playing", "true");
+  const sky = await emptySkyPoint(page);
+
+  await page.touchscreen.tap(sky.x, sky.y);
+  await page.mouse.click(sky.x, sky.y);
+  // A mouse press that wobbles a few pixels is still a click.
+  await page.mouse.move(sky.x, sky.y);
+  await page.mouse.down();
+  await page.mouse.move(sky.x + 4, sky.y + 3, { steps: 3 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  await expect(tour).toHaveAttribute("data-tour-playing", "true");
+  await expect(scene).not.toHaveAttribute("data-camera-orientation", "custom");
+
+  // A drag past the tap slop takes the camera and pauses the tour.
+  await page.mouse.move(sky.x, sky.y);
+  await page.mouse.down();
+  await page.mouse.move(sky.x - 80, sky.y + 40, { steps: 10 });
+  await page.mouse.up();
+  await expect(scene).toHaveAttribute("data-camera-orientation", "custom");
+  await expect(tour).toHaveAttribute("data-tour-playing", "false");
+});
