@@ -4350,13 +4350,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastRenderedAtMs = performance.now();
     let frameIntervalEmaMs = 1000 / 60;
 
+    // The render loop fails when this is not a positive size. It is read
+    // only while the scene has a size: a scene out of the document has none.
     let labelFontPx = Number.NaN;
-    const resize = (width: number, height: number): void => {
-      // The render loop fails when this is not a positive size.
+    const measureLabelFont = (): void => {
       labelFontPx = Number.parseFloat(getComputedStyle(issLabel).fontSize);
+    };
+    const resize = (width: number, height: number): void => {
       if (width <= 0 || height <= 0) {
         return;
       }
+      measureLabelFont();
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
@@ -5707,6 +5711,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // and force another style recalculation.
       const viewportWidth = container.clientWidth;
       const viewportHeight = container.clientHeight;
+      // A scene with no layout box (hidden by an ancestor or out of the
+      // document) has no labels to measure and nothing to draw. Wait for it.
+      if (viewportWidth === 0 || viewportHeight === 0) {
+        animationFrame = requestAnimationFrame(render);
+        return;
+      }
+      if (Number.isNaN(labelFontPx)) {
+        // The scene got its first size this frame, before the resize callback.
+        measureLabelFont();
+      }
       // Guides stay out from under the bottom panels, which float over the
       // scene and draw above the guide labels: the time controls and the
       // short facts card. Beside a panel the sky stays open down to the
