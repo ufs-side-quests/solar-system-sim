@@ -98,7 +98,7 @@ import type {
   GravityWellMode,
   GravityWellScale,
 } from "./gravity-potential";
-import type { SimulationFrame } from "./interpolation";
+import type { SimulationFrame, TrailQueue } from "./interpolation";
 import { placeBodyLabel, type LabelRectangle } from "./label-placement";
 import {
   bodyOrientationAngles,
@@ -167,6 +167,14 @@ import {
   USS_DEFIANT_BODY_ID,
 } from "./deep-space-nine";
 import { fictionalModelAssets } from "./fictional-model-assets";
+import {
+  DEFIANT_PORTHOLE_MATERIAL,
+  DEFIANT_WINDOW_MATERIAL,
+  LIT_WINDOW_LUMINANCE_CD_M2,
+  lightPaintedPortholes,
+  setLitWindowEmissive,
+  SOLAR_IRRADIANCE_AT_1_AU,
+} from "./window-lighting";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import {
   limbObserverViewpoint,
@@ -247,9 +255,6 @@ import {
   TROPICAL_ZODIAC_SIGNS,
 } from "./zodiac";
 
-// Scene light intensity at 1 AU; both sunlights fall off with the inverse
-// square of the distance from the Sun in AU.
-const SUNLIGHT_INTENSITY_AT_1_AU = 7;
 // The focused model's shadow light stays on while the camera is within this
 // many model radii: farther out the model is about 2 pixels wide.
 const LOCAL_MODEL_SUNLIGHT_RANGE_RADII = 1_000;
@@ -421,6 +426,35 @@ type TimedTrailPoint = Readonly<{
   timeSeconds: number;
 }>;
 
+type TrailGeometry = Readonly<{
+  geometry: BufferGeometry;
+  positions: Float32Array;
+  colors: Float32Array;
+  positionAttribute: BufferAttribute;
+  colorAttribute: BufferAttribute;
+}>;
+
+// Writes and uploads only the drawn points of a trail.
+function writeTrailGeometry(
+  trail: TrailGeometry,
+  points: readonly TimedTrailPoint[],
+  fade: number,
+  color: readonly [number, number, number],
+): void {
+  for (const [index, point] of points.entries()) {
+    trail.positions[index * 3] = point.position.x;
+    trail.positions[index * 3 + 1] = point.position.y;
+    trail.positions[index * 3 + 2] = point.position.z;
+  }
+  writeTrailColors(trail.colors, points.length, fade, color);
+  for (const attribute of [trail.positionAttribute, trail.colorAttribute]) {
+    attribute.clearUpdateRanges();
+    attribute.addUpdateRange(0, points.length * 3);
+    attribute.needsUpdate = true;
+  }
+  trail.geometry.setDrawRange(0, points.length);
+}
+
 function writeTrailColors(
   colors: Float32Array,
   pointCount: number,
@@ -434,6 +468,47 @@ function writeTrailColors(
     colors[index * 3] = color[0] * brightness;
     colors[index * 3 + 1] = color[1] * brightness;
     colors[index * 3 + 2] = color[2] * brightness;
+  }
+}
+
+// The frame loop writes each value only when it changes: every write queues a
+// mutation record, and a changed attribute can invalidate style.
+function setData(
+  element: HTMLElement | SVGElement,
+  key: string,
+  value: string,
+): void {
+  if (element.dataset[key] !== value) {
+    element.dataset[key] = value;
+  }
+}
+
+function setHidden(element: HTMLElement, hidden: boolean): void {
+  if (element.hidden !== hidden) {
+    element.hidden = hidden;
+  }
+}
+
+function setAttr(element: Element, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) {
+    element.setAttribute(name, value);
+  }
+}
+
+// Chrome reads style.transform back rounded to six significant digits, so a
+// read-back comparison never matches; the last written value is kept here.
+// Hundredths of a pixel are below what a screen can show.
+const writtenTransforms = new WeakMap<HTMLElement | SVGElement, string>();
+
+function setTransform(
+  element: HTMLElement | SVGElement,
+  xPx: number,
+  yPx: number,
+): void {
+  const transform = `translate(${xPx.toFixed(2)}px, ${yPx.toFixed(2)}px)`;
+  if (writtenTransforms.get(element) !== transform) {
+    writtenTransforms.set(element, transform);
+    element.style.transform = transform;
   }
 }
 
@@ -593,8 +668,25 @@ function formatTacticalDistance(distanceAu: number): string {
   return `${distanceKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
 }
 
+export type ExposureStatus = Readonly<{
+  ev: number;
+  multiplier: number;
+  mode: ExposureMode;
+}>;
+
+type OrbitGuide = Readonly<{
+  geometry: BufferGeometry;
+  positions: Float32Array;
+  positionAttribute: BufferAttribute;
+  material: LineBasicMaterial;
+  line: LineLoop;
+}>;
+
 type SolarSystemSceneProps = Readonly<{
-  frame: SimulationFrame | undefined;
+  // The newest solver frame and the states its trails still have to draw;
+  // the frame loop reads them on every animation frame, not React.
+  frameRef: RefObject<SimulationFrame | undefined>;
+  trailQueueRef: RefObject<TrailQueue>;
   displayedStateRef: RefObject<SimulationState | undefined>;
   bodyVisibility: number;
   focusBodyId: string | null;
@@ -659,15 +751,12 @@ type SolarSystemSceneProps = Readonly<{
   onCameraTransitionSettled(sequence: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
   onGpuError(message: string): void;
-  onExposureStatusChange(status: {
-    ev: number;
-    multiplier: number;
-    mode: ExposureMode;
-  }): void;
+  onExposureStatusChange(status: ExposureStatus): void;
 }>;
 
 export function SolarSystemScene({
-  frame,
+  frameRef,
+  trailQueueRef,
   displayedStateRef,
   bodyVisibility,
   focusBodyId,
@@ -729,7 +818,6 @@ export function SolarSystemScene({
   onExposureStatusChange,
 }: SolarSystemSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef(frame);
   const bodyVisibilityRef = useRef(bodyVisibility);
   const focusBodyIdRef = useRef(focusBodyId);
   const selectedBodyIdRef = useRef(selectedBodyId);
@@ -782,7 +870,6 @@ export function SolarSystemScene({
   const onCameraTransitionSettledRef = useRef(onCameraTransitionSettled);
   const onOrbitViewChangeRef = useRef(onOrbitViewChange);
   const onExposureStatusChangeRef = useRef(onExposureStatusChange);
-  frameRef.current = frame;
   bodyVisibilityRef.current = bodyVisibility;
   focusBodyIdRef.current = focusBodyId;
   selectedBodyIdRef.current = selectedBodyId;
@@ -906,9 +993,9 @@ export function SolarSystemScene({
       const flownTo = isFlownTo(bodyId);
       label.classList.toggle("is-selected", selected);
       label.classList.toggle("is-focused", flownTo);
-      label.setAttribute("aria-pressed", String(selected));
+      setAttr(label, "aria-pressed", String(selected));
       if (selected && !flownTo) {
-        label.setAttribute("aria-describedby", FLY_HINT_ID);
+        setAttr(label, "aria-describedby", FLY_HINT_ID);
       } else {
         label.removeAttribute("aria-describedby");
       }
@@ -1246,7 +1333,7 @@ export function SolarSystemScene({
     // the point light off while the focused model's shadow light is on.
     const sunlight = new PointLight(
       SUNLIGHT_COLOR,
-      SUNLIGHT_INTENSITY_AT_1_AU,
+      SOLAR_IRRADIANCE_AT_1_AU,
       0,
       2,
     );
@@ -1254,7 +1341,7 @@ export function SolarSystemScene({
     scene.add(sunlight);
     const localModelSunlight = new DirectionalLight(
       SUNLIGHT_COLOR,
-      SUNLIGHT_INTENSITY_AT_1_AU,
+      SOLAR_IRRADIANCE_AT_1_AU,
     );
     localModelSunlight.name = "Focused model solar shadow light";
     localModelSunlight.castShadow = true;
@@ -1538,6 +1625,28 @@ reflectedLight.directSpecular *= solarTransmission;`,
     const materials: Material[] = [starMaterial];
     const geometries: BufferGeometry[] = [unitSphere, starGeometry];
     const textures: Texture[] = [];
+    // A texture takes the active profile's anisotropy when it joins the
+    // scene; applyVisualQuality sets them all again when the profile changes.
+    const trackTexture = (texture: Texture): void => {
+      if (textures.includes(texture)) {
+        return;
+      }
+      texture.anisotropy = Math.min(
+        renderer.capabilities.getMaxAnisotropy(),
+        VISUAL_QUALITY_PROFILES[visualQualityRef.current]
+          .textureAnisotropyLimit,
+      );
+      textures.push(texture);
+    };
+    const modelTexturesByBodyId = new Map<string, readonly Texture[]>();
+    const reportModelTextureAnisotropy = (bodyId: string): void => {
+      const modelTextures = modelTexturesByBodyId.get(bodyId);
+      if (modelTextures === undefined) {
+        throw new Error(`${bodyId} model textures are unavailable`);
+      }
+      container.dataset[`${bodyId.replaceAll("-", "")}ModelTextureAnisotropy`] =
+        String(Math.min(...modelTextures.map((texture) => texture.anisotropy)));
+    };
 
     const eclipseShadowGroup = new Group();
     eclipseShadowGroup.name = "Calculated lunar shadow on Earth";
@@ -1711,10 +1820,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
             for (const propertyName of Object.keys(material)) {
               const value: unknown = Reflect.get(material, propertyName);
               if (value instanceof Texture) {
-                const materialTexture = value as Texture;
-                if (!textures.includes(materialTexture)) {
-                  textures.push(materialTexture);
-                }
+                trackTexture(value as Texture);
               }
             }
           }
@@ -2082,12 +2188,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
       if (isColor) {
         texture.colorSpace = SRGBColorSpace;
       }
-      texture.anisotropy = Math.min(
-        renderer.capabilities.getMaxAnisotropy(),
-        VISUAL_QUALITY_PROFILES[visualQualityRef.current]
-          .textureAnisotropyLimit,
-      );
-      textures.push(texture);
+      trackTexture(texture);
       return texture;
     };
 
@@ -3087,6 +3188,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
             sourceMaximumDimension;
           model.scale.setScalar(physicalScale);
           model.position.copy(sourceCenter).multiplyScalar(-physicalScale);
+          const modelTextures: Texture[] = [];
+          const litDefiantMaterials = new Set<string>();
+          // Materials lit at the calibrated window level: the Defiant's, set
+          // below, and the "windows" materials of the repaired Deep Space
+          // Nine file (scripts/repair-model-assets.mjs).
+          let litWindowMaterialCount = 0;
           model.traverse((object) => {
             object.userData["bodyId"] = asset.bodyId;
             if (object.type === "Mesh") {
@@ -3108,16 +3215,66 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   material.emissiveMap = null;
                   material.needsUpdate = true;
                 }
+                if (
+                  asset.bodyId === USS_DEFIANT_BODY_ID &&
+                  material instanceof MeshStandardMaterial
+                ) {
+                  // The Defiant's licence keeps its file unmodified, so its
+                  // windows are lit here at the calibrated window level.
+                  if (material.name === DEFIANT_PORTHOLE_MATERIAL) {
+                    lightPaintedPortholes(material);
+                    litDefiantMaterials.add(material.name);
+                  } else if (material.name === DEFIANT_WINDOW_MATERIAL) {
+                    setLitWindowEmissive(material);
+                    litDefiantMaterials.add(material.name);
+                  }
+                }
+                if (
+                  litDefiantMaterials.has(material.name) ||
+                  material.name.endsWith(" windows")
+                ) {
+                  litWindowMaterialCount += 1;
+                }
                 materials.push(material);
                 for (const propertyName of Object.keys(material)) {
                   const value: unknown = Reflect.get(material, propertyName);
                   if (value instanceof Texture) {
-                    textures.push(value as Texture);
+                    const modelTexture = value as Texture;
+                    // A GLB texture arrives decoded, so a later quality
+                    // change may re-upload it.
+                    loadedTextures.add(modelTexture);
+                    trackTexture(modelTexture);
+                    modelTextures.push(modelTexture);
                   }
                 }
               }
             }
           });
+          const datasetKey = asset.bodyId.replaceAll("-", "");
+          if (asset.bodyId === USS_DEFIANT_BODY_ID) {
+            for (const name of [
+              DEFIANT_PORTHOLE_MATERIAL,
+              DEFIANT_WINDOW_MATERIAL,
+            ]) {
+              if (!litDefiantMaterials.has(name)) {
+                throw new Error(
+                  `USS Defiant window material ${name} is missing`,
+                );
+              }
+            }
+          }
+          if (litWindowMaterialCount > 0) {
+            container.dataset[`${datasetKey}LitWindowMaterials`] = String(
+              litWindowMaterialCount,
+            );
+            container.dataset[`${datasetKey}WindowLuminanceCdM2`] = String(
+              LIT_WINDOW_LUMINANCE_CD_M2,
+            );
+          }
+          if (modelTextures.length > 0) {
+            modelTexturesByBodyId.set(asset.bodyId, modelTextures);
+            reportModelTextureAnisotropy(asset.bodyId);
+          }
           group.add(model);
           loadedModelBodyIds.add(asset.bodyId);
           container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
@@ -3960,16 +4117,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     }
     scene.add(eclipticGrid);
 
-    const orbitGuides = new Map<
-      string,
-      Readonly<{
-        geometry: BufferGeometry;
-        positions: Float32Array;
-        positionAttribute: BufferAttribute;
-        material: LineBasicMaterial;
-        line: LineLoop;
-      }>
-    >();
+    const orbitGuides = new Map<string, OrbitGuide>();
     for (const body of majorBodySnapshot.bodies) {
       if (PARENT_BODY_ID[body.id] === undefined) {
         continue;
@@ -3990,6 +4138,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       line.name = `Instantaneous osculating orbit for ${body.name}`;
       line.visible = false;
       line.renderOrder = 1;
+      // No bounding sphere to recompute for every new orbit: a guide is
+      // drawn whenever it is shown.
+      line.frustumCulled = false;
       geometries.push(geometry);
       materials.push(material);
       scene.add(line);
@@ -4002,33 +4153,35 @@ float saturnRingTransmission(vec3 surfacePosition) {
       });
     }
 
-    const updateOrbitGuides = (exactState: SimulationState): void => {
-      for (const [bodyId, guide] of orbitGuides) {
-        const parentId = PARENT_BODY_ID[bodyId];
-        const bodyState = bodyStateById(exactState, bodyId);
-        const parentState =
-          parentId === undefined
-            ? undefined
-            : bodyStateById(exactState, parentId);
-        if (bodyState === undefined || parentState === undefined) {
-          guide.geometry.setDrawRange(0, 0);
-          continue;
-        }
-        const positionsM = osculatingOrbitPositionsM(
-          bodyState,
-          parentState,
-          192,
-        );
-        for (const [index, positionM] of positionsM.entries()) {
-          const position = scenePosition(positionM);
-          guide.positions[index * 3] = position.x;
-          guide.positions[index * 3 + 1] = position.y;
-          guide.positions[index * 3 + 2] = position.z;
-        }
-        guide.positionAttribute.needsUpdate = true;
-        guide.geometry.setDrawRange(0, positionsM.length);
-        guide.geometry.computeBoundingSphere();
+    // Each newest solver state waits here; a guide computes its orbit from it
+    // only while it is shown.
+    let orbitGuideSourceState: SimulationState | undefined;
+    const orbitGuideComputedStates = new Map<string, SimulationState>();
+    const updateOrbitGuide = (
+      bodyId: string,
+      guide: OrbitGuide,
+      exactState: SimulationState,
+    ): void => {
+      orbitGuideComputedStates.set(bodyId, exactState);
+      const parentId = PARENT_BODY_ID[bodyId];
+      const bodyState = bodyStateById(exactState, bodyId);
+      const parentState =
+        parentId === undefined
+          ? undefined
+          : bodyStateById(exactState, parentId);
+      if (bodyState === undefined || parentState === undefined) {
+        guide.geometry.setDrawRange(0, 0);
+        return;
       }
+      const positionsM = osculatingOrbitPositionsM(bodyState, parentState, 192);
+      for (const [index, positionM] of positionsM.entries()) {
+        const position = scenePosition(positionM);
+        guide.positions[index * 3] = position.x;
+        guide.positions[index * 3 + 1] = position.y;
+        guide.positions[index * 3 + 2] = position.z;
+      }
+      guide.positionAttribute.needsUpdate = true;
+      guide.geometry.setDrawRange(0, positionsM.length);
     };
 
     const moonTrailGeometry = new BufferGeometry();
@@ -4056,6 +4209,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
     const moonTrail = new Line(moonTrailGeometry, moonTrailMaterial);
     moonTrail.name = "Physics-sampled Moon trail";
     moonTrail.renderOrder = 2;
+    // Trails are drawn whenever shown, so no bounding sphere is recomputed
+    // over every point for each new state.
+    moonTrail.frustumCulled = false;
     scene.add(moonTrail);
     const moonTrailPoints: TimedTrailPoint[] = [];
     const planetTrailMaterial = new LineBasicMaterial({
@@ -4093,6 +4249,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const line = new Line(geometry, planetTrailMaterial);
       line.name = `Physics-sampled ${bodyId} trail`;
       line.renderOrder = 2;
+      line.frustumCulled = false;
       scene.add(line);
       planetTrails.set(bodyId, {
         geometry,
@@ -4105,6 +4262,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       });
     }
     let lastMoonTrailTime: number | undefined;
+    // New trail points reach the GPU only when a trail is shown.
+    let moonTrailGeometryStale = false;
+    let planetTrailGeometryStale = false;
     let lastTrailDirection = 0;
     let activeReferenceFrame = referenceFrameRef.current;
     let lastFocusBodyId: string | null | undefined;
@@ -4222,6 +4382,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           texture.needsUpdate = true;
         }
       }
+      for (const bodyId of modelTexturesByBodyId.keys()) {
+        reportModelTextureAnisotropy(bodyId);
+      }
       for (const material of atmosphereMaterials.values()) {
         setRequiredNumberUniform(
           material,
@@ -4297,6 +4460,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       void initializeGpuLayer();
     };
 
+    // Times the trails started again because states went undrawn.
+    let trailGapCount = 0;
     const clearTrails = (): void => {
       moonTrailPoints.length = 0;
       moonTrailGeometry.setDrawRange(0, 0);
@@ -4421,21 +4586,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
       ) {
         moonTrailPoints.shift();
       }
-      for (const [index, point] of moonTrailPoints.entries()) {
-        moonTrailPositions[index * 3] = point.position.x;
-        moonTrailPositions[index * 3 + 1] = point.position.y;
-        moonTrailPositions[index * 3 + 2] = point.position.z;
-      }
-      writeTrailColors(
-        moonTrailColors,
-        moonTrailPoints.length,
-        trailFadeRef.current,
-        [0.87, 0.91, 0.96],
-      );
-      moonTrailPositionAttribute.needsUpdate = true;
-      moonTrailColorAttribute.needsUpdate = true;
-      moonTrailGeometry.setDrawRange(0, moonTrailPoints.length);
-      moonTrailGeometry.computeBoundingSphere();
       for (const bodyId of PLANET_TRAIL_BODY_IDS) {
         const bodyState = bodyStateById(exactState, bodyId);
         const trail = planetTrails.get(bodyId);
@@ -4460,23 +4610,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ) {
           trail.points.shift();
         }
-        for (const [index, point] of trail.points.entries()) {
-          trail.positions[index * 3] = point.position.x;
-          trail.positions[index * 3 + 1] = point.position.y;
-          trail.positions[index * 3 + 2] = point.position.z;
-        }
-        writeTrailColors(
-          trail.colors,
-          trail.points.length,
-          trailFadeRef.current,
-          [0.47, 0.66, 0.83],
-        );
-        trail.positionAttribute.needsUpdate = true;
-        trail.colorAttribute.needsUpdate = true;
-        trail.geometry.setDrawRange(0, trail.points.length);
-        trail.geometry.computeBoundingSphere();
       }
       lastMoonTrailTime = exactState.timeSeconds;
+      moonTrailGeometryStale = true;
+      planetTrailGeometryStale = true;
     };
 
     const observerCameraPose = (
@@ -5553,6 +5690,37 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let animationFrame = 0;
     let startupTimer = 0;
     const render = (): void => {
+      // One layout read per frame: every later read would follow DOM writes
+      // and force another style recalculation.
+      const viewportWidth = container.clientWidth;
+      const viewportHeight = container.clientHeight;
+      // Guides stay out from under the bottom panels, which float over the
+      // scene and draw above the guide labels: the time controls and the
+      // short facts card. Beside a panel the sky stays open down to the
+      // bottom edge. A panel never takes more than the lower half of the
+      // scene. Measured here with the size, before this frame writes.
+      const sceneBox =
+        wayfinderModeRef.current === "off"
+          ? undefined
+          : container.getBoundingClientRect();
+      const guideObstacles =
+        sceneBox === undefined
+          ? []
+          : [
+              ...(container.parentElement?.querySelectorAll(
+                ".timeline-dock, .selected-body-detail.is-collapsed",
+              ) ?? []),
+            ]
+              .map((panel) => panel.getBoundingClientRect())
+              .filter((box) => box.height > 0)
+              .map((box) => ({
+                left: box.left - sceneBox.left,
+                right: box.right - sceneBox.left,
+                top: Math.min(
+                  viewportHeight,
+                  Math.max(viewportHeight / 2, box.top - sceneBox.top),
+                ),
+              }));
       const frameRenderStartedAtMs = performance.now();
       const frameIntervalMs = Math.max(
         0.001,
@@ -5584,18 +5752,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (clearTrailsTokenRef.current !== lastClearTrailsToken) {
         lastClearTrailsToken = clearTrailsTokenRef.current;
         clearTrails();
-        container.dataset["clearTrailsToken"] = String(lastClearTrailsToken);
+        setData(container, "clearTrailsToken", String(lastClearTrailsToken));
       }
       const currentVisibility = objectVisibilityRef.current;
       stars.visible = currentVisibility.stars;
-      container.dataset["starsVisible"] = String(stars.visible);
+      setData(container, "starsVisible", String(stars.visible));
       zodiacGroup.visible = showZodiacRef.current;
-      zodiacLegend.hidden = !zodiacGroup.visible;
-      container.dataset["zodiacVisible"] = String(zodiacGroup.visible);
+      setHidden(zodiacLegend, !zodiacGroup.visible);
+      setData(container, "zodiacVisible", String(zodiacGroup.visible));
       const smallBodiesVisible =
         viewModeRef.current === "orrery" &&
         (currentVisibility.asteroids || currentVisibility.comets);
-      gpuCanvas.hidden = !smallBodiesVisible;
+      setHidden(gpuCanvas, !smallBodiesVisible);
       if (smallBodiesVisible) {
         ensureGpuLayer();
       }
@@ -5619,7 +5787,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : simulatedSecondsPerSecond >= 86_400
               ? "accelerated"
               : "precise";
-        container.dataset["motionTreatment"] = motionTreatment;
+        setData(container, "motionTreatment", motionTreatment);
         planetTrailMaterial.opacity =
           motionTreatment === "high-speed"
             ? 0.82
@@ -5632,11 +5800,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : motionTreatment === "accelerated"
               ? 0.84
               : 0.78;
-        updateOrbitGuides(requestedFrame.end);
-        for (const trailState of requestedFrame.trailStates ?? [
-          requestedFrame.end,
-        ]) {
-          updateTrail(trailState, requestedFrame.transitionDurationMs <= 0);
+        orbitGuideSourceState = requestedFrame.end;
+        const trailQueue = trailQueueRef.current;
+        if (trailQueue.dropped) {
+          trailQueue.dropped = false;
+          clearTrails();
+          trailGapCount += 1;
+          setData(container, "trailGapCount", String(trailGapCount));
+        }
+        for (const trailStep of trailQueue.steps.splice(0)) {
+          updateTrail(trailStep.state, trailStep.jumped);
         }
       }
       const current = displayedStateRef.current;
@@ -5648,12 +5821,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ? 1
             : (current.timeSeconds - requestedFrame.start.timeSeconds) /
               frameDurationSeconds;
-        container.dataset["interpolationFraction"] = Math.max(
-          0,
-          Math.min(1, transitionFraction),
-        ).toFixed(4);
-        container.dataset["renderedTimeSeconds"] =
-          current.timeSeconds.toFixed(3);
+        setData(
+          container,
+          "interpolationFraction",
+          Math.max(0, Math.min(1, transitionFraction)).toFixed(4),
+        );
+        setData(
+          container,
+          "renderedTimeSeconds",
+          current.timeSeconds.toFixed(3),
+        );
       }
 
       const exposureReferenceBodyId =
@@ -5700,12 +5877,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
           );
         }
       }
-      container.dataset["cameraExposure"] = currentExposure.toFixed(5);
-      container.dataset["cameraExposureTarget"] = targetExposure.toFixed(5);
-      container.dataset["cameraExposureMode"] = exposureModeRef.current;
-      container.dataset["cameraExposureEv"] = Math.log2(
-        currentExposure / activeVisualProfile.baseExposure,
-      ).toFixed(3);
+      setData(container, "cameraExposure", currentExposure.toFixed(5));
+      setData(container, "cameraExposureTarget", targetExposure.toFixed(5));
+      setData(container, "cameraExposureMode", exposureModeRef.current);
+      setData(
+        container,
+        "cameraExposureEv",
+        Math.log2(currentExposure / activeVisualProfile.baseExposure).toFixed(
+          3,
+        ),
+      );
       const currentExposureEv = Math.log2(
         currentExposure / activeVisualProfile.baseExposure,
       );
@@ -5722,8 +5903,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           mode: exposureModeRef.current,
         });
       }
-      container.dataset["exposureReferenceDistanceAu"] =
-        exposureDistanceFromSunAu?.toFixed(6) ?? "system-overview";
+      setData(
+        container,
+        "exposureReferenceDistanceAu",
+        exposureDistanceFromSunAu?.toFixed(6) ?? "system-overview",
+      );
 
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
@@ -5735,10 +5919,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
         viewModeRef.current === "orrery" && currentVisibility.asteroids;
       const cometsVisible =
         viewModeRef.current === "orrery" && currentVisibility.comets;
-      gpuCanvas.dataset["asteroidsVisible"] = String(asteroidsVisible);
-      gpuCanvas.dataset["cometsVisible"] = String(cometsVisible);
-      gpuCanvas.dataset["locatorMode"] =
-        viewModeRef.current === "orrery" ? "orrery" : "disabled";
+      setData(gpuCanvas, "asteroidsVisible", String(asteroidsVisible));
+      setData(gpuCanvas, "cometsVisible", String(cometsVisible));
+      setData(
+        gpuCanvas,
+        "locatorMode",
+        viewModeRef.current === "orrery" ? "orrery" : "disabled",
+      );
       gpuLayer?.setCategoryVisibility(asteroidsVisible, cometsVisible);
       gpuLayer?.setTrailSettings(
         showMinorBodyTrailsRef.current && activeCameraTransition === undefined,
@@ -5844,16 +6031,24 @@ float saturnRingTransmission(vec3 surfacePosition) {
             sources: gravitySources,
           });
         }
-        container.dataset["gravityWellMode"] = gravityMode;
-        container.dataset["gravityWellScale"] = gravityWellScaleRef.current;
-        container.dataset["gravityWellVisible"] = String(
-          gravityDiagnostics !== undefined,
+        setData(container, "gravityWellMode", gravityMode);
+        setData(container, "gravityWellScale", gravityWellScaleRef.current);
+        setData(
+          container,
+          "gravityWellVisible",
+          String(gravityDiagnostics !== undefined),
         );
-        container.dataset["gravityPotentialEquation"] =
-          "negative-sum-gm-over-r";
-        container.dataset["gravityPotentialInterior"] =
-          "mean-radius-surface-cap";
-        container.dataset["gravityPotentialDisplay"] = "log2-only";
+        setData(
+          container,
+          "gravityPotentialEquation",
+          "negative-sum-gm-over-r",
+        );
+        setData(
+          container,
+          "gravityPotentialInterior",
+          "mean-radius-surface-cap",
+        );
+        setData(container, "gravityPotentialDisplay", "log2-only");
         if (gravityDiagnostics === undefined) {
           delete container.dataset["gravityPotentialSourceCount"];
           delete container.dataset["gravityPotentialMinimumJPerKg"];
@@ -5862,19 +6057,36 @@ float saturnRingTransmission(vec3 surfacePosition) {
           delete container.dataset["gravityWellDepthAu"];
           delete container.dataset["gravityFieldTimeSeconds"];
         } else {
-          container.dataset["gravityPotentialSourceCount"] = String(
-            gravityDiagnostics.sourceCount,
+          setData(
+            container,
+            "gravityPotentialSourceCount",
+            String(gravityDiagnostics.sourceCount),
           );
-          container.dataset["gravityPotentialMinimumJPerKg"] =
-            gravityDiagnostics.minimumMagnitudeJPerKg.toPrecision(10);
-          container.dataset["gravityPotentialMaximumJPerKg"] =
-            gravityDiagnostics.maximumMagnitudeJPerKg.toPrecision(10);
-          container.dataset["gravityWellExtentAu"] =
-            gravityDiagnostics.extentAu.toPrecision(10);
-          container.dataset["gravityWellDepthAu"] =
-            gravityDiagnostics.depthAu.toPrecision(10);
-          container.dataset["gravityFieldTimeSeconds"] =
-            current.timeSeconds.toFixed(3);
+          setData(
+            container,
+            "gravityPotentialMinimumJPerKg",
+            gravityDiagnostics.minimumMagnitudeJPerKg.toPrecision(10),
+          );
+          setData(
+            container,
+            "gravityPotentialMaximumJPerKg",
+            gravityDiagnostics.maximumMagnitudeJPerKg.toPrecision(10),
+          );
+          setData(
+            container,
+            "gravityWellExtentAu",
+            gravityDiagnostics.extentAu.toPrecision(10),
+          );
+          setData(
+            container,
+            "gravityWellDepthAu",
+            gravityDiagnostics.depthAu.toPrecision(10),
+          );
+          setData(
+            container,
+            "gravityFieldTimeSeconds",
+            current.timeSeconds.toFixed(3),
+          );
           const legendRange = container.querySelector<HTMLElement>(
             "[data-gravity-potential-range]",
           );
@@ -5931,17 +6143,26 @@ float saturnRingTransmission(vec3 surfacePosition) {
           system.geometry.computeBoundingSphere();
           visibleKnownMoonPointCount += system.definitions.length;
         }
-        container.dataset["knownMoonCatalogueCount"] = String(
-          knownSatelliteSnapshot.bodies.length,
+        setData(
+          container,
+          "knownMoonCatalogueCount",
+          String(knownSatelliteSnapshot.bodies.length),
         );
-        container.dataset["knownMoonPointCount"] = String(
-          visibleKnownMoonPointCount,
+        setData(
+          container,
+          "knownMoonPointCount",
+          String(visibleKnownMoonPointCount),
         );
-        container.dataset["knownMoonPointHiddenCount"] = String(
-          hiddenKnownMoonPointCount,
+        setData(
+          container,
+          "knownMoonPointHiddenCount",
+          String(hiddenKnownMoonPointCount),
         );
-        container.dataset["orreryClearanceScale"] =
-          layout.clearanceScale.toPrecision(9);
+        setData(
+          container,
+          "orreryClearanceScale",
+          layout.clearanceScale.toPrecision(9),
+        );
         for (const body of majorBodySnapshot.bodies) {
           const bodyState = bodyStateById(current, body.id);
           const mesh = bodyMeshes.get(body.id);
@@ -5974,15 +6195,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 (radius * polarRadiusKm) / meanRadiusKm,
                 (radius * equatorialRadiusKm) / meanRadiusKm,
               );
-              container.dataset[`${body.id}EquatorialToPolarRatio`] = (
-                equatorialRadiusKm / polarRadiusKm
-              ).toFixed(6);
+              setData(
+                container,
+                `${body.id}EquatorialToPolarRatio`,
+                (equatorialRadiusKm / polarRadiusKm).toFixed(6),
+              );
             } else {
               mesh.scale.setScalar(radius);
             }
             const bodyLabel = bodyLabels.get(body.id);
             if (bodyLabel !== undefined) {
-              bodyLabel.dataset["displayedRadiusAu"] = radius.toPrecision(9);
+              setData(bodyLabel, "displayedRadiusAu", radius.toPrecision(9));
             }
             mesh.quaternion.copy(
               bodyOrientationQuaternion(body.id, current.timeSeconds),
@@ -5992,10 +6215,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 body.id,
                 current.timeSeconds,
               ).primeMeridianDeg;
-              container.dataset["focusedPrimeMeridianDeg"] = (
-                ((primeMeridian % 360) + 360) %
-                360
-              ).toFixed(6);
+              setData(
+                container,
+                "focusedPrimeMeridianDeg",
+                (((primeMeridian % 360) + 360) % 360).toFixed(6),
+              );
             }
           }
         }
@@ -6011,8 +6235,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           moonStateForEclipse !== undefined &&
           sunStateForEclipse !== undefined
         ) {
-          container.dataset["earthEclipseLighting"] =
-            "all-body-finite-sun-disc-analytic-occlusion";
+          setData(
+            container,
+            "earthEclipseLighting",
+            "all-body-finite-sun-disc-analytic-occlusion",
+          );
         }
         if (
           eclipseShadowVisibleRef.current &&
@@ -6063,10 +6290,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const footprintLongitudeDeg =
               (Math.atan2(earthFixedFootprint.z, earthFixedFootprint.x) * 180) /
               Math.PI;
-            container.dataset["eclipseShadowLatitudeDeg"] =
-              footprintLatitudeDeg.toFixed(6);
-            container.dataset["eclipseShadowLongitudeDeg"] =
-              footprintLongitudeDeg.toFixed(6);
+            setData(
+              container,
+              "eclipseShadowLatitudeDeg",
+              footprintLatitudeDeg.toFixed(6),
+            );
+            setData(
+              container,
+              "eclipseShadowLongitudeDeg",
+              footprintLongitudeDeg.toFixed(6),
+            );
             const moonSunDistanceM =
               moonPosition.distanceTo(sunPosition) * ASTRONOMICAL_UNIT_M;
             const moonEarthDistanceM =
@@ -6096,31 +6329,36 @@ float saturnRingTransmission(vec3 surfacePosition) {
               outwardNormal,
             );
             eclipseShadowGroup.visible = true;
-            eclipseShadowLeftEarth.hidden = true;
-            container.dataset["eclipseShadowVisible"] = "true";
-            container.dataset["eclipseUmbraRadiusKm"] = (
-              umbraRadiusM / 1_000
-            ).toFixed(3);
-            container.dataset["eclipsePenumbraRadiusKm"] = (
-              penumbraRadiusM / 1_000
-            ).toFixed(3);
-            container.dataset["eclipseShadowAxisOffsetKm"] = (
-              (axisOffsetAu * ASTRONOMICAL_UNIT_M) /
-              1_000
-            ).toFixed(3);
+            setHidden(eclipseShadowLeftEarth, true);
+            setData(container, "eclipseShadowVisible", "true");
+            setData(
+              container,
+              "eclipseUmbraRadiusKm",
+              (umbraRadiusM / 1_000).toFixed(3),
+            );
+            setData(
+              container,
+              "eclipsePenumbraRadiusKm",
+              (penumbraRadiusM / 1_000).toFixed(3),
+            );
+            setData(
+              container,
+              "eclipseShadowAxisOffsetKm",
+              ((axisOffsetAu * ASTRONOMICAL_UNIT_M) / 1_000).toFixed(3),
+            );
           } else {
             eclipseShadowGroup.visible = false;
-            eclipseShadowLocator.hidden = true;
-            eclipseShadowLeftEarth.hidden = false;
-            container.dataset["eclipseShadowVisible"] = "false";
+            setHidden(eclipseShadowLocator, true);
+            setHidden(eclipseShadowLeftEarth, false);
+            setData(container, "eclipseShadowVisible", "false");
             delete container.dataset["eclipseShadowLatitudeDeg"];
             delete container.dataset["eclipseShadowLongitudeDeg"];
           }
         } else {
           eclipseShadowGroup.visible = false;
-          eclipseShadowLocator.hidden = true;
-          eclipseShadowLeftEarth.hidden = true;
-          container.dataset["eclipseShadowVisible"] = "false";
+          setHidden(eclipseShadowLocator, true);
+          setHidden(eclipseShadowLeftEarth, true);
+          setData(container, "eclipseShadowVisible", "false");
           delete container.dataset["eclipseShadowLatitudeDeg"];
           delete container.dataset["eclipseShadowLongitudeDeg"];
         }
@@ -6167,13 +6405,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
         monolithMesh.quaternion.setFromRotationMatrix(
           new Matrix4().makeBasis(thinAxis, longAxis, radialDirection),
         );
-        container.dataset["jovianMonolithDistanceFromIoKm"] = (
-          Math.hypot(
-            monolithState.positionM[0] - ioStateForMonolith.positionM[0],
-            monolithState.positionM[1] - ioStateForMonolith.positionM[1],
-            monolithState.positionM[2] - ioStateForMonolith.positionM[2],
-          ) / 1_000
-        ).toFixed(3);
+        setData(
+          container,
+          "jovianMonolithDistanceFromIoKm",
+          (
+            Math.hypot(
+              monolithState.positionM[0] - ioStateForMonolith.positionM[0],
+              monolithState.positionM[1] - ioStateForMonolith.positionM[1],
+              monolithState.positionM[2] - ioStateForMonolith.positionM[2],
+            ) / 1_000
+          ).toFixed(3),
+        );
 
         for (const orbiter of FICTIONAL_ORBITERS) {
           const group = fictionalOrbiterGroups.get(orbiter.id);
@@ -6190,9 +6432,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           group.lookAt(parentPosition);
           const distanceFromParentKm =
             (position.distanceTo(parentPosition) * ASTRONOMICAL_UNIT_M) / 1_000;
-          container.dataset[
-            `${orbiter.id.replaceAll("-", "")}DistanceFromParentKm`
-          ] = distanceFromParentKm.toFixed(3);
+          setData(
+            container,
+            `${orbiter.id.replaceAll("-", "")}DistanceFromParentKm`,
+            distanceFromParentKm.toFixed(3),
+          );
         }
 
         const discoveryPosition = sceneBodyPositions.get(DISCOVERY_ONE_BODY_ID);
@@ -6226,11 +6470,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
             discoveryRadial,
           ),
         );
-        container.dataset["discoveryOneDistanceFromIoKm"] = (
-          (discoveryPosition.distanceTo(ioPositionForDiscovery) *
-            ASTRONOMICAL_UNIT_M) /
-          1_000
-        ).toFixed(3);
+        setData(
+          container,
+          "discoveryOneDistanceFromIoKm",
+          (
+            (discoveryPosition.distanceTo(ioPositionForDiscovery) *
+              ASTRONOMICAL_UNIT_M) /
+            1_000
+          ).toFixed(3),
+        );
 
         for (const object of DEEP_SPACE_NINE_OBJECTS) {
           const group = deepSpaceNineGroups.get(object.id);
@@ -6266,12 +6514,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
               new Matrix4().makeBasis(relativeVelocity, normal, radial),
             );
           }
-          container.dataset[
-            `${object.id.replaceAll("-", "")}DistanceFromParentKm`
-          ] = (
-            (position.distanceTo(parentPosition) * ASTRONOMICAL_UNIT_M) /
-            1_000
-          ).toFixed(3);
+          setData(
+            container,
+            `${object.id.replaceAll("-", "")}DistanceFromParentKm`,
+            (
+              (position.distanceTo(parentPosition) * ASTRONOMICAL_UNIT_M) /
+              1_000
+            ).toFixed(3),
+          );
         }
 
         // The ISS state exists only inside its element window; the label pass
@@ -6307,11 +6557,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             new Matrix4().makeBasis(orbitNormal, zenith, alongTrack),
           );
         }
-        container.dataset["issEphemerisValid"] = String(
-          isIssEphemerisWithinValidity(current.timeSeconds),
+        setData(
+          container,
+          "issEphemerisValid",
+          String(isIssEphemerisWithinValidity(current.timeSeconds)),
         );
-        container.dataset["issEpochSimulationSeconds"] =
-          ISS_EPOCH_SIMULATION_SECONDS.toFixed(3);
+        setData(
+          container,
+          "issEpochSimulationSeconds",
+          ISS_EPOCH_SIMULATION_SECONDS.toFixed(3),
+        );
 
         const sunPositionForSpacecraft = sceneBodyPositions.get("sun");
         if (sunPositionForSpacecraft === undefined) {
@@ -6349,10 +6604,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
             .normalize();
           const datasetPrefix =
             probe.id === "voyager-1" ? "voyager1" : "voyager2";
-          container.dataset[`${datasetPrefix}AntennaEarthAlignment`] =
-            renderedBoresight.dot(earthDirection).toFixed(9);
+          setData(
+            container,
+            `${datasetPrefix}AntennaEarthAlignment`,
+            renderedBoresight.dot(earthDirection).toFixed(9),
+          );
         }
-        container.dataset["voyagerAntennaTarget"] = "earth";
+        setData(container, "voyagerAntennaTarget", "earth");
         for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
           const spacecraftPosition = sceneBodyPositions.get(spacecraft.id);
           const group = sourcedModelGroups.get(spacecraft.id);
@@ -6370,8 +6628,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
             group.lookAt(camera.position);
             group.rotateY(Math.PI * 0.62);
             group.rotateX(-0.16);
-            container.dataset["roadsterAttitude"] =
-              "camera-relative-presentation-only-no-physical-attitude-claim";
+            setData(
+              container,
+              "roadsterAttitude",
+              "camera-relative-presentation-only-no-physical-attitude-claim",
+            );
           } else {
             group.lookAt(sunPositionForSpacecraft);
           }
@@ -6400,10 +6661,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
           guide.material.color.setHex(isSelectedOrbit ? 0x8fc7f7 : 0x63819b);
           if (guide.line.visible) {
             visibleOrbitGuideCount += 1;
+            if (
+              orbitGuideSourceState !== undefined &&
+              orbitGuideComputedStates.get(bodyId) !== orbitGuideSourceState
+            ) {
+              updateOrbitGuide(bodyId, guide, orbitGuideSourceState);
+              setData(
+                container,
+                "orbitGuideUpdatedTimeSeconds",
+                orbitGuideSourceState.timeSeconds.toFixed(3),
+              );
+            }
           }
         }
-        container.dataset["orbitGuideCount"] = String(visibleOrbitGuideCount);
-        container.dataset["viewMode"] = viewModeRef.current;
+        setData(container, "orbitGuideCount", String(visibleOrbitGuideCount));
+        setData(container, "viewMode", viewModeRef.current);
 
         const earthState = bodyStateById(current, "earth");
         const sunState = bodyStateById(current, "sun");
@@ -6466,21 +6738,24 @@ float saturnRingTransmission(vec3 surfacePosition) {
               camera.position.distanceTo(localShadowPosition) <=
               localShadowRadiusAu * LOCAL_MODEL_SUNLIGHT_RANGE_RADII;
             localModelSunlight.intensity = localSunlightInRange
-              ? SUNLIGHT_INTENSITY_AT_1_AU /
+              ? SOLAR_IRRADIANCE_AT_1_AU /
                 Math.max(localDistanceAu * localDistanceAu, 0.0016)
               : 0;
             sunlight.intensity = localSunlightInRange
               ? 0
-              : SUNLIGHT_INTENSITY_AT_1_AU;
+              : SOLAR_IRRADIANCE_AT_1_AU;
             localModelSunlight.visible = true;
-            container.dataset["localShadowBody"] =
-              localShadowBodyId ?? "unavailable";
-            container.dataset["localShadowMap"] = "pcf-2048";
+            setData(
+              container,
+              "localShadowBody",
+              localShadowBodyId ?? "unavailable",
+            );
+            setData(container, "localShadowMap", "pcf-2048");
           } else {
             localModelSunlight.visible = false;
-            sunlight.intensity = SUNLIGHT_INTENSITY_AT_1_AU;
+            sunlight.intensity = SOLAR_IRRADIANCE_AT_1_AU;
             delete container.dataset["localShadowBody"];
-            container.dataset["localShadowMap"] = "inactive";
+            setData(container, "localShadowMap", "inactive");
           }
           const solarOccluderCandidates = majorBodySnapshot.bodies
             .filter((body) => body.id !== "sun")
@@ -6545,13 +6820,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
               uniforms.occluderRadiusAu.value[index] = selected?.radiusAu ?? 0;
             }
           }
-          container.dataset["solarOcclusionModel"] =
-            "all-major-bodies-finite-disc";
-          container.dataset["solarOcclusionReceiverCount"] = String(
-            solarOcclusionUniforms.length,
+          setData(
+            container,
+            "solarOcclusionModel",
+            "all-major-bodies-finite-disc",
           );
-          container.dataset["activeSolarOcclusionReceiverCount"] = String(
-            activeSolarOcclusionReceiverCount,
+          setData(
+            container,
+            "solarOcclusionReceiverCount",
+            String(solarOcclusionUniforms.length),
+          );
+          setData(
+            container,
+            "activeSolarOcclusionReceiverCount",
+            String(activeSolarOcclusionReceiverCount),
           );
           for (const [bodyId, atmosphereMaterial] of atmosphereMaterials) {
             const bodyState = bodyStateById(current, bodyId);
@@ -6710,21 +6992,53 @@ float saturnRingTransmission(vec3 surfacePosition) {
             visiblePlanetTrailCount += 1;
           }
         }
+        if (moonTrailGeometryStale && moonTrail.visible) {
+          writeTrailGeometry(
+            {
+              geometry: moonTrailGeometry,
+              positions: moonTrailPositions,
+              colors: moonTrailColors,
+              positionAttribute: moonTrailPositionAttribute,
+              colorAttribute: moonTrailColorAttribute,
+            },
+            moonTrailPoints,
+            trailFadeRef.current,
+            [0.87, 0.91, 0.96],
+          );
+          moonTrailGeometryStale = false;
+        }
+        if (planetTrailGeometryStale && visiblePlanetTrailCount > 0) {
+          for (const trail of planetTrails.values()) {
+            writeTrailGeometry(
+              trail,
+              trail.points,
+              trailFadeRef.current,
+              [0.47, 0.66, 0.83],
+            );
+          }
+          planetTrailGeometryStale = false;
+        }
         eclipticGrid.visible = showEclipticPlaneRef.current;
-        container.dataset["moonTrailPoints"] = String(moonTrailPoints.length);
-        container.dataset["moonTrailVisible"] = String(moonTrail.visible);
-        container.dataset["moonTrailFrame"] = referenceFrameRef.current;
-        container.dataset["referenceFrame"] = referenceFrameRef.current;
-        container.dataset["trailDurationSeconds"] = String(
-          trailDurationSecondsRef.current,
+        setData(container, "moonTrailPoints", String(moonTrailPoints.length));
+        setData(container, "moonTrailVisible", String(moonTrail.visible));
+        setData(container, "moonTrailFrame", referenceFrameRef.current);
+        setData(container, "referenceFrame", referenceFrameRef.current);
+        setData(
+          container,
+          "trailDurationSeconds",
+          String(trailDurationSecondsRef.current),
         );
-        container.dataset["trailFade"] = trailFadeRef.current.toFixed(2);
-        container.dataset["planetTrailPoints"] = String(
-          planetTrails.get("earth")?.points.length ?? 0,
+        setData(container, "trailFade", trailFadeRef.current.toFixed(2));
+        setData(
+          container,
+          "planetTrailPoints",
+          String(planetTrails.get("earth")?.points.length ?? 0),
         );
-        container.dataset["planetTrailCount"] = String(visiblePlanetTrailCount);
-        container.dataset["planetTrailsVisible"] = String(
-          visiblePlanetTrailCount > 0,
+        setData(container, "planetTrailCount", String(visiblePlanetTrailCount));
+        setData(
+          container,
+          "planetTrailsVisible",
+          String(visiblePlanetTrailCount > 0),
         );
 
         if (
@@ -6755,7 +7069,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               current,
             );
           }
-          container.dataset["resetViewToken"] = String(lastResetViewToken);
+          setData(container, "resetViewToken", String(lastResetViewToken));
         } else if (
           activeCameraTransition === undefined &&
           requestedFocusBodyId !== null
@@ -6815,12 +7129,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 controls.target.copy(targetPosition);
                 camera.up.copy(observerPose.up);
                 camera.lookAt(targetPosition);
-                container.dataset["cameraOrientation"] = "observer-facing";
-                container.dataset["cameraObserverBody"] = requestedFocusBodyId;
-                container.dataset["cameraTargetBody"] = requestedTargetBodyId;
-                container.dataset["focusDistanceAu"] = camera.position
-                  .distanceTo(targetPosition)
-                  .toFixed(8);
+                setData(container, "cameraOrientation", "observer-facing");
+                setData(container, "cameraObserverBody", requestedFocusBodyId);
+                setData(container, "cameraTargetBody", requestedTargetBodyId);
+                setData(
+                  container,
+                  "focusDistanceAu",
+                  camera.position.distanceTo(targetPosition).toFixed(8),
+                );
               } else if (orbitTrackingEnabled) {
                 const trackingDelta = focusPosition
                   .clone()
@@ -6856,12 +7172,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 camera.position.add(trackingDelta);
                 controls.target.copy(trackingTarget);
               }
-              container.dataset["cameraTracking"] =
+              setData(
+                container,
+                "cameraTracking",
                 requestedTargetBodyId !== undefined
                   ? "observer-and-target"
                   : continuouslyTracked
                     ? "continuous"
-                    : "position-only";
+                    : "position-only",
+              );
             }
           }
         } else if (
@@ -6881,9 +7200,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           }
         }
         lastFocusBodyId = requestedFocusBodyId;
-        container.dataset["focusBody"] = requestedFocusBodyId ?? "solar-system";
+        setData(container, "focusBody", requestedFocusBodyId ?? "solar-system");
       }
-      container.dataset["selectedBody"] = selectedBodyIdRef.current ?? "none";
+      setData(container, "selectedBody", selectedBodyIdRef.current ?? "none");
 
       const requestedCameraCommand = cameraNavigationCommandRef.current;
       if (
@@ -6911,7 +7230,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         lastCameraZoom = cameraZoomRef.current;
         camera.zoom = lastCameraZoom;
         camera.updateProjectionMatrix();
-        container.dataset["cameraZoom"] = lastCameraZoom.toFixed(2);
+        setData(container, "cameraZoom", lastCameraZoom.toFixed(2));
       }
 
       if (
@@ -7026,25 +7345,39 @@ float saturnRingTransmission(vec3 surfacePosition) {
           controls.target.copy(orbitTarget);
           camera.up.copy(orbitNormal);
           camera.lookAt(orbitTarget);
-          container.dataset["orbitView"] = "active";
-          container.dataset["orbitViewBody"] = requestedOrbitBodyId;
-          container.dataset["cameraTracking"] =
+          setData(container, "orbitView", "active");
+          setData(container, "orbitViewBody", requestedOrbitBodyId);
+          setData(
+            container,
+            "cameraTracking",
             requestedOrbitConfiguration.preset === "powered-hover"
               ? "powered-hover"
-              : "physical-circular-orbit";
-          container.dataset["orbitPreset"] = requestedOrbitConfiguration.preset;
-          container.dataset["orbitAltitudeM"] =
-            requestedOrbitConfiguration.altitudeM.toFixed(3);
-          container.dataset["orbitSpeedMps"] =
+              : "physical-circular-orbit",
+          );
+          setData(container, "orbitPreset", requestedOrbitConfiguration.preset);
+          setData(
+            container,
+            "orbitAltitudeM",
+            requestedOrbitConfiguration.altitudeM.toFixed(3),
+          );
+          setData(
+            container,
+            "orbitSpeedMps",
             requestedOrbitConfiguration.preset === "powered-hover"
               ? "0.000"
-              : circularOrbit.speedMps.toFixed(6);
-          container.dataset["orbitPeriodSeconds"] =
-            circularOrbit.periodSeconds.toFixed(6);
+              : circularOrbit.speedMps.toFixed(6),
+          );
+          setData(
+            container,
+            "orbitPeriodSeconds",
+            circularOrbit.periodSeconds.toFixed(6),
+          );
         } else {
-          container.dataset["orbitView"] = orbitViewEnabledRef.current
-            ? "waiting-for-arrival"
-            : "off";
+          setData(
+            container,
+            "orbitView",
+            orbitViewEnabledRef.current ? "waiting-for-arrival" : "off",
+          );
           delete container.dataset["orbitViewBody"];
           delete container.dataset["orbitPreset"];
           delete container.dataset["orbitAltitudeM"];
@@ -7053,7 +7386,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         }
         surfaceHorizon.visible = false;
         for (const label of compassLabels.values()) {
-          label.hidden = true;
+          setHidden(label, true);
         }
         for (const atmosphere of atmosphereMeshes.values()) {
           atmosphere.visible = true;
@@ -7157,77 +7490,126 @@ float saturnRingTransmission(vec3 surfacePosition) {
             projected.z <= 1 &&
             Math.abs(projected.x) <= 1 &&
             Math.abs(projected.y) <= 1;
-          label.hidden = !visible;
+          setHidden(label, !visible);
           if (visible) {
-            label.style.transform = `translate(${String(
-              ((projected.x + 1) * container.clientWidth) / 2,
-            )}px, ${String(
-              ((-projected.y + 1) * container.clientHeight) / 2,
-            )}px)`;
+            setTransform(
+              label,
+              ((projected.x + 1) * viewportWidth) / 2,
+              ((-projected.y + 1) * viewportHeight) / 2,
+            );
           }
         }
         for (const [bodyId, atmosphere] of atmosphereMeshes) {
           atmosphere.visible = bodyId !== surfaceConfiguration.bodyId;
         }
-        container.dataset["cameraTracking"] = "surface-observer";
-        container.dataset["cameraOrientation"] = "local-horizontal";
-        container.dataset["cameraObserverBody"] = surfaceConfiguration.bodyId;
-        container.dataset["cameraTargetBody"] =
-          surfaceConfiguration.targetBodyId;
-        container.dataset["cameraObserverAltitudeKm"] = "0.002";
-        container.dataset["surfaceObserverBody"] = surfaceConfiguration.bodyId;
-        container.dataset["surfaceObserverTarget"] =
-          surfaceConfiguration.targetBodyId;
-        container.dataset["surfaceObserverLatitudeDeg"] =
-          surfaceConfiguration.latitudeDeg.toFixed(6);
-        container.dataset["surfaceObserverLongitudeDeg"] =
-          surfaceConfiguration.longitudeDeg.toFixed(6);
-        container.dataset["surfaceFreeLook"] = String(surfaceFreeLook);
-        container.dataset["surfaceLookAzimuthDeg"] = (
-          surfaceFreeLook ? surfaceLookAzimuthDeg : observation.targetAzimuthDeg
-        ).toFixed(4);
-        container.dataset["surfaceLookAltitudeDeg"] = (
-          surfaceFreeLook
+        setData(container, "cameraTracking", "surface-observer");
+        setData(container, "cameraOrientation", "local-horizontal");
+        setData(container, "cameraObserverBody", surfaceConfiguration.bodyId);
+        setData(
+          container,
+          "cameraTargetBody",
+          surfaceConfiguration.targetBodyId,
+        );
+        setData(container, "cameraObserverAltitudeKm", "0.002");
+        setData(container, "surfaceObserverBody", surfaceConfiguration.bodyId);
+        setData(
+          container,
+          "surfaceObserverTarget",
+          surfaceConfiguration.targetBodyId,
+        );
+        setData(
+          container,
+          "surfaceObserverLatitudeDeg",
+          surfaceConfiguration.latitudeDeg.toFixed(6),
+        );
+        setData(
+          container,
+          "surfaceObserverLongitudeDeg",
+          surfaceConfiguration.longitudeDeg.toFixed(6),
+        );
+        setData(container, "surfaceFreeLook", String(surfaceFreeLook));
+        setData(
+          container,
+          "surfaceLookAzimuthDeg",
+          (surfaceFreeLook
+            ? surfaceLookAzimuthDeg
+            : observation.targetAzimuthDeg
+          ).toFixed(4),
+        );
+        setData(
+          container,
+          "surfaceLookAltitudeDeg",
+          (surfaceFreeLook
             ? surfaceLookAltitudeDeg
             : observation.targetAltitudeDeg
-        ).toFixed(4);
-        container.dataset["surfaceObserverPosition"] = [
-          camera.position.x,
-          camera.position.y,
-          camera.position.z,
-        ]
-          .map((value) => value.toFixed(12))
-          .join(",");
-        container.dataset["surfaceTargetAltitudeDeg"] =
-          observation.targetAltitudeDeg.toFixed(6);
-        container.dataset["surfaceTargetAzimuthDeg"] =
-          observation.targetAzimuthDeg.toFixed(6);
-        container.dataset["surfaceTargetAngularDiameterDeg"] =
-          observation.targetAngularDiameterDeg.toFixed(9);
-        container.dataset["surfaceLocalSolarTimeHours"] =
-          observation.localSolarTimeHours.toFixed(9);
+          ).toFixed(4),
+        );
+        setData(
+          container,
+          "surfaceObserverPosition",
+          [camera.position.x, camera.position.y, camera.position.z]
+            .map((value) => value.toFixed(12))
+            .join(","),
+        );
+        setData(
+          container,
+          "surfaceTargetAltitudeDeg",
+          observation.targetAltitudeDeg.toFixed(6),
+        );
+        setData(
+          container,
+          "surfaceTargetAzimuthDeg",
+          observation.targetAzimuthDeg.toFixed(6),
+        );
+        setData(
+          container,
+          "surfaceTargetAngularDiameterDeg",
+          observation.targetAngularDiameterDeg.toFixed(9),
+        );
+        setData(
+          container,
+          "surfaceLocalSolarTimeHours",
+          observation.localSolarTimeHours.toFixed(9),
+        );
         if (observation.solarEclipse === undefined) {
           delete container.dataset["solarEclipseMoonDiameterDeg"];
           delete container.dataset["solarEclipseSunDiameterDeg"];
           delete container.dataset["solarEclipseSeparationDeg"];
           delete container.dataset["solarEclipseObscuration"];
         } else {
-          container.dataset["solarEclipseMoonDiameterDeg"] =
-            observation.solarEclipse.moonAngularDiameterDeg.toFixed(9);
-          container.dataset["solarEclipseSunDiameterDeg"] =
-            observation.solarEclipse.sunAngularDiameterDeg.toFixed(9);
-          container.dataset["solarEclipseSeparationDeg"] =
-            observation.solarEclipse.centerSeparationDeg.toFixed(9);
-          container.dataset["solarEclipseObscuration"] =
-            observation.solarEclipse.obscurationFraction.toFixed(9);
+          setData(
+            container,
+            "solarEclipseMoonDiameterDeg",
+            observation.solarEclipse.moonAngularDiameterDeg.toFixed(9),
+          );
+          setData(
+            container,
+            "solarEclipseSunDiameterDeg",
+            observation.solarEclipse.sunAngularDiameterDeg.toFixed(9),
+          );
+          setData(
+            container,
+            "solarEclipseSeparationDeg",
+            observation.solarEclipse.centerSeparationDeg.toFixed(9),
+          );
+          setData(
+            container,
+            "solarEclipseObscuration",
+            observation.solarEclipse.obscurationFraction.toFixed(9),
+          );
         }
-        container.dataset["surfaceHorizonModel"] =
-          "mean-radius-geometric-no-refraction";
-        container.dataset["surfaceHorizonVisible"] = "true";
+        setData(
+          container,
+          "surfaceHorizonModel",
+          "mean-radius-geometric-no-refraction",
+        );
+        setData(container, "surfaceHorizonVisible", "true");
       }
-      container.dataset["cameraDistanceAu"] = camera.position
-        .distanceTo(controls.target)
-        .toFixed(12);
+      setData(
+        container,
+        "cameraDistanceAu",
+        camera.position.distanceTo(controls.target).toFixed(12),
+      );
       const currentViewDistanceAu = camera.position.distanceTo(controls.target);
       const effectiveViewZoom =
         currentViewDistanceAu > 0
@@ -7241,7 +7623,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           Math.abs(Math.log2(reportedViewZoom / lastReportedViewZoom)) > 0.002)
       ) {
         lastReportedViewZoom = reportedViewZoom;
-        container.dataset["viewMagnification"] = reportedViewZoom.toFixed(4);
+        setData(container, "viewMagnification", reportedViewZoom.toFixed(4));
         onViewZoomChangeRef.current(reportedViewZoom);
       }
       stars.position.copy(camera.position);
@@ -7249,7 +7631,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       camera.updateMatrixWorld();
       for (const { element, direction } of zodiacLabels) {
         if (!zodiacGroup.visible) {
-          element.hidden = true;
+          setHidden(element, true);
           continue;
         }
         const projected = camera.position
@@ -7261,17 +7643,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
           projected.z <= 1 &&
           Math.abs(projected.x) <= 0.94 &&
           Math.abs(projected.y) <= 0.94;
-        element.hidden = !visible;
+        setHidden(element, !visible);
         if (visible) {
-          element.style.transform = `translate(${String(
-            ((projected.x + 1) * container.clientWidth) / 2,
-          )}px, ${String(
-            ((-projected.y + 1) * container.clientHeight) / 2,
-          )}px)`;
+          setTransform(
+            element,
+            ((projected.x + 1) * viewportWidth) / 2,
+            ((-projected.y + 1) * viewportHeight) / 2,
+          );
         }
       }
-      container.dataset["zodiacVisibleLabelCount"] = String(
-        zodiacLabels.filter(({ element }) => !element.hidden).length,
+      setData(
+        container,
+        "zodiacVisibleLabelCount",
+        String(zodiacLabels.filter(({ element }) => !element.hidden).length),
       );
       let brightVisibleStarFound = false;
       if (stars.visible) {
@@ -7301,15 +7685,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
               `Bright Hipparcos diagnostic index ${String(starIndex)} is invalid`,
             );
           }
-          container.dataset["brightVisibleStarHipId"] = String(star.hipId);
-          container.dataset["brightVisibleStarScreenX"] = (
-            ((projected.x + 1) * container.clientWidth) /
-            2
-          ).toFixed(3);
-          container.dataset["brightVisibleStarScreenY"] = (
-            ((-projected.y + 1) * container.clientHeight) /
-            2
-          ).toFixed(3);
+          setData(container, "brightVisibleStarHipId", String(star.hipId));
+          setData(
+            container,
+            "brightVisibleStarScreenX",
+            (((projected.x + 1) * viewportWidth) / 2).toFixed(3),
+          );
+          setData(
+            container,
+            "brightVisibleStarScreenY",
+            (((-projected.y + 1) * viewportHeight) / 2).toFixed(3),
+          );
           brightVisibleStarFound = true;
           break;
         }
@@ -7339,10 +7725,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
       outerOortBoundary.visible = showOortCloud;
       oortCloud.visible = showOortCloud;
       alphaMarker.visible = showAlphaCentauri;
-      container.dataset["deepSpaceLayer"] = "same-three-scene";
-      container.dataset["heliosphereVisible"] = String(showHeliosphere);
-      container.dataset["oortCloudVisible"] = String(showOortCloud);
-      container.dataset["alphaCentauriVisible"] = String(showAlphaCentauri);
+      setData(container, "deepSpaceLayer", "same-three-scene");
+      setData(container, "heliosphereVisible", String(showHeliosphere));
+      setData(container, "oortCloudVisible", String(showOortCloud));
+      setData(container, "alphaCentauriVisible", String(showAlphaCentauri));
       const sunToCameraDirection = camera.position
         .clone()
         .sub(liveSunPosition)
@@ -7375,7 +7761,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ][index];
         const position = deepLabelPositions[index];
         if (!visible || position === undefined) {
-          label.hidden = true;
+          setHidden(label, true);
           continue;
         }
         const projected = position.clone().project(camera);
@@ -7386,17 +7772,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
           Math.abs(projected.y) <= 1;
         const keepVisibleForAuthoredScene =
           activeDeepPresentation === authoredPresentation;
-        label.hidden = !inView && !keepVisibleForAuthoredScene;
+        setHidden(label, !inView && !keepVisibleForAuthoredScene);
         if (inView) {
-          label.style.transform = `translate(${String(
-            ((projected.x + 1) * container.clientWidth) / 2,
-          )}px, ${String(
-            ((-projected.y + 1) * container.clientHeight) / 2,
-          )}px)`;
+          setTransform(
+            label,
+            ((projected.x + 1) * viewportWidth) / 2,
+            ((-projected.y + 1) * viewportHeight) / 2,
+          );
         } else if (keepVisibleForAuthoredScene) {
-          label.style.transform = `translate(${String(
-            container.clientWidth * 0.66,
-          )}px, ${String(container.clientHeight * 0.2)}px)`;
+          setTransform(label, viewportWidth * 0.66, viewportHeight * 0.2);
         }
       }
       const projectedDeepSun = liveSunPosition.clone().project(camera);
@@ -7406,16 +7790,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
         projectedDeepSun.z <= 1 &&
         Math.abs(projectedDeepSun.x) <= 1 &&
         Math.abs(projectedDeepSun.y) <= 1;
-      deepSunLabel.hidden = !deepSunInView;
+      setHidden(deepSunLabel, !deepSunInView);
       if (deepSunInView) {
-        deepSunLabel.style.transform = `translate(${String(
-          ((projectedDeepSun.x + 1) * container.clientWidth) / 2,
-        )}px, ${String(
-          ((-projectedDeepSun.y + 1) * container.clientHeight) / 2,
-        )}px)`;
+        setTransform(
+          deepSunLabel,
+          ((projectedDeepSun.x + 1) * viewportWidth) / 2,
+          ((-projectedDeepSun.y + 1) * viewportHeight) / 2,
+        );
       }
 
-      navigationMap.hidden = viewModeRef.current !== "reality";
+      setHidden(navigationMap, viewModeRef.current !== "reality");
       if (
         !navigationMap.hidden &&
         frameRenderStartedAtMs - lastNavigationMapUpdateAt >= 100
@@ -7607,21 +7991,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
           lastNavigationFocusBodyId = focusBodyIdRef.current;
         }
         navigationMapScale.textContent = `Radius ${formatTacticalDistance(mapScaleAu)} · white arrow is your view`;
-        navigationMap.dataset["scaleAu"] = mapScaleAu.toFixed(4);
-        navigationMap.dataset["rangeMode"] = selectedMapRange;
-        navigationMap.dataset["destination"] =
-          navigationDestinationSelect.value;
-        navigationMap.dataset["plottedTargetCount"] = String(
-          navigationMapHits.length,
+        setData(navigationMap, "scaleAu", mapScaleAu.toFixed(4));
+        setData(navigationMap, "rangeMode", selectedMapRange);
+        setData(
+          navigationMap,
+          "destination",
+          navigationDestinationSelect.value,
         );
-        navigationMap.dataset["plottedBodies"] = navigationMapHits
-          .map((hit) => hit.bodyId)
-          .join(" ");
-        navigationMap.dataset["observerBody"] = observerBodyId ?? "camera";
-        navigationMap.dataset["viewBearingDeg"] = (
-          (Math.atan2(directionX, -directionY) * 180) / Math.PI +
-          360
-        ).toFixed(2);
+        setData(
+          navigationMap,
+          "plottedTargetCount",
+          String(navigationMapHits.length),
+        );
+        setData(
+          navigationMap,
+          "plottedBodies",
+          navigationMapHits.map((hit) => hit.bodyId).join(" "),
+        );
+        setData(navigationMap, "observerBody", observerBodyId ?? "camera");
+        setData(
+          navigationMap,
+          "viewBearingDeg",
+          ((Math.atan2(directionX, -directionY) * 180) / Math.PI + 360).toFixed(
+            2,
+          ),
+        );
       }
       if (activeCameraTransition === undefined) {
         delete container.dataset["cameraTransitionAnchorScreenX"];
@@ -7630,14 +8024,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const projectedTransitionAnchor = controls.target
           .clone()
           .project(camera);
-        container.dataset["cameraTransitionAnchorScreenX"] = (
-          ((projectedTransitionAnchor.x + 1) * container.clientWidth) /
-          2
-        ).toFixed(3);
-        container.dataset["cameraTransitionAnchorScreenY"] = (
-          ((-projectedTransitionAnchor.y + 1) * container.clientHeight) /
-          2
-        ).toFixed(3);
+        setData(
+          container,
+          "cameraTransitionAnchorScreenX",
+          (((projectedTransitionAnchor.x + 1) * viewportWidth) / 2).toFixed(3),
+        );
+        setData(
+          container,
+          "cameraTransitionAnchorScreenY",
+          (((-projectedTransitionAnchor.y + 1) * viewportHeight) / 2).toFixed(
+            3,
+          ),
+        );
       }
       const activeCameraTargetBodyId =
         surfaceObserverRef.current?.targetBodyId ??
@@ -7653,32 +8051,38 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const projectedTarget = scenePosition(
           activeCameraTargetState.positionM,
         ).project(camera);
-        container.dataset["cameraTargetScreenX"] = (
-          ((projectedTarget.x + 1) * container.clientWidth) /
-          2
-        ).toFixed(3);
-        container.dataset["cameraTargetScreenY"] = (
-          ((-projectedTarget.y + 1) * container.clientHeight) /
-          2
-        ).toFixed(3);
+        setData(
+          container,
+          "cameraTargetScreenX",
+          (((projectedTarget.x + 1) * viewportWidth) / 2).toFixed(3),
+        );
+        setData(
+          container,
+          "cameraTargetScreenY",
+          (((-projectedTarget.y + 1) * viewportHeight) / 2).toFixed(3),
+        );
       }
-      container.dataset["cameraEclipticNorthDot"] = camera.position
-        .clone()
-        .sub(controls.target)
-        .normalize()
-        .dot(ECLIPTIC_NORTH)
-        .toFixed(6);
+      setData(
+        container,
+        "cameraEclipticNorthDot",
+        camera.position
+          .clone()
+          .sub(controls.target)
+          .normalize()
+          .dot(ECLIPTIC_NORTH)
+          .toFixed(6),
+      );
       const cameraDirection = camera.position
         .clone()
         .sub(controls.target)
         .normalize();
-      container.dataset["cameraDirection"] = [
-        cameraDirection.x,
-        cameraDirection.y,
-        cameraDirection.z,
-      ]
-        .map((value) => value.toFixed(8))
-        .join(",");
+      setData(
+        container,
+        "cameraDirection",
+        [cameraDirection.x, cameraDirection.y, cameraDirection.z]
+          .map((value) => value.toFixed(8))
+          .join(","),
+      );
       const illuminatedFocusBodyId = focusBodyIdRef.current;
       const illuminatedFocusState =
         current === undefined ||
@@ -7702,16 +8106,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
           .clone()
           .sub(focusPosition)
           .normalize();
-        container.dataset["focusedSunCameraAlignment"] = focusToSun
-          .dot(focusToCamera)
-          .toFixed(6);
+        setData(
+          container,
+          "focusedSunCameraAlignment",
+          focusToSun.dot(focusToCamera).toFixed(6),
+        );
       }
 
       if (renderNowMs - lastSunGuideUpdateAt >= SUN_GUIDE_UPDATE_INTERVAL_MS) {
         lastSunGuideUpdateAt = renderNowMs;
         wayfinderLabelRectangles = [];
         const activeWayfinderMode = wayfinderModeRef.current;
-        container.dataset["wayfinderMode"] = activeWayfinderMode;
+        setData(container, "wayfinderMode", activeWayfinderMode);
         const wayfinderVisuals = [
           {
             line: sunGuideLine,
@@ -7725,14 +8131,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           for (const visual of wayfinderVisuals) {
             visual.line.style.display = "none";
             visual.endpoint.style.display = "none";
-            visual.label.hidden = true;
+            setHidden(visual.label, true);
             delete visual.label.dataset["targetBodyId"];
           }
-          container.dataset["sunGuideVisible"] = "false";
-          container.dataset["sunGuideLineVisible"] = "false";
-          container.dataset["wayfinderCount"] = "0";
-          container.dataset["wayfinderPlanetCount"] = "0";
-          container.dataset["wayfinderTargets"] = "";
+          setData(container, "sunGuideVisible", "false");
+          setData(container, "sunGuideLineVisible", "false");
+          setData(container, "wayfinderCount", "0");
+          setData(container, "wayfinderPlanetCount", "0");
+          setData(container, "wayfinderTargets", "");
         };
         const wayfinderFocusId = focusBodyIdRef.current;
         const wayfinderFocusState =
@@ -7750,29 +8156,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ) {
           hideAllWayfinders();
         } else {
-          const viewportWidth = container.clientWidth;
-          const viewportHeight = container.clientHeight;
-          // Guides stay out from under the bottom panels, which float over
-          // the scene and draw above the guide labels: the time controls and
-          // the short facts card. Beside a panel the sky stays open down to
-          // the bottom edge. A panel never takes more than the lower half of
-          // the scene.
-          const sceneBox = container.getBoundingClientRect();
-          const guideObstacles = [
-            ...(container.parentElement?.querySelectorAll(
-              ".timeline-dock, .selected-body-detail.is-collapsed",
-            ) ?? []),
-          ]
-            .map((panel) => panel.getBoundingClientRect())
-            .filter((box) => box.height > 0)
-            .map((box) => ({
-              left: box.left - sceneBox.left,
-              right: box.right - sceneBox.left,
-              top: Math.min(
-                viewportHeight,
-                Math.max(viewportHeight / 2, box.top - sceneBox.top),
-              ),
-            }));
           const guideHeight = Math.min(
             viewportHeight,
             ...guideObstacles.map((obstacle) => obstacle.top),
@@ -7828,10 +8211,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             delete container.dataset["focusedTargetScreenX"];
             delete container.dataset["focusedTargetScreenY"];
           } else {
-            container.dataset["focusedTargetScreenX"] =
-              focusScreen.x.toFixed(3);
-            container.dataset["focusedTargetScreenY"] =
-              focusScreen.y.toFixed(3);
+            setData(
+              container,
+              "focusedTargetScreenX",
+              focusScreen.x.toFixed(3),
+            );
+            setData(
+              container,
+              "focusedTargetScreenY",
+              focusScreen.y.toFixed(3),
+            );
           }
           const guideOrigin = {
             x: Math.min(
@@ -7862,7 +8251,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             if (targetBodyId === undefined) {
               visual.line.style.display = "none";
               visual.endpoint.style.display = "none";
-              visual.label.hidden = true;
+              setHidden(visual.label, true);
               delete visual.label.dataset["targetBodyId"];
               continue;
             }
@@ -7932,29 +8321,29 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const hasLine = originBodyId !== targetBodyId;
             visual.line.style.display = hasLine ? "" : "none";
             if (hasLine) {
-              visual.line.setAttribute("x1", String(guideOrigin.x));
-              visual.line.setAttribute("y1", String(guideOrigin.y));
-              visual.line.setAttribute("x2", String(endpoint.x));
-              visual.line.setAttribute("y2", String(endpoint.y));
+              setAttr(visual.line, "x1", String(guideOrigin.x));
+              setAttr(visual.line, "y1", String(guideOrigin.y));
+              setAttr(visual.line, "x2", String(endpoint.x));
+              setAttr(visual.line, "y2", String(endpoint.y));
             }
             visual.endpoint.style.display = "";
-            visual.endpoint.setAttribute("cx", String(endpoint.x));
-            visual.endpoint.setAttribute("cy", String(endpoint.y));
+            setAttr(visual.endpoint, "cx", String(endpoint.x));
+            setAttr(visual.endpoint, "cy", String(endpoint.y));
             const distanceAu = originPosition.distanceTo(targetPosition);
             const distanceLabel = hasLine
               ? ` · ${formatTacticalDistance(distanceAu)}`
               : "";
             const locationLabel = location === "behind" ? " behind view" : "";
             visual.label.textContent = `${targetDefinition.name}${locationLabel}${distanceLabel}`;
-            visual.label.setAttribute("aria-label", targetDefinition.name);
+            setAttr(visual.label, "aria-label", targetDefinition.name);
             visual.label.title = LABEL_TITLE;
             const previousTargetBodyId = visual.label.dataset["targetBodyId"];
             const previousLocation = visual.label.dataset["location"];
-            visual.label.dataset["targetBodyId"] = targetBodyId;
-            visual.label.dataset["distanceAu"] = distanceAu.toFixed(8);
-            visual.label.dataset["location"] = location;
+            setData(visual.label, "targetBodyId", targetBodyId);
+            setData(visual.label, "distanceAu", distanceAu.toFixed(8));
+            setData(visual.label, "location", location);
             showLabelSelection(visual.label, targetBodyId);
-            visual.label.hidden = false;
+            setHidden(visual.label, false);
             const labelBounds = visual.label.getBoundingClientRect();
             const labelWidth = labelBounds.width;
             if (labelWidth <= 0) {
@@ -7990,9 +8379,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
               Math.hypot(labelX - previousLabelX, labelY - previousLabelY) >=
                 repositionThresholdPx
             ) {
-              visual.label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
-              visual.label.dataset["positionX"] = labelX.toFixed(3);
-              visual.label.dataset["positionY"] = labelY.toFixed(3);
+              setTransform(visual.label, labelX, labelY);
+              setData(visual.label, "positionX", labelX.toFixed(3));
+              setData(visual.label, "positionY", labelY.toFixed(3));
             }
             const placedX = Number(visual.label.dataset["positionX"]);
             const placedY = Number(visual.label.dataset["positionY"]);
@@ -8009,21 +8398,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
             }
           }
           sunGuideOverlay.style.display = "";
-          container.dataset["sunGuideVisible"] = "true";
-          container.dataset["sunGuideLocation"] = sunLocation;
-          container.dataset["sunGuideDistanceAu"] = sunDistanceAu.toFixed(8);
-          container.dataset["sunGuideLineVisible"] = String(sunLineVisible);
-          container.dataset["sunGuideEndpointX"] =
-            sunGuideEndpoint.getAttribute("cx") ?? "unavailable";
-          container.dataset["sunGuideEndpointY"] =
-            sunGuideEndpoint.getAttribute("cy") ?? "unavailable";
-          container.dataset["wayfinderCount"] = String(
-            wayfinderTargetIds.length,
+          setData(container, "sunGuideVisible", "true");
+          setData(container, "sunGuideLocation", sunLocation);
+          setData(container, "sunGuideDistanceAu", sunDistanceAu.toFixed(8));
+          setData(container, "sunGuideLineVisible", String(sunLineVisible));
+          setData(
+            container,
+            "sunGuideEndpointX",
+            sunGuideEndpoint.getAttribute("cx") ?? "unavailable",
           );
-          container.dataset["wayfinderPlanetCount"] = String(
-            planetTargets.length,
+          setData(
+            container,
+            "sunGuideEndpointY",
+            sunGuideEndpoint.getAttribute("cy") ?? "unavailable",
           );
-          container.dataset["wayfinderTargets"] = wayfinderTargetIds.join(",");
+          setData(
+            container,
+            "wayfinderCount",
+            String(wayfinderTargetIds.length),
+          );
+          setData(
+            container,
+            "wayfinderPlanetCount",
+            String(planetTargets.length),
+          );
+          setData(container, "wayfinderTargets", wayfinderTargetIds.join(","));
         }
       }
 
@@ -8039,9 +8438,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           (current !== undefined &&
             isIssEphemerisWithinValidity(current.timeSeconds)));
       tacticalOverlay.classList.toggle("is-visible", tacticalVisible);
-      focusBracket.hidden = !tacticalVisible;
-      rangeLegend.hidden = !tacticalVisible;
-      container.dataset["tacticalOverlayVisible"] = String(tacticalVisible);
+      setHidden(focusBracket, !tacticalVisible);
+      setHidden(rangeLegend, !tacticalVisible);
+      setData(container, "tacticalOverlayVisible", String(tacticalVisible));
       if (
         tacticalVisible &&
         current !== undefined &&
@@ -8050,15 +8449,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const focusPosition = scenePosition(tacticalFocusState.positionM);
         const focusProjected = focusPosition.clone().project(camera);
         const focusScreen = {
-          x: ((focusProjected.x + 1) * container.clientWidth) / 2,
-          y: ((-focusProjected.y + 1) * container.clientHeight) / 2,
+          x: ((focusProjected.x + 1) * viewportWidth) / 2,
+          y: ((-focusProjected.y + 1) * viewportHeight) / 2,
         };
-        focusBracket.style.transform = `translate(${String(focusScreen.x)}px, ${String(focusScreen.y)}px)`;
+        setTransform(focusBracket, focusScreen.x, focusScreen.y);
         const cameraDistance = camera.position.distanceTo(focusPosition);
         const worldHeight =
           (2 * cameraDistance * Math.tan((camera.fov * Math.PI) / 360)) /
           camera.zoom;
-        const auPerPixel = worldHeight / Math.max(1, container.clientHeight);
+        const auPerPixel = worldHeight / Math.max(1, viewportHeight);
         const desiredRingAu = Math.max(auPerPixel * 70, 1e-9);
         const magnitude = 10 ** Math.floor(Math.log10(desiredRingAu));
         const normalized = desiredRingAu / magnitude;
@@ -8067,16 +8466,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const ringStepAu = niceMultiplier * magnitude;
         for (const [index, ring] of rangeRings.entries()) {
           const radiusPixels = (ringStepAu * (index + 1)) / auPerPixel;
-          ring.setAttribute("cx", String(focusScreen.x));
-          ring.setAttribute("cy", String(focusScreen.y));
-          ring.setAttribute("r", String(radiusPixels));
+          setAttr(ring, "cx", String(focusScreen.x));
+          setAttr(ring, "cy", String(focusScreen.y));
+          setAttr(ring, "r", String(radiusPixels));
         }
         const outerRingRadiusPixels =
           (ringStepAu * rangeRings.length) / auPerPixel;
         rangeLegend.textContent = formatTacticalDistance(
           ringStepAu * rangeRings.length,
         );
-        rangeLegend.style.transform = `translate(${String(focusScreen.x + outerRingRadiusPixels)}px, ${String(focusScreen.y)}px)`;
+        setTransform(
+          rangeLegend,
+          focusScreen.x + outerRingRadiusPixels,
+          focusScreen.y,
+        );
 
         const setLine = (
           line: SVGLineElement,
@@ -8088,10 +8491,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           if (!visible) {
             return;
           }
-          line.setAttribute("x1", String(from.x));
-          line.setAttribute("y1", String(from.y));
-          line.setAttribute("x2", String(to.x));
-          line.setAttribute("y2", String(to.y));
+          setAttr(line, "x1", String(from.x));
+          setAttr(line, "y1", String(from.y));
+          setAttr(line, "x2", String(to.x));
+          setAttr(line, "y2", String(to.y));
         };
         const tacticalParentId = parentBodyId(tacticalFocusId);
         const tacticalParentState =
@@ -8106,8 +8509,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             tacticalParentState.positionM,
           ).project(camera);
           const parentScreen = {
-            x: ((parentProjected.x + 1) * container.clientWidth) / 2,
-            y: ((-parentProjected.y + 1) * container.clientHeight) / 2,
+            x: ((parentProjected.x + 1) * viewportWidth) / 2,
+            y: ((-parentProjected.y + 1) * viewportHeight) / 2,
           };
           setLine(parentConnection, focusScreen, parentScreen, true);
           const relativeVelocity = icrfToScene({
@@ -8129,8 +8532,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             velocityVector,
             focusScreen,
             {
-              x: ((velocityProjected.x + 1) * container.clientWidth) / 2,
-              y: ((-velocityProjected.y + 1) * container.clientHeight) / 2,
+              x: ((velocityProjected.x + 1) * viewportWidth) / 2,
+              y: ((-velocityProjected.y + 1) * viewportHeight) / 2,
             },
             true,
           );
@@ -8152,8 +8555,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             planeDropLine,
             focusScreen,
             {
-              x: ((projectedOnPlane.x + 1) * container.clientWidth) / 2,
-              y: ((-projectedOnPlane.y + 1) * container.clientHeight) / 2,
+              x: ((projectedOnPlane.x + 1) * viewportWidth) / 2,
+              y: ((-projectedOnPlane.y + 1) * viewportHeight) / 2,
             },
             true,
           );
@@ -8211,7 +8614,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
                       : semanticFocusDefinition.type === "moon"
                         ? "moon-system"
                         : "planetary-system";
-      container.dataset["semanticZoomLevel"] = semanticZoomLevel;
+      setData(container, "semanticZoomLevel", semanticZoomLevel);
       if (semanticZoomLevel !== lastSemanticZoomLevel) {
         lastSemanticZoomLevel = semanticZoomLevel;
         onSemanticZoomChange(semanticZoomLevel);
@@ -8235,10 +8638,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           // origin, so draw nothing and request no surface map until the
           // bodies have their real places.
           mesh.visible = false;
-          label.hidden = true;
-          label.dataset["bodyRendered"] = "false";
+          setHidden(label, true);
+          setData(label, "bodyRendered", "false");
           if (marker !== undefined) {
-            marker.hidden = true;
+            setHidden(marker, true);
           }
           continue;
         }
@@ -8246,10 +8649,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const cameraDistance = camera.position.distanceTo(mesh.position);
         const radiusPixels =
           (mesh.scale.x / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
-        label.dataset["radiusPixels"] = radiusPixels.toFixed(3);
+        setData(label, "radiusPixels", radiusPixels.toFixed(3));
         const bodyLayerVisible = isMajorBodyVisible(
           body.type,
           currentVisibility,
@@ -8260,21 +8662,23 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ? !orreryHiddenBodyIds.has(body.id)
             : isPhysicalBodyResolvable(radiusPixels));
         mesh.visible = bodyRendered;
-        label.dataset["bodyRendered"] = String(bodyRendered);
+        setData(label, "bodyRendered", String(bodyRendered));
         const isInCameraFrustum =
           projected.z >= -1 &&
           projected.z <= 1 &&
           Math.abs(projected.x) <= 1 &&
           Math.abs(projected.y) <= 1;
-        label.dataset["screenX"] = (
-          ((projected.x + 1) * container.clientWidth) /
-          2
-        ).toFixed(3);
-        label.dataset["screenY"] = (
-          ((-projected.y + 1) * container.clientHeight) /
-          2
-        ).toFixed(3);
-        label.dataset["inCameraFrustum"] = String(isInCameraFrustum);
+        setData(
+          label,
+          "screenX",
+          (((projected.x + 1) * viewportWidth) / 2).toFixed(3),
+        );
+        setData(
+          label,
+          "screenY",
+          (((-projected.y + 1) * viewportHeight) / 2).toFixed(3),
+        );
+        setData(label, "inCameraFrustum", String(isInCameraFrustum));
         const isOverviewPlanet =
           (focusBodyIdRef.current === null ||
             focusBodyIdRef.current === "sun") &&
@@ -8301,9 +8705,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   (focusedParentId !== undefined &&
                     bodyParentId === focusedParentId)
                 : body.id === focusedBodyId);
-        const projectedLabelX = ((projected.x + 1) * container.clientWidth) / 2;
-        const projectedLabelY =
-          ((-projected.y + 1) * container.clientHeight) / 2;
+        const projectedLabelX = ((projected.x + 1) * viewportWidth) / 2;
+        const projectedLabelY = ((-projected.y + 1) * viewportHeight) / 2;
         const placement = placeBodyLabel({
           name: body.name,
           role: isCameraTarget
@@ -8314,8 +8717,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
           projectedX: projectedLabelX,
           projectedY: projectedLabelY,
           fontPx: labelFontPx,
-          viewportWidth: container.clientWidth,
-          viewportHeight: container.clientHeight,
+          viewportWidth,
+          viewportHeight,
           guideRectangles: wayfinderLabelRectangles,
           bodyRectangles: bodyLabelRectangles,
         });
@@ -8348,7 +8751,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ) {
           ensureSurfaceAsset(body.id);
         }
-        label.hidden = !labelVisible;
+        setHidden(label, !labelVisible);
         label.classList.toggle("is-bracket", viewModeRef.current === "orrery");
         showLabelSelection(label, body.id);
         label.classList.toggle("is-camera-target", isCameraTarget);
@@ -8364,14 +8767,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (labelVisible) {
           visibleLabelCount += 1;
           bodyLabelRectangles.push(placement.rectangle);
-          label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
+          setTransform(label, labelX, labelY);
           if (body.id === "earth" || body.id === "moon") {
-            container.dataset[
-              body.id === "earth" ? "earthScreenX" : "moonScreenX"
-            ] = projectedLabelX.toFixed(3);
-            container.dataset[
-              body.id === "earth" ? "earthScreenY" : "moonScreenY"
-            ] = projectedLabelY.toFixed(3);
+            setData(
+              container,
+              body.id === "earth" ? "earthScreenX" : "moonScreenX",
+              projectedLabelX.toFixed(3),
+            );
+            setData(
+              container,
+              body.id === "earth" ? "earthScreenY" : "moonScreenY",
+              projectedLabelY.toFixed(3),
+            );
           }
         }
         if (marker !== undefined) {
@@ -8380,14 +8787,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
             mesh.visible &&
             isInCameraFrustum &&
             radiusPixels < 3;
-          marker.hidden = !markerVisible;
+          setHidden(marker, !markerVisible);
           if (markerVisible) {
             visibleOrreryMarkerCount += 1;
             marker.classList.toggle(
               "is-selected",
               body.id === selectedBodyIdRef.current,
             );
-            marker.style.transform = `translate(${String(projectedLabelX)}px, ${String(projectedLabelY)}px)`;
+            setTransform(marker, projectedLabelX, projectedLabelY);
           }
         }
       }
@@ -8402,8 +8809,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           JOVIAN_MONOLITH_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8426,15 +8832,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
           JOVIAN_MONOLITH_BODY_ID,
           JOVIAN_MONOLITH_NAME,
         );
-        monolithLabel.hidden = !labelVisible;
+        setHidden(monolithLabel, !labelVisible);
         showLabelSelection(monolithLabel, JOVIAN_MONOLITH_BODY_ID);
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
-        monolithLabel.dataset["screenX"] = screenX.toFixed(3);
-        monolithLabel.dataset["screenY"] = screenY.toFixed(3);
-        monolithLabel.dataset["radiusPixels"] = radiusPixels.toFixed(3);
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
+        setData(monolithLabel, "screenX", screenX.toFixed(3));
+        setData(monolithLabel, "screenY", screenY.toFixed(3));
+        setData(monolithLabel, "radiusPixels", radiusPixels.toFixed(3));
         if (labelVisible) {
-          monolithLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(monolithLabel, screenX, screenY);
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -8442,24 +8848,30 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           !geometryVisible;
-        monolithMarker.hidden = !markerVisible;
+        setHidden(monolithMarker, !markerVisible);
         if (markerVisible) {
-          monolithMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(monolithMarker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
-        container.dataset["jovianMonolithRadiusPixels"] =
-          radiusPixels.toFixed(3);
-        container.dataset["jovianMonolithGeometryVisible"] =
-          String(geometryVisible);
+        setData(
+          container,
+          "jovianMonolithRadiusPixels",
+          radiusPixels.toFixed(3),
+        );
+        setData(
+          container,
+          "jovianMonolithGeometryVisible",
+          String(geometryVisible),
+        );
       } else {
         monolithMesh.visible = false;
-        monolithLabel.hidden = true;
-        monolithMarker.hidden = true;
+        setHidden(monolithLabel, true);
+        setHidden(monolithMarker, true);
       }
       if (current === undefined) {
         discoveryOneGroup.visible = false;
-        discoveryOneLabel.hidden = true;
-        discoveryOneMarker.hidden = true;
+        setHidden(discoveryOneLabel, true);
+        setHidden(discoveryOneMarker, true);
       } else {
         const discoveryState = discoveryOneState(current);
         const position = scenePosition(discoveryState.positionM);
@@ -8471,8 +8883,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const radiusAu = DISCOVERY_ONE_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8498,12 +8909,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
           DISCOVERY_ONE_BODY_ID,
           DISCOVERY_ONE_NAME,
         );
-        discoveryOneLabel.hidden = !labelVisible;
+        setHidden(discoveryOneLabel, !labelVisible);
         showLabelSelection(discoveryOneLabel, DISCOVERY_ONE_BODY_ID);
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          discoveryOneLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(discoveryOneLabel, screenX, screenY);
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -8511,14 +8922,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           !(geometryVisible && loadedModelBodyIds.has(DISCOVERY_ONE_BODY_ID));
-        discoveryOneMarker.hidden = !markerVisible;
+        setHidden(discoveryOneMarker, !markerVisible);
         if (markerVisible) {
-          discoveryOneMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(discoveryOneMarker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
-        container.dataset["discoveryOneRadiusPixels"] = radiusPixels.toFixed(3);
-        container.dataset["discoveryOneGeometryVisible"] =
-          String(geometryVisible);
+        setData(container, "discoveryOneRadiusPixels", radiusPixels.toFixed(3));
+        setData(
+          container,
+          "discoveryOneGeometryVisible",
+          String(geometryVisible),
+        );
       }
       for (const orbiter of FICTIONAL_ORBITERS) {
         const group = fictionalOrbiterGroups.get(orbiter.id);
@@ -8537,8 +8951,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : fictionalOrbiterStateById(current, orbiter.id);
         if (orbiterState === undefined) {
           group.visible = false;
-          label.hidden = true;
-          marker.hidden = true;
+          setHidden(label, true);
+          setHidden(marker, true);
           continue;
         }
         if (
@@ -8546,11 +8960,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           selectedBodyIdRef.current === orbiter.id
         ) {
           group.lookAt(camera.position);
-          container.dataset[
+          setData(
+            container,
             orbiter.constructionState === "incomplete"
               ? "deathstar2Attitude"
-              : "deathstar1Attitude"
-          ] = "camera-relative-fictional-presentation";
+              : "deathstar1Attitude",
+            "camera-relative-fictional-presentation",
+          );
         }
         const position = scenePosition(orbiterState.positionM);
         const projected = position.clone().project(camera);
@@ -8561,8 +8977,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const radiusAu = orbiter.diameterM / 2 / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8584,16 +8999,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             selectedBodyIdRef.current === orbiter.id ||
             easterEggHintVisible(orbiter.id, position));
         nameEasterEggLabel(label, orbiter.id, orbiter.name);
-        label.hidden = !labelVisible;
+        setHidden(label, !labelVisible);
         showLabelSelection(label, orbiter.id);
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         const datasetPrefix = orbiter.id.replaceAll("-", "");
-        label.dataset["screenX"] = screenX.toFixed(3);
-        label.dataset["screenY"] = screenY.toFixed(3);
-        label.dataset["radiusPixels"] = radiusPixels.toFixed(3);
+        setData(label, "screenX", screenX.toFixed(3));
+        setData(label, "screenY", screenY.toFixed(3));
+        setData(label, "radiusPixels", radiusPixels.toFixed(3));
         if (labelVisible) {
-          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(label, screenX, screenY);
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -8601,15 +9016,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           !(geometryVisible && loadedModelBodyIds.has(orbiter.id));
-        marker.hidden = !markerVisible;
+        setHidden(marker, !markerVisible);
         if (markerVisible) {
-          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(marker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
-        container.dataset[`${datasetPrefix}RadiusPixels`] =
-          radiusPixels.toFixed(3);
-        container.dataset[`${datasetPrefix}GeometryVisible`] =
-          String(geometryVisible);
+        setData(
+          container,
+          `${datasetPrefix}RadiusPixels`,
+          radiusPixels.toFixed(3),
+        );
+        setData(
+          container,
+          `${datasetPrefix}GeometryVisible`,
+          String(geometryVisible),
+        );
       }
       for (const object of DEEP_SPACE_NINE_OBJECTS) {
         const group = deepSpaceNineGroups.get(object.id);
@@ -8628,8 +9049,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : deepSpaceNineObjectStateById(current, object.id);
         if (objectState === undefined) {
           group.visible = false;
-          label.hidden = true;
-          marker.hidden = true;
+          setHidden(label, true);
+          setHidden(marker, true);
           continue;
         }
         const position = scenePosition(objectState.positionM);
@@ -8641,8 +9062,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const radiusAu = object.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8664,12 +9084,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
             selectedBodyIdRef.current === object.id ||
             easterEggHintVisible(object.id, position));
         nameEasterEggLabel(label, object.id, object.name);
-        label.hidden = !labelVisible;
+        setHidden(label, !labelVisible);
         showLabelSelection(label, object.id);
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(label, screenX, screenY);
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -8677,16 +9097,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           !(geometryVisible && loadedModelBodyIds.has(object.id));
-        marker.hidden = !markerVisible;
+        setHidden(marker, !markerVisible);
         if (markerVisible) {
-          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(marker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
         const datasetPrefix = object.id.replaceAll("-", "");
-        container.dataset[`${datasetPrefix}RadiusPixels`] =
-          radiusPixels.toFixed(3);
-        container.dataset[`${datasetPrefix}GeometryVisible`] =
-          String(geometryVisible);
+        setData(
+          container,
+          `${datasetPrefix}RadiusPixels`,
+          radiusPixels.toFixed(3),
+        );
+        setData(
+          container,
+          `${datasetPrefix}GeometryVisible`,
+          String(geometryVisible),
+        );
       }
       const issState =
         current === undefined ? undefined : bodyStateById(current, ISS_BODY_ID);
@@ -8700,8 +9126,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const issRadiusAu = ISS_BOUNDING_RADIUS_M / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (issRadiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8718,46 +9143,51 @@ float saturnRingTransmission(vec3 surfacePosition) {
           ensureSourcedModel(ISS_BODY_ID);
         }
         issGroup.visible = geometryVisible;
-        issLabel.hidden = !(
-          showLabelsRef.current &&
-          layerVisible &&
-          inCameraFrustum &&
-          focusBodyIdRef.current === ISS_BODY_ID
+        setHidden(
+          issLabel,
+          !(
+            showLabelsRef.current &&
+            layerVisible &&
+            inCameraFrustum &&
+            focusBodyIdRef.current === ISS_BODY_ID
+          ),
         );
         const markerVisible =
           viewModeRef.current === "orrery" &&
           layerVisible &&
           inCameraFrustum &&
           (radiusPixels < 3 || !loadedModelBodyIds.has(ISS_BODY_ID));
-        issMarker.hidden = !markerVisible;
+        setHidden(issMarker, !markerVisible);
         issMarker.classList.toggle(
           "is-selected",
           selectedBodyIdRef.current === ISS_BODY_ID,
         );
         showLabelSelection(issLabel, ISS_BODY_ID);
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (!issLabel.hidden) {
-          issLabel.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(issLabel, screenX, screenY);
           visibleLabelCount += 1;
         }
         if (markerVisible) {
-          issMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(issMarker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
-        container.dataset["issRadiusPixels"] = radiusPixels.toFixed(3);
-        container.dataset["issGeometryVisible"] = String(geometryVisible);
-        container.dataset["issMarkerVisible"] = String(markerVisible);
-        container.dataset["issMaximumDimensionM"] = String(
-          issSnapshot.physicalDimensions.overallEndToEndM,
+        setData(container, "issRadiusPixels", radiusPixels.toFixed(3));
+        setData(container, "issGeometryVisible", String(geometryVisible));
+        setData(container, "issMarkerVisible", String(markerVisible));
+        setData(
+          container,
+          "issMaximumDimensionM",
+          String(issSnapshot.physicalDimensions.overallEndToEndM),
         );
-        container.dataset["issModelScale"] = "physical";
+        setData(container, "issModelScale", "physical");
       } else {
         issGroup.visible = false;
-        issLabel.hidden = true;
-        issMarker.hidden = true;
-        container.dataset["issGeometryVisible"] = "false";
-        container.dataset["issMarkerVisible"] = "false";
+        setHidden(issLabel, true);
+        setHidden(issMarker, true);
+        setData(container, "issGeometryVisible", "false");
+        setData(container, "issMarkerVisible", "false");
       }
       for (const probe of voyagerSnapshot.probes) {
         const probeState =
@@ -8774,8 +9204,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         }
         if (current === undefined) {
           group.visible = false;
-          label.hidden = true;
-          marker.hidden = true;
+          setHidden(label, true);
+          setHidden(marker, true);
           continue;
         }
         if (probeState === undefined) {
@@ -8797,8 +9227,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const radiusAu = probe.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8819,34 +9248,44 @@ float saturnRingTransmission(vec3 surfacePosition) {
           surfaceObserverRef.current === null &&
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(probe.id));
-        label.hidden = !labelVisible;
+        setHidden(label, !labelVisible);
         showLabelSelection(label, probe.id);
         const markerVisible =
           viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
-        marker.hidden = !markerVisible;
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        setHidden(marker, !markerVisible);
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(label, screenX, screenY);
           visibleLabelCount += 1;
         }
         if (markerVisible) {
-          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(marker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
         const datasetPrefix =
           probe.id === "voyager-1" ? "voyager1" : "voyager2";
-        container.dataset[`${datasetPrefix}DistanceAu`] = (
-          Math.hypot(...probeState.positionM) / ASTRONOMICAL_UNIT_M
-        ).toFixed(6);
-        container.dataset[`${datasetPrefix}RadiusPixels`] =
-          radiusPixels.toFixed(3);
-        container.dataset[`${datasetPrefix}GeometryVisible`] =
-          String(geometryVisible);
+        setData(
+          container,
+          `${datasetPrefix}DistanceAu`,
+          (Math.hypot(...probeState.positionM) / ASTRONOMICAL_UNIT_M).toFixed(
+            6,
+          ),
+        );
+        setData(
+          container,
+          `${datasetPrefix}RadiusPixels`,
+          radiusPixels.toFixed(3),
+        );
+        setData(
+          container,
+          `${datasetPrefix}GeometryVisible`,
+          String(geometryVisible),
+        );
       }
-      container.dataset["voyagerCount"] = String(voyagerSnapshot.probes.length);
-      container.dataset["voyagerModelScale"] = "physical";
-      container.dataset["voyagerPhysics"] = "REBOUND-massless-test-particle";
+      setData(container, "voyagerCount", String(voyagerSnapshot.probes.length));
+      setData(container, "voyagerModelScale", "physical");
+      setData(container, "voyagerPhysics", "REBOUND-massless-test-particle");
       for (const spacecraft of operationalSpacecraftSnapshot.spacecraft) {
         const group = sourcedModelGroups.get(spacecraft.id);
         const label = operationalSpacecraftLabels.get(spacecraft.id);
@@ -8864,8 +9303,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : bodyStateById(current, spacecraft.id);
         if (spacecraftState === undefined) {
           group.visible = false;
-          label.hidden = true;
-          marker.hidden = true;
+          setHidden(label, true);
+          setHidden(marker, true);
           continue;
         }
         const position = scenePosition(spacecraftState.positionM);
@@ -8877,8 +9316,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const radiusAu = spacecraft.maximumDimensionM / 2 / ASTRONOMICAL_UNIT_M;
         const radiusPixels =
           (radiusAu / cameraDistance) *
-          (container.clientHeight /
-            (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+          (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
           camera.zoom;
         const inCameraFrustum =
           projected.z >= -1 &&
@@ -8907,25 +9345,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (spacecraft.id === ROADSTER_BODY_ID) {
           nameEasterEggLabel(label, ROADSTER_BODY_ID, spacecraft.name);
         }
-        label.hidden = !labelVisible;
+        setHidden(label, !labelVisible);
         showLabelSelection(label, spacecraft.id);
         const markerVisible =
           viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
-        marker.hidden = !markerVisible;
-        const screenX = ((projected.x + 1) * container.clientWidth) / 2;
-        const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
+        setHidden(marker, !markerVisible);
+        const screenX = ((projected.x + 1) * viewportWidth) / 2;
+        const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          label.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(label, screenX, screenY);
           visibleLabelCount += 1;
         }
         if (markerVisible) {
-          marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
+          setTransform(marker, screenX, screenY);
           visibleOrreryMarkerCount += 1;
         }
-        container.dataset[`${spacecraft.id}RadiusPixels`] =
-          radiusPixels.toFixed(3);
-        container.dataset[`${spacecraft.id}GeometryVisible`] =
-          String(geometryVisible);
+        setData(
+          container,
+          `${spacecraft.id}RadiusPixels`,
+          radiusPixels.toFixed(3),
+        );
+        setData(
+          container,
+          `${spacecraft.id}GeometryVisible`,
+          String(geometryVisible),
+        );
       }
       let visibleApolloSiteCount = 0;
       const moonMesh = bodyMeshes.get("moon");
@@ -8957,7 +9401,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           !apolloContextVisible ||
           surfaceObserverRef.current !== null
         ) {
-          label.hidden = true;
+          setHidden(label, true);
           continue;
         }
         const [localX, localY, localZ] = moonFixedSurfaceUnitVector(
@@ -8983,24 +9427,36 @@ float saturnRingTransmission(vec3 surfacePosition) {
             camera.position.clone().sub(sitePosition).normalize(),
           ) > 0;
         const visible = inCameraFrustum && facingCamera;
-        label.hidden = !visible;
+        setHidden(label, !visible);
         showLabelSelection(label, site.id);
         if (visible) {
-          label.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
+          setTransform(
+            label,
+            ((projected.x + 1) * viewportWidth) / 2,
+            ((-projected.y + 1) * viewportHeight) / 2,
+          );
           visibleLabelCount += 1;
           visibleApolloSiteCount += 1;
         }
       }
-      container.dataset["apolloSiteCount"] = String(apolloLandingSites.length);
-      container.dataset["apolloSiteLabelsVisible"] = String(
-        visibleApolloSiteCount,
+      setData(container, "apolloSiteCount", String(apolloLandingSites.length));
+      setData(
+        container,
+        "apolloSiteLabelsVisible",
+        String(visibleApolloSiteCount),
       );
-      container.dataset["apolloSiteCoordinates"] =
-        "LRO-derived-ME-planetocentric";
-      container.dataset["operationalSpacecraftPhysics"] =
-        "NASA-JPL-Horizons-cubic-Hermite";
-      container.dataset["visibleBodyLabels"] = String(visibleLabelCount);
-      container.dataset["orreryMarkerCount"] = String(visibleOrreryMarkerCount);
+      setData(
+        container,
+        "apolloSiteCoordinates",
+        "LRO-derived-ME-planetocentric",
+      );
+      setData(
+        container,
+        "operationalSpacecraftPhysics",
+        "NASA-JPL-Horizons-cubic-Hermite",
+      );
+      setData(container, "visibleBodyLabels", String(visibleLabelCount));
+      setData(container, "orreryMarkerCount", String(visibleOrreryMarkerCount));
 
       const focusedKnownSatelliteId = focusBodyIdRef.current;
       const focusedKnownSatellite =
@@ -9024,31 +9480,38 @@ float saturnRingTransmission(vec3 surfacePosition) {
           projected.z <= 1 &&
           Math.abs(projected.x) <= 1 &&
           Math.abs(projected.y) <= 1;
-        focusedKnownMoonLabel.hidden = !visible;
+        setHidden(focusedKnownMoonLabel, !visible);
         if (visible) {
           focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
-          focusedKnownMoonLabel.dataset["bodyId"] = focusedKnownSatellite.id;
+          setData(focusedKnownMoonLabel, "bodyId", focusedKnownSatellite.id);
           focusedKnownMoonLabel.title = LABEL_TITLE;
           showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
-          focusedKnownMoonLabel.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
+          setTransform(
+            focusedKnownMoonLabel,
+            ((projected.x + 1) * viewportWidth) / 2,
+            ((-projected.y + 1) * viewportHeight) / 2,
+          );
           visibleLabelCount += 1;
         }
       } else {
-        focusedKnownMoonLabel.hidden = true;
+        setHidden(focusedKnownMoonLabel, true);
         focusedKnownMoonLabel.classList.remove("is-selected");
         focusedKnownMoonLabel.classList.remove("is-focused");
       }
-      container.dataset["visibleBodyLabels"] = String(visibleLabelCount);
+      setData(container, "visibleBodyLabels", String(visibleLabelCount));
 
       if (earthPosition !== undefined && moonPosition !== undefined) {
         const projectedEarth = earthPosition.clone().project(camera);
         const projectedMoon = moonPosition.clone().project(camera);
         const separationPixels = Math.hypot(
-          ((projectedMoon.x - projectedEarth.x) * container.clientWidth) / 2,
-          ((projectedMoon.y - projectedEarth.y) * container.clientHeight) / 2,
+          ((projectedMoon.x - projectedEarth.x) * viewportWidth) / 2,
+          ((projectedMoon.y - projectedEarth.y) * viewportHeight) / 2,
         );
-        container.dataset["earthMoonSeparationPixels"] =
-          separationPixels.toFixed(2);
+        setData(
+          container,
+          "earthMoonSeparationPixels",
+          separationPixels.toFixed(2),
+        );
       }
       if (solarCoronaMaterial !== undefined) {
         const profileOpacity =
@@ -9072,7 +9535,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           solarCoronaMaterial,
           "cameraPositionLocal",
         ).value.copy(solarCoronaMesh.worldToLocal(camera.position.clone()));
-        container.dataset["solarCoronaEclipseBoost"] = eclipseBoost.toFixed(4);
+        setData(container, "solarCoronaEclipseBoost", eclipseBoost.toFixed(4));
       }
       if (eclipseShadowGroup.visible) {
         const projectedFootprint = eclipseShadowGroup.position
@@ -9083,15 +9546,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           projectedFootprint.z <= 1 &&
           Math.abs(projectedFootprint.x) <= 1 &&
           Math.abs(projectedFootprint.y) <= 1;
-        eclipseShadowLocator.hidden = !footprintOnScreen;
+        setHidden(eclipseShadowLocator, !footprintOnScreen);
         if (footprintOnScreen) {
-          const screenX =
-            ((projectedFootprint.x + 1) * container.clientWidth) / 2;
-          const screenY =
-            ((-projectedFootprint.y + 1) * container.clientHeight) / 2;
-          eclipseShadowLocator.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
-          container.dataset["eclipseShadowScreenX"] = screenX.toFixed(2);
-          container.dataset["eclipseShadowScreenY"] = screenY.toFixed(2);
+          const screenX = ((projectedFootprint.x + 1) * viewportWidth) / 2;
+          const screenY = ((-projectedFootprint.y + 1) * viewportHeight) / 2;
+          setTransform(eclipseShadowLocator, screenX, screenY);
+          setData(container, "eclipseShadowScreenX", screenX.toFixed(2));
+          setData(container, "eclipseShadowScreenY", screenY.toFixed(2));
         }
       }
       // The light this frame really gives the focused body and its parent, as
@@ -9134,7 +9595,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           }
           return (
             (irradiance * position.distanceToSquared(reportSunPosition)) /
-            SUNLIGHT_INTENSITY_AT_1_AU
+            SOLAR_IRRADIANCE_AT_1_AU
           ).toFixed(3);
         };
         container.dataset["focusSunlightRatio"] =
@@ -9157,20 +9618,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
         delete container.dataset["parentSunlightRatio"];
       }
       renderer.render(scene, camera);
-      container.dataset["shaderProgramCount"] = String(
-        renderer.info.programs?.length ?? 0,
+      setData(
+        container,
+        "shaderProgramCount",
+        String(renderer.info.programs?.length ?? 0),
       );
-      container.dataset["renderFrameIntervalMs"] =
-        frameIntervalEmaMs.toFixed(2);
-      container.dataset["renderFps"] = (
-        1_000 / Math.max(frameIntervalEmaMs, 0.001)
-      ).toFixed(1);
-      container.dataset["renderCpuSubmissionMs"] = (
-        performance.now() - frameRenderStartedAtMs
-      ).toFixed(2);
-      container.dataset["renderCalls"] = String(renderer.info.render.calls);
-      container.dataset["renderTriangles"] = String(
-        renderer.info.render.triangles,
+      setData(
+        container,
+        "renderFrameIntervalMs",
+        frameIntervalEmaMs.toFixed(2),
+      );
+      setData(
+        container,
+        "renderFps",
+        (1_000 / Math.max(frameIntervalEmaMs, 0.001)).toFixed(1),
+      );
+      setData(
+        container,
+        "renderCpuSubmissionMs",
+        (performance.now() - frameRenderStartedAtMs).toFixed(2),
+      );
+      setData(container, "renderCalls", String(renderer.info.render.calls));
+      setData(
+        container,
+        "renderTriangles",
+        String(renderer.info.render.triangles),
       );
       if (gpuLayer !== undefined) {
         const requestedFocusBodyId = focusBodyIdRef.current;
@@ -9196,8 +9668,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
             [focusPosition.x, focusPosition.y, focusPosition.z],
             focusRegionRadiusAu,
           );
-          gpuCanvas.dataset["focusRegionRadiusAu"] =
-            focusRegionRadiusAu.toFixed(3);
+          setData(
+            gpuCanvas,
+            "focusRegionRadiusAu",
+            focusRegionRadiusAu.toFixed(3),
+          );
         }
         if (smallBodiesVisible || lastSmallBodiesVisible !== false) {
           gpuLayer.render(camera);

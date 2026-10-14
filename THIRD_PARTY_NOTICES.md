@@ -86,6 +86,7 @@ Authority-published gravitational parameters and rotation models are taken from 
 - NAIF planetary constants: <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc>
 - NASA 3D Resources: <https://science.nasa.gov/3d-resources/>
 - NASA International Space Station 3D model: <https://science.nasa.gov/3d-resources/international-space-station-iss-d-igoal/>
+  Modified from the original: `scripts/repair-model-assets.mjs` deletes seven stray meshes (`bendedtru1`, `bendedtru2`, `bendedtru3`, `bendedtrus`, `pCylinder1`, `pCylinder2`, `pCylinder8`) that floated about 15 model units above the station.
 - NASA Voyager 3D model: <https://science.nasa.gov/resource/voyager-3d-model/>
 - NASA Hubble Space Telescope 3D model: <https://science.nasa.gov/resource/hubble-space-telescope-3d-model/>
 - NASA James Webb Space Telescope 3D models: <https://science.nasa.gov/mission/webb/multimedia/3d-models/>
@@ -125,7 +126,9 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/discovery-1-3c0b0c7bb5364305a04b74382f944935>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `b2cc068f824a5812b29045c10cd43f6d282a01244ed9b5ceec95ae02185498ac`
+- Installed SHA-256: `0f96f9f8cf72ddd050ae21bdd438ea07ac8fbb6431d155b297032f5daf2657c0`
+- Modified from the original: `scripts/repair-model-assets.mjs` sets metallicFactor 0 on the 13 materials that left it unset, so the hull renders as painted, not bare metal.
+  The original's SHA-256 is `b2cc068f824a5812b29045c10cd43f6d282a01244ed9b5ceec95ae02185498ac`.
 
 ### Death Star II
 
@@ -141,7 +144,9 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`
+- Installed SHA-256: `fe6995519797e99414b5f3a7518d3485e8881b9f1d1421394693ba3fb4cb1cc9`
+- Modified from the original: `scripts/repair-model-assets.mjs` removes emissive texture bindings that had no emissive factor, and adds lit windows on the habitat ring walls and the Promenade (window triangles with their own materials, a second UV set and a repeating window texture).
+  The original's SHA-256 is `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`.
 
 ### USS Defiant
 
@@ -150,6 +155,7 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Source: <https://sketchfab.com/3d-models/defiant-170220edebe0462ba477772c3325679a>
 - Archive: <https://objaverse.allenai.org/>
 - Installed SHA-256: `4f9e0ced7ea55a0390946a8d1f2371a7a3bcf0f8e943ba9bb059a38e88e7b3cc`
+- The file is unmodified; the application lights its windows when it loads the model.
 
 The story places Discovery in orbit around Io but does not publish precise osculating elements, so the application identifies its authored massless circular orbit as fictional.
 Death Star I uses an original generated PBR texture atlas and authored Three.js geometry.
