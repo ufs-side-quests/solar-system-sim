@@ -1,3 +1,5 @@
+import { Vector3 } from "three";
+
 import type { MajorBodyDefinition } from "../physics/solar-system";
 import {
   SATURN_MAIN_RING_OUTER_RADIUS_KM,
@@ -71,4 +73,24 @@ export function portraitFitDistanceAu(
     throw new Error("Camera aspect must be positive and finite");
   }
   return distanceAu / Math.min(1, aspect);
+}
+
+// A model seen from straight down the Sun line shows no shadows and reads
+// flat. The camera turns sideways and north off that line to a phase angle of
+// about 40 degrees: about 88% of the visible side stays sunlit, so the view
+// is still the sunlit side, and the shadows show the shape.
+const MODEL_VIEW_SIDE_OFFSET = 0.75;
+const MODEL_VIEW_NORTH_OFFSET = 0.35;
+
+export function sunlitModelViewDirection(
+  sunDirection: Vector3,
+  north: Vector3,
+): Vector3 {
+  const sun = sunDirection.clone().normalize();
+  const side = sun.clone().cross(north).normalize();
+  const up = north.clone().addScaledVector(sun, -north.dot(sun)).normalize();
+  return sun
+    .addScaledVector(side, MODEL_VIEW_SIDE_OFFSET)
+    .addScaledVector(up, MODEL_VIEW_NORTH_OFFSET)
+    .normalize();
 }
