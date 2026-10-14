@@ -99,6 +99,7 @@ Major-body rotation uses the complete NAIF PCK pole, nutation, and prime-meridia
 ICRF positions and body axes are transformed into the Three.js y-up scene with a right-handed basis, and the WebGPU small-body path uses the same transform.
 Surface presentation uses 32 locally snapshotted NASA, JPL, and USGS texture products with explicit source URLs, source and output dimensions, coverage, projection, limitations, byte lengths, and SHA-256 hashes.
 Twenty-nine colour maps cover every non-stellar major body except Uranus, while separate Earth-cloud and Moon-topography products provide auxiliary detail.
+A body's maps load only once the first REBOUND state has placed it and it is focused, targeted, or large enough on screen; until that state arrives the scene draws no major body, label, or marker.
 Mercury uses the USGS 23,040 by 11,520 pixel MESSENGER end-of-mission global colour mosaic, while Pluto uses the 24,888 by 12,444 pixel USGS/New Horizons observational mosaic; both are reduced to 4,096 pixels for a bounded browser GPU footprint.
 The Moon, Ganymede, Enceladus, and Charon also use authority masters reduced to the same browser limit.
 Ariel, Miranda, Titania, Umbriel, and Triton use the higher-resolution global textures embedded in NASA VTAD's official glTF models; their Voyager-observed terrain and authority-reconstructed coverage are distinguished in the manifest.

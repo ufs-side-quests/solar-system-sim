@@ -2268,6 +2268,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.type = "button";
       label.className = "body-label";
       label.textContent = body.name;
+      // The frame loop shows the label once a physics state places the body.
+      label.hidden = true;
       label.dataset["bodyId"] = body.id;
       label.setAttribute("aria-label", `Focus ${body.name}`);
       label.title = "Click to select; double-click to focus";
@@ -7869,6 +7871,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (mesh === undefined || label === undefined) {
           continue;
         }
+        const marker = bodyMarkers.get(body.id);
+        if (current === undefined) {
+          // Before the first physics state every mesh still sits at the
+          // origin, so draw nothing and request no surface map until the
+          // bodies have their real places.
+          mesh.visible = false;
+          label.hidden = true;
+          label.dataset["bodyRendered"] = "false";
+          if (marker !== undefined) {
+            marker.hidden = true;
+          }
+          continue;
+        }
         const projected = mesh.position.clone().project(camera);
         const cameraDistance = camera.position.distanceTo(mesh.position);
         const radiusPixels =
@@ -8065,7 +8080,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ] = projectedLabelY.toFixed(3);
           }
         }
-        const marker = bodyMarkers.get(body.id);
         if (marker !== undefined) {
           const markerVisible =
             viewModeRef.current === "orrery" &&
