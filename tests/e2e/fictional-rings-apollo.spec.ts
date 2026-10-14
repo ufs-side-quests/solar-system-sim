@@ -194,9 +194,19 @@ test("reports a Death Star I texture that fails to load", async ({ page }) => {
   );
 });
 
-for (const [search, bodyId, distanceText] of [
-  ["Deep Space Nine (fictional)", "deep-space-nine", "Distance from Callisto"],
-  ["USS Defiant (fictional)", "uss-defiant", "Distance from Deep Space Nine"],
+for (const [search, bodyId, distanceText, litWindowMaterials] of [
+  [
+    "Deep Space Nine (fictional)",
+    "deep-space-nine",
+    "Distance from Callisto",
+    "3",
+  ],
+  [
+    "USS Defiant (fictional)",
+    "uss-defiant",
+    "Distance from Deep Space Nine",
+    "2",
+  ],
 ] as const) {
   test(`renders the licensed ${search} model at physical scale`, async ({
     page,
@@ -216,6 +226,26 @@ for (const [search, bodyId, distanceText] of [
     await expect(scene).toHaveAttribute(
       `data-${bodyId.replaceAll("-", "")}-geometry-visible`,
       "true",
+    );
+    const datasetKey = bodyId.replaceAll("-", "");
+    await expect(scene).toHaveAttribute(
+      `data-${datasetKey}-lit-window-materials`,
+      litWindowMaterials,
+    );
+    await expect(scene).toHaveAttribute(
+      `data-${datasetKey}-window-luminance-cd-m2`,
+      "300",
+    );
+    // The test browser (Chrome with WebGL) supports anisotropic filtering, so
+    // the profile's anisotropy is above 1; at 1 a model texture left at the
+    // default could not be told apart.
+    const sceneAnisotropy = Number(
+      await scene.getAttribute("data-texture-anisotropy"),
+    );
+    expect(sceneAnisotropy).toBeGreaterThan(1);
+    await expect(scene).toHaveAttribute(
+      `data-${datasetKey}-model-texture-anisotropy`,
+      String(sceneAnisotropy),
     );
     await expect(page.getByRole("complementary")).toContainText(distanceText);
     await expect(page.getByRole("complementary")).toContainText("Sketchfab");

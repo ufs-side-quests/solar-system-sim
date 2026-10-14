@@ -166,6 +166,14 @@ import {
   USS_DEFIANT_BODY_ID,
 } from "./deep-space-nine";
 import { fictionalModelAssets } from "./fictional-model-assets";
+import {
+  DEFIANT_PORTHOLE_MATERIAL,
+  DEFIANT_WINDOW_MATERIAL,
+  LIT_WINDOW_LUMINANCE_CD_M2,
+  lightPaintedPortholes,
+  setLitWindowEmissive,
+  SOLAR_IRRADIANCE_AT_1_AU,
+} from "./window-lighting";
 import { osculatingOrbitPositionsM } from "./osculating-orbit";
 import {
   limbObserverViewpoint,
@@ -1316,10 +1324,18 @@ export function SolarSystemScene({
       container.dataset["cameraOrientation"] = "custom";
     };
     controls.addEventListener("start", handleControlStart);
-    const sunlight = new PointLight(SUNLIGHT_COLOR, 7, 0, 2);
+    const sunlight = new PointLight(
+      SUNLIGHT_COLOR,
+      SOLAR_IRRADIANCE_AT_1_AU,
+      0,
+      2,
+    );
     sunlight.name = "Sunlight direction source";
     scene.add(sunlight);
-    const localModelSunlight = new DirectionalLight(SUNLIGHT_COLOR, 7);
+    const localModelSunlight = new DirectionalLight(
+      SUNLIGHT_COLOR,
+      SOLAR_IRRADIANCE_AT_1_AU,
+    );
     localModelSunlight.name = "Focused model solar shadow light";
     localModelSunlight.castShadow = true;
     localModelSunlight.layers.set(2);
@@ -1604,6 +1620,28 @@ reflectedLight.directSpecular *= solarTransmission;`,
     const materials: Material[] = [starMaterial];
     const geometries: BufferGeometry[] = [unitSphere, starGeometry];
     const textures: Texture[] = [];
+    // A texture takes the active profile's anisotropy when it joins the
+    // scene; applyVisualQuality sets them all again when the profile changes.
+    const trackTexture = (texture: Texture): void => {
+      if (textures.includes(texture)) {
+        return;
+      }
+      texture.anisotropy = Math.min(
+        renderer.capabilities.getMaxAnisotropy(),
+        VISUAL_QUALITY_PROFILES[visualQualityRef.current]
+          .textureAnisotropyLimit,
+      );
+      textures.push(texture);
+    };
+    const modelTexturesByBodyId = new Map<string, readonly Texture[]>();
+    const reportModelTextureAnisotropy = (bodyId: string): void => {
+      const modelTextures = modelTexturesByBodyId.get(bodyId);
+      if (modelTextures === undefined) {
+        throw new Error(`${bodyId} model textures are unavailable`);
+      }
+      container.dataset[`${bodyId.replaceAll("-", "")}ModelTextureAnisotropy`] =
+        String(Math.min(...modelTextures.map((texture) => texture.anisotropy)));
+    };
 
     const eclipseShadowGroup = new Group();
     eclipseShadowGroup.name = "Calculated lunar shadow on Earth";
@@ -1777,10 +1815,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
             for (const propertyName of Object.keys(material)) {
               const value: unknown = Reflect.get(material, propertyName);
               if (value instanceof Texture) {
-                const materialTexture = value as Texture;
-                if (!textures.includes(materialTexture)) {
-                  textures.push(materialTexture);
-                }
+                trackTexture(value as Texture);
               }
             }
           }
@@ -2148,12 +2183,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
       if (isColor) {
         texture.colorSpace = SRGBColorSpace;
       }
-      texture.anisotropy = Math.min(
-        renderer.capabilities.getMaxAnisotropy(),
-        VISUAL_QUALITY_PROFILES[visualQualityRef.current]
-          .textureAnisotropyLimit,
-      );
-      textures.push(texture);
+      trackTexture(texture);
       return texture;
     };
 
@@ -3154,6 +3184,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
             sourceMaximumDimension;
           model.scale.setScalar(physicalScale);
           model.position.copy(sourceCenter).multiplyScalar(-physicalScale);
+          const modelTextures: Texture[] = [];
+          const litDefiantMaterials = new Set<string>();
+          // Materials lit at the calibrated window level: the Defiant's, set
+          // below, and the "windows" materials of the repaired Deep Space
+          // Nine file (scripts/repair-model-assets.mjs).
+          let litWindowMaterialCount = 0;
           model.traverse((object) => {
             object.userData["bodyId"] = asset.bodyId;
             if (object.type === "Mesh") {
@@ -3175,16 +3211,66 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   material.emissiveMap = null;
                   material.needsUpdate = true;
                 }
+                if (
+                  asset.bodyId === USS_DEFIANT_BODY_ID &&
+                  material instanceof MeshStandardMaterial
+                ) {
+                  // The Defiant's licence keeps its file unmodified, so its
+                  // windows are lit here at the calibrated window level.
+                  if (material.name === DEFIANT_PORTHOLE_MATERIAL) {
+                    lightPaintedPortholes(material);
+                    litDefiantMaterials.add(material.name);
+                  } else if (material.name === DEFIANT_WINDOW_MATERIAL) {
+                    setLitWindowEmissive(material);
+                    litDefiantMaterials.add(material.name);
+                  }
+                }
+                if (
+                  litDefiantMaterials.has(material.name) ||
+                  material.name.endsWith(" windows")
+                ) {
+                  litWindowMaterialCount += 1;
+                }
                 materials.push(material);
                 for (const propertyName of Object.keys(material)) {
                   const value: unknown = Reflect.get(material, propertyName);
                   if (value instanceof Texture) {
-                    textures.push(value as Texture);
+                    const modelTexture = value as Texture;
+                    // A GLB texture arrives decoded, so a later quality
+                    // change may re-upload it.
+                    loadedTextures.add(modelTexture);
+                    trackTexture(modelTexture);
+                    modelTextures.push(modelTexture);
                   }
                 }
               }
             }
           });
+          const datasetKey = asset.bodyId.replaceAll("-", "");
+          if (asset.bodyId === USS_DEFIANT_BODY_ID) {
+            for (const name of [
+              DEFIANT_PORTHOLE_MATERIAL,
+              DEFIANT_WINDOW_MATERIAL,
+            ]) {
+              if (!litDefiantMaterials.has(name)) {
+                throw new Error(
+                  `USS Defiant window material ${name} is missing`,
+                );
+              }
+            }
+          }
+          if (litWindowMaterialCount > 0) {
+            container.dataset[`${datasetKey}LitWindowMaterials`] = String(
+              litWindowMaterialCount,
+            );
+            container.dataset[`${datasetKey}WindowLuminanceCdM2`] = String(
+              LIT_WINDOW_LUMINANCE_CD_M2,
+            );
+          }
+          if (modelTextures.length > 0) {
+            modelTexturesByBodyId.set(asset.bodyId, modelTextures);
+            reportModelTextureAnisotropy(asset.bodyId);
+          }
           group.add(model);
           loadedModelBodyIds.add(asset.bodyId);
           container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
@@ -4291,6 +4377,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (loadedTextures.has(texture)) {
           texture.needsUpdate = true;
         }
+      }
+      for (const bodyId of modelTexturesByBodyId.keys()) {
+        reportModelTextureAnisotropy(bodyId);
       }
       for (const material of atmosphereMaterials.values()) {
         setRequiredNumberUniform(
@@ -6632,7 +6721,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const localDistanceAu =
               localShadowPosition.distanceTo(sunScenePosition);
             localModelSunlight.intensity =
-              7 / Math.max(localDistanceAu * localDistanceAu, 0.0016);
+              SOLAR_IRRADIANCE_AT_1_AU /
+              Math.max(localDistanceAu * localDistanceAu, 0.0016);
             localModelSunlight.visible = true;
             setData(
               container,

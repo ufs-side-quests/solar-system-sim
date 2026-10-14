@@ -50,6 +50,19 @@ test("renders Discovery One and presents every cinematic shot", async ({
     "data-discovery-one-geometry-visible",
     "true",
   );
+  // GLB textures arrive after the quality profile is applied; they still
+  // take its anisotropy.
+  // The test browser (Chrome with WebGL) supports anisotropic filtering, so
+  // the profile's anisotropy is above 1; at 1 a model texture left at the
+  // default could not be told apart.
+  const sceneAnisotropy = Number(
+    await scene.getAttribute("data-texture-anisotropy"),
+  );
+  expect(sceneAnisotropy).toBeGreaterThan(1);
+  await expect(scene).toHaveAttribute(
+    "data-discoveryone-model-texture-anisotropy",
+    String(sceneAnisotropy),
+  );
   await expect(page.getByText("140.1 m long", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "Camera" }).click();
