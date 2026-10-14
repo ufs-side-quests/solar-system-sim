@@ -1,82 +1,39 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 
 import { majorBodySnapshot } from "../physics/solar-system-data";
-import { formatBodySize, formatDiameterKm } from "./body-physical-facts";
-import { sizeLineupLayout, type SizeLineupCircle } from "./size-lineup";
 import {
-  nasaMaterialPresentationByBodyId,
-  nasaTextureByBodyId,
-} from "./visual-assets";
+  EARTH_MEAN_RADIUS_M,
+  formatBodySize,
+  formatDiameterKm,
+  PLAIN_SURFACE_BY_BODY_ID,
+} from "./body-physical-facts";
+import { lineupGlobePicture, lineupGlobeSnapshot } from "./lineup-globe-assets";
+import { sizeLineupLayout, type SizeLineupCircle } from "./size-lineup";
 
 const LAYOUT = sizeLineupLayout(majorBodySnapshot.bodies);
-const EARTH_MEAN_RADIUS_M = (() => {
-  const earth = LAYOUT.circles.find((circle) => circle.id === "earth");
-  if (earth === undefined) {
-    throw new Error("Size lineup is missing Earth");
+// Built at module load, so a lineup body without a picture or wording fails
+// by name before the dialog can open.
+const BODY_COLUMNS = LAYOUT.circles.map((circle) => {
+  const surface = PLAIN_SURFACE_BY_BODY_ID[circle.id];
+  if (surface === undefined) {
+    throw new Error(`Size lineup has no surface wording for ${circle.id}`);
   }
-  return earth.meanRadiusM;
-})();
-/** Bodies with no installed surface map or sourced colour (only the Sun here). */
-const NEUTRAL_FILL = "#d9d9d9";
+  return {
+    circle,
+    picture: lineupGlobePicture(lineupGlobeSnapshot.pictures, circle.id),
+    surface,
+  };
+});
+/** The Sun has no picture: a plain disc in the 3D scene's sunlight colour. */
+const SUN_FILL = "#fff8ec";
+const SUN_SURFACE = "Plain colour";
 
 /** True when the lineup draws this body, so the card can offer it. */
 export function isInSizeLineup(bodyId: string): boolean {
   return (
     bodyId === LAYOUT.sun.id ||
     LAYOUT.circles.some((circle) => circle.id === bodyId)
-  );
-}
-
-function CircleArt({
-  circle,
-  className,
-}: {
-  circle: SizeLineupCircle;
-  className: string;
-}): ReactElement {
-  const patternId = useId();
-  const texture = nasaTextureByBodyId.get(circle.id);
-  // The same NASA surface map the 3D globe wears, drawn flat: the middle half
-  // of the 2:1 map fills the square, so no part of it is stretched.
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 2 2"
-      aria-hidden="true"
-      data-lineup-circle={circle.id}
-      style={{ "--lineup-radius": circle.radius } as CSSProperties}
-    >
-      {texture === undefined ? null : (
-        <defs>
-          <pattern
-            id={patternId}
-            patternContentUnits="objectBoundingBox"
-            width="1"
-            height="1"
-          >
-            <image
-              href={texture.file}
-              x="-0.5"
-              width="2"
-              height="1"
-              preserveAspectRatio="none"
-            />
-          </pattern>
-        </defs>
-      )}
-      <circle
-        cx="1"
-        cy="1"
-        r="1"
-        fill={
-          texture !== undefined
-            ? `url(#${patternId})`
-            : (nasaMaterialPresentationByBodyId.get(circle.id)?.color ??
-              NEUTRAL_FILL)
-        }
-      />
-    </svg>
   );
 }
 
@@ -91,6 +48,9 @@ export function SizeLineup({
 }>): ReactElement {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [failedPictureNames, setFailedPictureNames] = useState<
+    readonly string[]
+  >([]);
 
   useEffect(() => {
     const opener = document.activeElement;
@@ -102,10 +62,11 @@ export function SizeLineup({
     };
   }, []);
 
-  const selected = [LAYOUT.sun, ...LAYOUT.circles].find(
-    (circle) => circle.id === selectedBodyId,
-  );
-  const column = (circle: SizeLineupCircle, className: string) => (
+  const column = (
+    circle: SizeLineupCircle,
+    className: string,
+    art: ReactElement,
+  ) => (
     <button
       key={circle.id}
       type="button"
@@ -115,17 +76,14 @@ export function SizeLineup({
       data-lineup-body={circle.id}
       onClick={() => onSelectBody(circle.id)}
     >
-      <CircleArt
-        circle={circle}
-        className={
-          circle.id === LAYOUT.sun.id
-            ? "size-lineup-sun-disc"
-            : "size-lineup-disc"
-        }
-      />
+      {art}
       <span>{circle.name}</span>
     </button>
   );
+  const selected =
+    selectedBodyId === LAYOUT.sun.id
+      ? { circle: LAYOUT.sun, surface: SUN_SURFACE }
+      : BODY_COLUMNS.find(({ circle }) => circle.id === selectedBodyId);
 
   return (
     <aside
@@ -148,10 +106,59 @@ export function SizeLineup({
         </button>
       </div>
       <p className="size-lineup-caption">Sizes to scale. Distances are not.</p>
+      {failedPictureNames.length === 0 ? null : (
+        <p className="size-lineup-error" role="alert">
+          {`Picture did not load: ${failedPictureNames.join(", ")}.`}
+        </p>
+      )}
       <div className="size-lineup-row">
-        {column(LAYOUT.sun, "size-lineup-sun")}
+        {column(
+          LAYOUT.sun,
+          "size-lineup-sun",
+          <span
+            className="size-lineup-sun-disc"
+            aria-hidden="true"
+            data-lineup-circle={LAYOUT.sun.id}
+            style={
+              {
+                "--lineup-radius": LAYOUT.sun.radius,
+                background: SUN_FILL,
+              } as CSSProperties
+            }
+          />,
+        )}
         <div className="size-lineup-bodies">
-          {LAYOUT.circles.map((circle) => column(circle, "size-lineup-body"))}
+          {BODY_COLUMNS.map(({ circle, picture }) =>
+            column(
+              circle,
+              "size-lineup-body",
+              // The picture spans frameHalfWidthMeanRadii mean radii each side
+              // of the globe's centre, so its globe sits on the one scale and
+              // Saturn's rings reach past it.
+              <img
+                className="size-lineup-disc"
+                src={picture.file}
+                width={picture.width}
+                height={picture.height}
+                alt=""
+                data-lineup-circle={circle.id}
+                data-frame-half-width={picture.frameHalfWidthMeanRadii}
+                style={
+                  {
+                    "--lineup-radius": circle.radius,
+                    "--lineup-frame": picture.frameHalfWidthMeanRadii,
+                  } as CSSProperties
+                }
+                onError={() =>
+                  setFailedPictureNames((names) =>
+                    names.includes(circle.name)
+                      ? names
+                      : [...names, circle.name],
+                  )
+                }
+              />,
+            ),
+          )}
         </div>
       </div>
       <p className="size-lineup-note">
@@ -159,12 +166,13 @@ export function SizeLineup({
       </p>
       {selected === undefined ? null : (
         <p className="size-lineup-comparison" aria-live="polite">
-          <strong>{selected.name}</strong>{" "}
+          <strong>{selected.circle.name}</strong>{" "}
           {formatBodySize(
-            selected.id,
-            selected.meanRadiusM,
+            selected.circle.id,
+            selected.circle.meanRadiusM,
             EARTH_MEAN_RADIUS_M,
           )}
+          <small>Surface: {selected.surface}</small>
         </p>
       )}
     </aside>

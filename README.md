@@ -24,8 +24,10 @@ The camera uses standard orbit controls: left drag orbits, right drag pans, and 
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
 The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from a sourced sidereal orbital period (NASA NSSDC fact sheets for planets, Pluto and the Moon; JPL SSD satellite mean elements for moons), one sidereal spin with "spins backwards" or "spins on its side" for planets, and speed compared with a named, rounded 900 km/h jet airliner reference.
-"Compare sizes" (on the card and in the camera dock) opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
-Each circle wears the NASA surface map the 3D globe uses (Uranus its sourced plain colour, the Sun a neutral fill), and tapping a body selects it as the Focus box does.
+"Compare sizes" on the selected-body card opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
+Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
+Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
+Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
@@ -168,6 +170,7 @@ pnpm data:horizons-satellites
 pnpm data:sbdb
 pnpm data:naif
 pnpm data:nasa-assets
+pnpm data:lineup-globes
 pnpm data:stars
 pnpm data:horizons-regression
 pnpm complete
@@ -176,6 +179,8 @@ pnpm dev
 
 The data commands refresh authority snapshots and therefore require network access.
 They are not required for an ordinary build because validated snapshots and assets are committed locally.
+`pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
+It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light and sample count, so a rerun on the same Blender build writes identical files), and records each picture's source hash, output hash, byte length and render settings in `src/data/lineup-globes.snapshot.json`.
 
 Open the URL printed by Vite.
 
@@ -194,6 +199,8 @@ The eclipse-story journey checks all seven 12 August 2026 scenes at their exact 
 It verifies London contact geometry, apparent solar and lunar diameters, live disc overlap, and a physical centre-line comparison in northern Spain.
 The gravity-field journey verifies positive-GM superposition, sourced-radius surface capping, physical joules-per-kilogram diagnostics, contour and surface rendering, local-detail and absolute-comparison scaling, and synchronization with simulation time.
 The photographic-rendering journey verifies the three rendering profiles, bounded device-pixel ratios, inverse-square illumination metadata, smooth auto-exposure, Sun-facing close-view framing, live atmosphere and Saturn-ring lighting models, and measured browser frame diagnostics before capturing Earth, Saturn, and the close Sun.
+The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
+The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings, tap targets, the camera dock's 44 px buttons, and a visible error for a picture that fails to load.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.

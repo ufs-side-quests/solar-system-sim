@@ -58,6 +58,7 @@ import {
 import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
+  EARTH_MEAN_RADIUS_M,
   formatMassKg,
   formatLiveOrbitalPeriod,
   formatSourcedOrbitalPeriod,
@@ -694,14 +695,6 @@ function formatSimulationOffset(seconds: number): string {
   }
   return `${sign}${(absoluteSeconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
 }
-
-const EARTH_MEAN_RADIUS_M = (() => {
-  const earth = majorBodySnapshot.bodies.find((body) => body.id === "earth");
-  if (earth === undefined) {
-    throw new Error("Major-body snapshot is missing Earth");
-  }
-  return earth.meanRadiusM;
-})();
 
 /** "the Sun" reads as a name; every other parent keeps its own name. */
 function parentPhrase(parent: MajorBodyDefinition): string {
@@ -2774,13 +2767,6 @@ export function App() {
             >
               Eclipse story
             </button>
-            <button
-              type="button"
-              aria-expanded={sizeLineupOpen}
-              onClick={() => setSizeLineupOpen(true)}
-            >
-              Compare sizes
-            </button>
           </div>
         </nav>
 
@@ -3220,7 +3206,7 @@ export function App() {
                       <button
                         type="button"
                         className="compare-sizes-button"
-                        aria-expanded={sizeLineupOpen}
+                        aria-haspopup="dialog"
                         onClick={() => setSizeLineupOpen(true)}
                       >
                         Compare sizes

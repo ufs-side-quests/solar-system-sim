@@ -3090,9 +3090,11 @@ h1 {
     width: 100%;
   }
 
+  /* Equal shares from a zero basis keep every dock button, the 2rem zoom
+     buttons too, at least 44 px wide. */
   .camera-dock-actions button {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 0;
+    min-width: 2.75rem;
     padding-inline: 0.3rem;
   }
 
@@ -3227,7 +3229,8 @@ h1 {
   --lineup-largest: clamp(6.5rem, 14vw, 12rem);
 
   position: absolute;
-  z-index: 40;
+  /* Above the simulation clock (60), below the Focus popover (100). */
+  z-index: 70;
   top: 50%;
   left: 50%;
   width: min(62rem, calc(100% - 1.1rem));
@@ -3306,7 +3309,7 @@ h1 {
   border-radius: 0 0.65rem 0.65rem 0;
 }
 
-.size-lineup-sun span {
+.size-lineup-sun span:last-child {
   position: relative;
   padding: 0.05rem 0.3rem;
   border-radius: 0.4rem;
@@ -3323,11 +3326,13 @@ h1 {
   font-weight: 650;
 }
 
-.size-lineup-disc,
-.size-lineup-sun-disc {
+/* A picture is --lineup-frame mean radii wide on each side of its globe. */
+.size-lineup-disc {
   flex: none;
-  width: calc(var(--lineup-largest) * var(--lineup-radius));
-  height: calc(var(--lineup-largest) * var(--lineup-radius));
+  width: calc(
+    var(--lineup-largest) * var(--lineup-radius) * var(--lineup-frame)
+  );
+  height: auto;
 }
 
 /* Only the Sun's right edge shows: the disc ends 1.5rem before the column does. */
@@ -3335,5 +3340,23 @@ h1 {
   position: absolute;
   top: 50%;
   right: 1.5rem;
+  width: calc(var(--lineup-largest) * var(--lineup-radius));
+  height: calc(var(--lineup-largest) * var(--lineup-radius));
+  border-radius: 50%;
   transform: translateY(-50%);
+}
+
+.size-lineup-comparison small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.size-lineup-error {
+  margin: 0 0.9rem 0.7rem;
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 600;
 }
