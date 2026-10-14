@@ -264,15 +264,15 @@ export function formatMassKg(massKg: number | undefined): string {
  * gaps). The installed-asset check below fails the load when one is missing.
  */
 export const PLAIN_SURFACE_BY_BODY_ID: Readonly<Record<string, string>> = {
-  mercury: "Space camera pictures in boosted colours",
+  mercury: "Real space pictures in boosted colours",
   venus: "Radar map of the ground under the clouds",
-  earth: "Real space pictures, put together without clouds",
+  earth: "Real space pictures of the ground; clouds are a separate layer",
   mars: "Real space pictures joined together",
   jupiter: "Real space pictures of its clouds in 2000",
   saturn: "NASA artwork of its cloud tops",
   uranus: "Plain colour matched to real photos",
   neptune: "NASA artwork of its clouds",
-  moon: "Real space pictures joined together",
+  moon: "Real space pictures, polar gaps filled in",
   phobos: "Real space pictures joined together",
   deimos: "Real space pictures joined together",
   io: "Real space pictures joined together",

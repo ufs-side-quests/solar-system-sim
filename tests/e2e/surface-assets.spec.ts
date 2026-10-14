@@ -5,7 +5,7 @@ const SURFACE_CASES = [
   [
     "Mercury",
     "mercury",
-    "Space camera pictures in boosted colours",
+    "Real space pictures in boosted colours",
     "observational-composite",
   ],
   [
@@ -17,7 +17,7 @@ const SURFACE_CASES = [
   [
     "Earth",
     "earth",
-    "Real space pictures, put together without clouds",
+    "Real space pictures of the ground; clouds are a separate layer",
     "observational-composite",
   ],
   [
@@ -43,7 +43,7 @@ const SURFACE_CASES = [
   [
     "Moon",
     "moon",
-    "Real space pictures joined together",
+    "Real space pictures, polar gaps filled in",
     "observational-composite",
   ],
   [
