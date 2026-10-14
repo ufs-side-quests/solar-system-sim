@@ -1,6 +1,9 @@
+import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
+  anchoredCameraMove,
+  applyAnchoredCameraMove,
   formatViewpointSpeed,
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
@@ -108,5 +111,108 @@ describe("camera transition", () => {
   it("rejects invalid direct-flight timing", () => {
     expect(() => sampleDirectCameraTransition(-1, 12_000)).toThrow(/elapsed/u);
     expect(() => sampleDirectCameraTransition(0, 0)).toThrow(/duration/u);
+  });
+
+  describe("a flight around the destination", () => {
+    const up = new Vector3(0, 0, 1);
+    // About Jupiter's place and the overview's distance, in AU.
+    const anchor = new Vector3(4.1, -2.9, 0.05);
+    const endDistance = 0.002;
+    const positionAt = (
+      start: Vector3,
+      end: Vector3,
+      progress: number,
+    ): Vector3 =>
+      applyAnchoredCameraMove(
+        new Vector3(),
+        start,
+        anchoredCameraMove(start, end, anchor, progress, up),
+      );
+    const progressSteps = Array.from({ length: 101 }, (_, step) => step / 100);
+
+    it("lets the destination grow steadily instead of popping in at the end", () => {
+      const start = new Vector3(0, -30, 26);
+      const end = anchor.clone().add(new Vector3(-endDistance, 0, 0));
+      expect(
+        positionAt(start, end, 0.6).distanceTo(anchor),
+      ).toBeLessThanOrEqual(60 * endDistance);
+      const distances = progressSteps.map((progress) =>
+        positionAt(start, end, progress).distanceTo(anchor),
+      );
+      for (let step = 1; step < distances.length; step += 1) {
+        expect(distances[step]).toBeLessThan(distances[step - 1] ?? 0);
+      }
+      expect(Math.min(...distances)).toBeGreaterThanOrEqual(
+        endDistance * (1 - 1e-9),
+      );
+      expect(positionAt(start, end, 0).distanceTo(start)).toBeLessThan(1e-9);
+      expect(positionAt(start, end, 1).distanceTo(end)).toBeLessThan(1e-12);
+    });
+
+    it("swings level round the destination when it starts on the far side", () => {
+      const start = anchor.clone().add(new Vector3(5, 1e-4, 0));
+      const end = anchor.clone().add(new Vector3(-endDistance, 0, 0));
+      for (const progress of progressSteps) {
+        const offset = positionAt(start, end, progress).sub(anchor);
+        expect(offset.length()).toBeGreaterThanOrEqual(
+          endDistance * (1 - 1e-9),
+        );
+        // No tilted axis: the camera stays in the plane of both ends.
+        expect(Math.abs(offset.z)).toBeLessThan(1e-9);
+      }
+      expect(positionAt(start, end, 0.5).sub(anchor).y).not.toBeCloseTo(0, 3);
+      expect(positionAt(start, end, 1).distanceTo(end)).toBeLessThan(1e-12);
+      const exactlyOpposite = anchor.clone().add(new Vector3(5, 0, 0));
+      expect(
+        Math.abs(positionAt(exactlyOpposite, end, 0.5).sub(anchor).z),
+      ).toBeLessThan(1e-9);
+      expect(positionAt(exactlyOpposite, end, 1).distanceTo(end)).toBeLessThan(
+        1e-12,
+      );
+    });
+
+    it("keeps a short hop where it is and moves outward without overshoot", () => {
+      const close = anchor.clone().add(new Vector3(0, endDistance, 0));
+      expect(positionAt(close, close, 0.5).distanceTo(close)).toBeLessThan(
+        1e-12,
+      );
+      const far = anchor.clone().add(new Vector3(0, 40, 0));
+      const outward = progressSteps.map((progress) =>
+        positionAt(close, far, progress).distanceTo(anchor),
+      );
+      for (let step = 1; step < outward.length; step += 1) {
+        expect(outward[step]).toBeGreaterThan(outward[step - 1] ?? 0);
+      }
+      expect(Math.max(...outward)).toBeLessThanOrEqual(40 * (1 + 1e-9));
+    });
+
+    it("keeps a look target on the start line pointed at the destination", () => {
+      const start = new Vector3(0, -30, 26);
+      const end = anchor.clone().add(new Vector3(-endDistance, 0, 0));
+      const lookTarget = start.clone().lerp(anchor, 0.25);
+      for (const progress of [0.1, 0.5, 0.9]) {
+        const move = anchoredCameraMove(start, end, anchor, progress, up);
+        const camera = applyAnchoredCameraMove(new Vector3(), start, move);
+        const look = applyAnchoredCameraMove(new Vector3(), lookTarget, move)
+          .sub(camera)
+          .normalize();
+        expect(look.dot(anchor.clone().sub(camera).normalize())).toBeCloseTo(
+          1,
+          9,
+        );
+      }
+    });
+
+    it("fails explicitly when the camera starts on the destination", () => {
+      expect(() =>
+        anchoredCameraMove(
+          anchor,
+          anchor.clone().addScalar(1),
+          anchor,
+          0.5,
+          up,
+        ),
+      ).toThrow(/positive/u);
+    });
   });
 });

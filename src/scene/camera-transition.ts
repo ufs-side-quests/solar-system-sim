@@ -1,3 +1,5 @@
+import { Quaternion, Vector3 } from "three";
+
 import { SPEED_OF_LIGHT_MPS } from "../physics/solar-system";
 
 export type DirectCameraTransitionPhase =
@@ -13,8 +15,19 @@ export type OrientationTransitionSample = Readonly<{
   progress: number;
 }>;
 
+// The rotation and the scale about an anchor that carry a camera part of the
+// way from its start offset to its end offset.
+export type AnchoredCameraMove = Readonly<{
+  anchor: Vector3;
+  rotation: Quaternion;
+  scale: number;
+}>;
+
 const DIRECT_ORIENTATION_END = 0.34;
 const DIRECT_ARRIVAL_START = 0.68;
+// Start and end directions closer than this to opposite (about 172 degrees)
+// have no clear shortest turn, so the camera swings level instead.
+const NEARLY_OPPOSITE_COSINE = -0.99;
 
 function smootherStep(value: number): number {
   const clamped = Math.min(1, Math.max(0, value));
@@ -60,6 +73,67 @@ export function interpolateLogarithmicDistance(
     Math.log(startDistance) +
       (Math.log(endDistance) - Math.log(startDistance)) * clampedProgress,
   );
+}
+
+// The camera turns its direction from the anchor about one axis and changes
+// its distance by a constant factor per unit of progress, so the
+// anchor's apparent size grows steadily and the camera never comes closer than
+// the nearer of the two end distances.
+export function anchoredCameraMove(
+  startPosition: Vector3,
+  endPosition: Vector3,
+  anchor: Vector3,
+  progress: number,
+  levelUp: Vector3,
+): AnchoredCameraMove {
+  const startOffset = startPosition.clone().sub(anchor);
+  const endOffset = endPosition.clone().sub(anchor);
+  const startDistance = startOffset.length();
+  const distance = interpolateLogarithmicDistance(
+    startDistance,
+    endOffset.length(),
+    progress,
+  );
+  const startDirection = startOffset.normalize();
+  const endDirection = endOffset.normalize();
+  const completeRotation = new Quaternion();
+  if (startDirection.dot(endDirection) > NEARLY_OPPOSITE_COSINE) {
+    completeRotation.setFromUnitVectors(startDirection, endDirection);
+  } else {
+    // Swing round the anchor through a level side direction, toward the side
+    // the end direction leans to.
+    const side = new Vector3().crossVectors(levelUp, startDirection);
+    if (side.lengthSq() <= 1e-12) {
+      side.set(1, 0, 0).cross(startDirection);
+      if (side.lengthSq() <= 1e-12) side.set(0, 1, 0).cross(startDirection);
+    }
+    side.normalize();
+    if (side.dot(endDirection) < 0) side.negate();
+    completeRotation
+      .setFromUnitVectors(side, endDirection)
+      .multiply(new Quaternion().setFromUnitVectors(startDirection, side));
+  }
+  return {
+    anchor,
+    rotation: new Quaternion().slerp(
+      completeRotation,
+      Math.min(1, Math.max(0, progress)),
+    ),
+    scale: distance / startDistance,
+  };
+}
+
+export function applyAnchoredCameraMove(
+  output: Vector3,
+  point: Vector3,
+  move: AnchoredCameraMove,
+): Vector3 {
+  return output
+    .copy(point)
+    .sub(move.anchor)
+    .applyQuaternion(move.rotation)
+    .multiplyScalar(move.scale)
+    .add(move.anchor);
 }
 
 export function sampleDirectCameraTransition(

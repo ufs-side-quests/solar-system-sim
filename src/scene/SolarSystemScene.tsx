@@ -119,8 +119,9 @@ import {
 } from "./camera-orbit";
 import { PARENT_BODY_ID } from "./body-facts";
 import {
+  anchoredCameraMove,
+  applyAnchoredCameraMove,
   formatViewpointSpeed,
-  interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
   sampleOrientationTransition,
 } from "./camera-transition";
@@ -286,38 +287,6 @@ function voyagerEarthPointingQuaternion(
   );
 }
 
-function interpolateCameraPositionAroundAnchor(
-  outputPosition: Vector3,
-  startPosition: Vector3,
-  endPosition: Vector3,
-  anchor: Vector3,
-  progress: number,
-): void {
-  const startOffset = startPosition.clone().sub(anchor);
-  const endOffset = endPosition.clone().sub(anchor);
-  const startDistance = startOffset.length();
-  const endDistance = endOffset.length();
-  const distance = interpolateLogarithmicDistance(
-    startDistance,
-    endDistance,
-    progress,
-  );
-  const startDirection = startOffset.normalize();
-  const endDirection = endOffset.normalize();
-  const completeRotation = new Quaternion().setFromUnitVectors(
-    startDirection,
-    endDirection,
-  );
-  const interpolatedRotation = new Quaternion().slerp(
-    completeRotation,
-    progress,
-  );
-  outputPosition
-    .copy(startDirection)
-    .applyQuaternion(interpolatedRotation)
-    .multiplyScalar(distance)
-    .add(anchor);
-}
 const MAX_MOON_TRAIL_POINTS = 8_192;
 const MAX_PLANET_TRAIL_POINTS = 8_192;
 const PLANET_TRAIL_BODY_IDS = [
@@ -4989,12 +4958,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ORIENTATION_PRESET_TRANSITION_DURATION_MS,
       );
       const target = controls.target.clone();
-      interpolateCameraPositionAroundAnchor(
+      const startPosition = target.clone().add(transition.startOffset);
+      applyAnchoredCameraMove(
         camera.position,
-        target.clone().add(transition.startOffset),
-        target.clone().add(transition.endOffset),
-        target,
-        sample.progress,
+        startPosition,
+        anchoredCameraMove(
+          startPosition,
+          target.clone().add(transition.endOffset),
+          target,
+          sample.progress,
+          ECLIPTIC_NORTH,
+        ),
       );
       camera.up
         .lerpVectors(transition.startUp, transition.endUp, sample.progress)
@@ -5300,16 +5274,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
           false,
         );
       } else {
-        camera.position.lerpVectors(
+        // A straight line keeps the destination under a pixel until the last
+        // moment; closing the distance by a constant factor per step lets the
+        // child watch it grow. The look target rides the same move, so the
+        // view that the turn ended on stays centred on the destination.
+        const move = anchoredCameraMove(
           transition.startPosition,
           transition.endPosition,
-          directSample.segmentProgress,
-        );
-        controls.target.lerpVectors(
-          transition.orientationTarget,
           transition.endTarget,
           directSample.segmentProgress,
+          ECLIPTIC_NORTH,
         );
+        applyAnchoredCameraMove(
+          camera.position,
+          transition.startPosition,
+          move,
+        );
+        applyAnchoredCameraMove(
+          controls.target,
+          transition.orientationTarget,
+          move,
+        ).lerp(transition.endTarget, directSample.segmentProgress);
         camera.up
           .lerpVectors(
             ECLIPTIC_NORTH,

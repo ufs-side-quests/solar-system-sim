@@ -119,6 +119,53 @@ test("turns toward a new manual focus before travelling there directly", async (
   await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
 });
 
+test("the destination planet grows on screen through the last seconds of a flight", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  const scene = page.getByRole("img", { name: sceneName });
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  // Paused time keeps Jupiter still, so only the camera changes its size.
+  await page.getByRole("button", { name: "Pause" }).click();
+  const jupiter = page.locator('.body-label[data-body-id="jupiter"]');
+  await focusObject(page, "Jupiter");
+  const durationMs = Number(
+    await scene.getAttribute("data-camera-transition-duration-ms"),
+  );
+  expect(durationMs).toBe(12_000);
+  const radiusAtElapsed = async (fraction: number): Promise<number> => {
+    await expect
+      .poll(
+        async () =>
+          Number(await scene.getAttribute("data-camera-transition-elapsed-ms")),
+        { timeout: 15_000, intervals: [50] },
+      )
+      .toBeGreaterThanOrEqual(durationMs * fraction);
+    await expect(scene).not.toHaveAttribute(
+      "data-camera-transition-phase",
+      "settled",
+    );
+    return Number(await jupiter.getAttribute("data-radius-pixels"));
+  };
+  // A straight-line flight keeps Jupiter under a pixel until the last moment;
+  // the approach should show a disc well before arrival and keep growing.
+  const atThreeQuarters = await radiusAtElapsed(0.75);
+  const atNineTenths = await radiusAtElapsed(0.9);
+  expect(atThreeQuarters).toBeGreaterThan(5);
+  expect(atNineTenths).toBeGreaterThan(atThreeQuarters * 2);
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 15_000 },
+  );
+  expect(
+    Number(await jupiter.getAttribute("data-radius-pixels")),
+  ).toBeGreaterThan(atNineTenths);
+});
+
 test("mouse wheel can dolly from the Solar System to Alpha Centauri scale", async ({
   page,
 }) => {
