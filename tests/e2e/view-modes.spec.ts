@@ -11,7 +11,23 @@ test("switches between physical, orrery, and schematic views without changing ph
   await page.getByRole("button", { name: "Pause" }).click();
 
   const timeOutput = page.locator(".time-readout output");
+  // The frame in progress settles on its exact endpoint after Pause, so the
+  // paused time is taken once two consecutive polls read the same value.
+  let lastRead: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const previous = lastRead;
+        lastRead = await timeOutput.getAttribute("data-time-seconds");
+        return lastRead !== null && lastRead === previous;
+      },
+      { intervals: [250], timeout: 10_000 },
+    )
+    .toBe(true);
   const pausedTime = await timeOutput.getAttribute("data-time-seconds");
+  if (pausedTime === null) {
+    throw new Error("Paused simulation time is unavailable");
+  }
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
   });
@@ -88,10 +104,7 @@ test("switches between physical, orrery, and schematic views without changing ph
     path: testInfo.outputPath("orrery-view.png"),
     fullPage: true,
   });
-  await expect(timeOutput).toHaveAttribute(
-    "data-time-seconds",
-    pausedTime ?? "0",
-  );
+  await expect(timeOutput).toHaveAttribute("data-time-seconds", pausedTime);
 
   const focus = page.getByRole("combobox", { name: "Focus" });
   const sequenceBeforeEarth = await scene.getAttribute(

@@ -67,9 +67,9 @@ Natural bodies form systems: the Sun, and each planet or dwarf planet with its m
 The open system is the one that holds the focus; a spacecraft counts with the body it orbits, and the overview, the Sun and heliocentric objects open no system.
 The Sun, every planet and dwarf planet, and every moon of the open system (catalogue moons as points) take part in the scale rule: each pair fills at most 40% of the distance between their centres.
 Every body uses one shared factor on its readable radius, the smallest that the scale rule needs, and no body is drawn smaller than its true radius.
-Because the factor is shared, every drawn natural body keeps its true size order, in the overview and in every focus view.
+Because the factor is shared, the drawn Sun, planets, dwarf planets and moons keep their true size order, in the overview and in every focus view.
 A moon of any other system, whether a major moon or a catalogue point, is not drawn when it and an enlarged body would fill more than 40% of their separation; in the overview at full boost this hides the Moon inside Earth and the large moons inside the giant planets.
-So every pair of drawn natural bodies fills at most 40% of the distance between their centres, unless one of them is drawn at its true radius.
+So every drawn pair of the Sun, planets, dwarf planets and moons fills at most 40% of the distance between their centres, unless one of them is drawn at its true radius.
 Such a pair still does not overlap while the bodies sit farther apart than 1.67 true radii of the larger one; at the snapshot epoch the closest sourced pair is Jupiter and Metis, at about 1.8 Jupiter radii.
 A unit test checks these rules over the snapshot epoch positions in the overview and in Jupiter, Earth and Pluto focus views.
 Spacecraft and fictional objects never limit the drawn size of a natural body.
