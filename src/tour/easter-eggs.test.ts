@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { majorBodySnapshot } from "../physics/solar-system";
 import {
   discoveryMessage,
+  discoveryProgress,
   EASTER_EGGS,
+  type EasterEggId,
+  hiddenSurpriseRows,
+  hiddenSurprisesHeading,
   hintsAtUnfoundEasterEgg,
   parseFoundEasterEggs,
   segmentClearsSphere,
@@ -91,5 +96,64 @@ describe("easter egg hints", () => {
       "jovian-monolith": ["jupiter", "io"],
       roadster: ["earth", "mars"],
     });
+  });
+});
+
+describe("hidden surprise rows", () => {
+  it("shows every unfound egg as a clue that names the body it flies to", () => {
+    const rows = hiddenSurpriseRows(new Set());
+    expect(
+      rows.map((row) =>
+        row.kind === "clue" ? [row.eggId, row.label, row.bodyId] : row,
+      ),
+    ).toEqual([
+      ["death-star-1", "? Near Callisto", "callisto"],
+      ["death-star-2", "? Near Ganymede", "ganymede"],
+      ["deep-space-nine", "? Near Callisto", "callisto"],
+      ["uss-defiant", "? Near Callisto", "callisto"],
+      ["discovery-one", "? Near Io", "io"],
+      ["jovian-monolith", "? Between Jupiter and Io", "io"],
+      ["roadster", "? Somewhere between Earth and Mars", "mars"],
+    ]);
+    for (const egg of EASTER_EGGS) {
+      const clueBody = majorBodySnapshot.bodies.find(
+        (body) => body.id === egg.clueBodyId,
+      );
+      expect(clueBody, egg.id).toBeDefined();
+      expect(egg.clue).toContain(clueBody?.name);
+      // A clue never names the egg it hides.
+      expect(egg.clue.toLowerCase()).not.toContain(
+        egg.name.replace(/^the /u, "").toLowerCase(),
+      );
+    }
+  });
+
+  it("names found eggs and keeps clues for the rest", () => {
+    const found = new Set<EasterEggId>(["death-star-1", "roadster"]);
+    const rows = hiddenSurpriseRows(found);
+    expect(rows.filter((row) => row.kind === "found")).toEqual([
+      { kind: "found", eggId: "death-star-1" },
+      { kind: "found", eggId: "roadster" },
+    ]);
+    expect(rows.filter((row) => row.kind === "clue")).toHaveLength(5);
+    expect(hiddenSurprisesHeading(found)).toBe(
+      "Hidden surprises · 2 of 7 found",
+    );
+    expect(hiddenSurprisesHeading(new Set())).toBe(
+      "Hidden surprises · 0 of 7 found",
+    );
+  });
+
+  it("counts each find and celebrates only the last one", () => {
+    const allButOne = new Set<EasterEggId>(
+      EASTER_EGGS.slice(0, -1).map((egg) => egg.id),
+    );
+    expect(discoveryProgress(new Set(["deep-space-nine"]))).toBe(
+      "1 of 7 found",
+    );
+    expect(discoveryProgress(allButOne)).toBe("6 of 7 found");
+    expect(discoveryProgress(new Set(EASTER_EGGS.map((egg) => egg.id)))).toBe(
+      "You found every hidden surprise! 7 of 7 found",
+    );
   });
 });

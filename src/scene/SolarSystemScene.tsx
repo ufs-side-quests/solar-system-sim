@@ -49,8 +49,11 @@ import {
   easterEgg,
   type EasterEggId,
   HIDDEN_SURPRISE_LABEL,
+  HIDDEN_SURPRISES_GROUP,
   segmentClearsSphere,
+  isEasterEggId,
 } from "../tour/easter-eggs";
+import { bodyDisplayName } from "./body-display-name";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
@@ -3263,7 +3266,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       ...operationalSpacecraftSnapshot.spacecraft.map((spacecraft) => ({
         id: spacecraft.id,
         name: spacecraft.name,
-        group: "Spacecraft",
+        group: isEasterEggId(spacecraft.id)
+          ? HIDDEN_SURPRISES_GROUP
+          : "Spacecraft",
       })),
       ...voyagerSnapshot.probes.map((probe) => ({
         id: probe.id,
@@ -3278,22 +3283,22 @@ float saturnRingTransmission(vec3 surfacePosition) {
       {
         id: JOVIAN_MONOLITH_BODY_ID,
         name: JOVIAN_MONOLITH_NAME,
-        group: "Fictional references",
+        group: HIDDEN_SURPRISES_GROUP,
       },
       {
         id: DISCOVERY_ONE_BODY_ID,
         name: DISCOVERY_ONE_NAME,
-        group: "Fictional references",
+        group: HIDDEN_SURPRISES_GROUP,
       },
       ...FICTIONAL_ORBITERS.map((orbiter) => ({
         id: orbiter.id,
         name: orbiter.name,
-        group: "Fictional references",
+        group: HIDDEN_SURPRISES_GROUP,
       })),
       ...DEEP_SPACE_NINE_OBJECTS.map((object) => ({
         id: object.id,
         name: object.name,
-        group: "Fictional references",
+        group: HIDDEN_SURPRISES_GROUP,
       })),
     ];
     const navigationDestinationById = new Map(
@@ -3302,19 +3307,33 @@ float saturnRingTransmission(vec3 surfacePosition) {
         destination,
       ]),
     );
-    for (const destination of navigationDestinations) {
-      let group = navigationDestinationGroups.get(destination.group);
-      if (group === undefined) {
-        group = document.createElement("optgroup");
-        group.label = destination.group;
-        navigationDestinationGroups.set(destination.group, group);
-        navigationDestinationSelect.append(group);
+    // An unfound easter egg is neither listed nor plotted on the map.
+    const isNavigationDestinationShown = (bodyId: string): boolean =>
+      !isEasterEggId(bodyId) || foundEasterEggIdsRef.current.has(bodyId);
+    let listedFoundEasterEggIds: ReadonlySet<EasterEggId> | undefined;
+    const listNavigationDestinations = (): void => {
+      if (listedFoundEasterEggIds === foundEasterEggIdsRef.current) return;
+      listedFoundEasterEggIds = foundEasterEggIdsRef.current;
+      const selectedValue = navigationDestinationSelect.value;
+      navigationDestinationSelect.replaceChildren();
+      navigationDestinationGroups.clear();
+      for (const destination of navigationDestinations) {
+        if (!isNavigationDestinationShown(destination.id)) continue;
+        let group = navigationDestinationGroups.get(destination.group);
+        if (group === undefined) {
+          group = document.createElement("optgroup");
+          group.label = destination.group;
+          navigationDestinationGroups.set(destination.group, group);
+          navigationDestinationSelect.append(group);
+        }
+        const option = document.createElement("option");
+        option.value = destination.id;
+        option.textContent = destination.name;
+        group.append(option);
       }
-      const option = document.createElement("option");
-      option.value = destination.id;
-      option.textContent = destination.name;
-      group.append(option);
-    }
+      navigationDestinationSelect.value = selectedValue;
+    };
+    listNavigationDestinations();
     navigationDestinationSelect.value = focusBodyIdRef.current ?? "sun";
     navigationDestinationRow.append(
       navigationDestinationSelect,
@@ -5115,14 +5134,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (bodyId === null || bodyId === undefined || bodyId === "") {
           return "the Solar System";
         }
-        return (
-          majorBodyById.get(bodyId)?.name ??
-          knownSatelliteById.get(bodyId)?.name ??
-          (isVoyagerBodyId(bodyId)
-            ? voyagerById.get(bodyId)?.name
-            : undefined) ??
-          (bodyId === ISS_BODY_ID ? "the ISS" : bodyId)
-        );
+        return bodyDisplayName(bodyId);
       };
       const transitionStartedAtMs = performance.now();
       activeCameraTransition = {
@@ -7308,8 +7320,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           },
         ];
         const plottedBodyIds = new Set<string>();
+        listNavigationDestinations();
         for (const destination of navigationDestinations) {
-          if (destination.id === "sun" || plottedBodyIds.has(destination.id)) {
+          if (
+            destination.id === "sun" ||
+            plottedBodyIds.has(destination.id) ||
+            !isNavigationDestinationShown(destination.id)
+          ) {
             continue;
           }
           plottedBodyIds.add(destination.id);
@@ -7340,7 +7357,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           navigationContext.fillStyle =
             destination.group === "Spacecraft"
               ? "#a5e3c2"
-              : destination.group === "Fictional references"
+              : destination.group === HIDDEN_SURPRISES_GROUP
                 ? "#d8a8ee"
                 : destination.group === "Moons"
                   ? "#b9c4cf"
@@ -7418,7 +7435,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (
           focusBodyIdRef.current !== lastNavigationFocusBodyId &&
           focusBodyIdRef.current !== null &&
-          navigationDestinationById.has(focusBodyIdRef.current)
+          navigationDestinationById.has(focusBodyIdRef.current) &&
+          isNavigationDestinationShown(focusBodyIdRef.current)
         ) {
           navigationDestinationSelect.value = focusBodyIdRef.current;
           lastNavigationFocusBodyId = focusBodyIdRef.current;

@@ -23,6 +23,7 @@ export const FOUND_EASTER_EGGS_STORAGE_KEY = "solar-explorer.found-eggs.v1";
 // Game wording, so a child never reads the hint as a real astronomical
 // discovery.
 export const HIDDEN_SURPRISE_LABEL = "? Hidden surprise";
+export const HIDDEN_SURPRISES_GROUP = "Hidden surprises";
 
 function fictionalOrbiterParentBodyId(
   id: FictionalOrbiterId,
@@ -39,10 +40,14 @@ function fictionalOrbiterParentBodyId(
  * whose focus or selection shows the egg as a hidden surprise; each one also
  * hides the hint while the egg is behind it. `cardHint` marks eggs that stay
  * near their hint body, so the selected-body card can promise one is close.
+ * `clue` names `clueBodyId`, the body the Focus list flies to before the egg
+ * is found, so the list never names an unfound egg.
  */
 export const EASTER_EGGS = [
   {
     id: "death-star-1",
+    clue: "Near Callisto",
+    clueBodyId: fictionalOrbiterParentBodyId("death-star-1"),
     name: "the Death Star",
     origin: "fictional, from Star Wars",
     hintBodyIds: [fictionalOrbiterParentBodyId("death-star-1")],
@@ -50,6 +55,8 @@ export const EASTER_EGGS = [
   },
   {
     id: "death-star-2",
+    clue: "Near Ganymede",
+    clueBodyId: fictionalOrbiterParentBodyId("death-star-2"),
     name: "the second Death Star",
     origin: "fictional, from Star Wars",
     hintBodyIds: [fictionalOrbiterParentBodyId("death-star-2")],
@@ -57,6 +64,8 @@ export const EASTER_EGGS = [
   },
   {
     id: DEEP_SPACE_NINE_BODY_ID,
+    clue: "Near Callisto",
+    clueBodyId: DEEP_SPACE_NINE_PARENT_BODY_ID,
     name: "Deep Space Nine",
     origin: "fictional, from Star Trek",
     hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
@@ -64,6 +73,8 @@ export const EASTER_EGGS = [
   },
   {
     id: USS_DEFIANT_BODY_ID,
+    clue: "Near Callisto",
+    clueBodyId: DEEP_SPACE_NINE_PARENT_BODY_ID,
     name: "the USS Defiant",
     origin: "fictional, from Star Trek",
     hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
@@ -71,6 +82,8 @@ export const EASTER_EGGS = [
   },
   {
     id: DISCOVERY_ONE_BODY_ID,
+    clue: "Near Io",
+    clueBodyId: DISCOVERY_ONE_PARENT_BODY_ID,
     name: "Discovery One",
     origin: "fictional, from 2001: A Space Odyssey",
     hintBodyIds: [DISCOVERY_ONE_PARENT_BODY_ID],
@@ -78,6 +91,8 @@ export const EASTER_EGGS = [
   },
   {
     id: JOVIAN_MONOLITH_BODY_ID,
+    clue: "Between Jupiter and Io",
+    clueBodyId: JOVIAN_MONOLITH_SECONDARY_BODY_ID,
     name: "the Monolith",
     origin: "fictional, from 2010: Odyssey Two",
     hintBodyIds: [
@@ -88,6 +103,8 @@ export const EASTER_EGGS = [
   },
   {
     id: ROADSTER_BODY_ID,
+    clue: "Somewhere between Earth and Mars",
+    clueBodyId: "mars",
     name: "Starman's Tesla Roadster",
     origin: "real, launched by SpaceX in 2018",
     hintBodyIds: ["earth", "mars"],
@@ -98,6 +115,8 @@ export const EASTER_EGGS = [
   id: string;
   name: string;
   origin: string;
+  clue: string;
+  clueBodyId: string;
   hintBodyIds: readonly string[];
   cardHint: boolean;
 }>[];
@@ -163,6 +182,44 @@ export function easterEgg(id: EasterEggId): EasterEgg {
 export function discoveryMessage(id: EasterEggId): string {
   const egg = easterEgg(id);
   return `You found ${egg.name}! (${egg.origin})`;
+}
+
+export function foundCountText(found: ReadonlySet<EasterEggId>): string {
+  return `${String(found.size)} of ${String(EASTER_EGGS.length)} found`;
+}
+
+/** The toast line under the egg's own line. */
+export function discoveryProgress(found: ReadonlySet<EasterEggId>): string {
+  return found.size === EASTER_EGGS.length
+    ? `You found every hidden surprise! ${foundCountText(found)}`
+    : foundCountText(found);
+}
+
+export function hiddenSurprisesHeading(
+  found: ReadonlySet<EasterEggId>,
+): string {
+  return `${HIDDEN_SURPRISES_GROUP} · ${foundCountText(found)}`;
+}
+
+export type HiddenSurpriseRow = Readonly<
+  | { kind: "found"; eggId: EasterEggId }
+  | { kind: "clue"; eggId: EasterEggId; bodyId: string; label: string }
+>;
+
+/** One row per egg: found eggs by id, unfound eggs as a clue to fly to. */
+export function hiddenSurpriseRows(
+  found: ReadonlySet<EasterEggId>,
+): readonly HiddenSurpriseRow[] {
+  return EASTER_EGGS.map((egg) =>
+    found.has(egg.id)
+      ? { kind: "found", eggId: egg.id }
+      : {
+          kind: "clue",
+          eggId: egg.id,
+          bodyId: egg.clueBodyId,
+          label: `? ${egg.clue}`,
+        },
+  );
 }
 
 /** Stored content that is not a JSON array of strings counts as nothing found. */

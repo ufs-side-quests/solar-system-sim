@@ -95,6 +95,7 @@ test("hints at hidden objects near Callisto and celebrates the first find", asyn
   const toast = page.getByRole("status").filter({ hasText: "You found" });
   await expect(toast).toBeVisible();
   await expect(toast).toContainText(/\(fictional, from Star (Wars|Trek)\)/u);
+  await expect(toast).toContainText("1 of 7 found");
   await expect(scene).toHaveAttribute("data-selected-body", eggId ?? "");
   const egg = page.locator(`.body-label[data-body-id="${eggId ?? ""}"]`);
   await expect(egg).toHaveText(realName);
@@ -172,5 +173,159 @@ test("tells a phone user that a hidden surprise orbits the selected moon", async
   await focusCallisto(page, await pauseScene(page));
   await expect(card.locator("strong").first()).toHaveText("Callisto");
   await expect(hint).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+const EGG_NAME =
+  /Death Star|Deep Space Nine|Defiant|Discovery One|Monolith|Roadster/u;
+const FOUND_EGGS_KEY = "solar-explorer.found-eggs.v1";
+
+async function seedFoundEggs(page: Page, found: readonly string[]) {
+  await page.goto("/");
+  await page.evaluate(
+    ([key, ids]) => window.localStorage.setItem(key, JSON.stringify(ids)),
+    [FOUND_EGGS_KEY, found] as const,
+  );
+  await page.reload();
+}
+
+test("keeps unfound eggs out of the Focus list, search, Next object and map", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("/");
+  const scene = await pauseScene(page);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+
+  await page.getByRole("button", { name: "Open focus list" }).click();
+  const listbox = page.locator(".focus-popover");
+  await expect(listbox).toBeVisible();
+  await expect(listbox).toContainText("Hidden surprises · 0 of 7 found");
+  await expect(listbox).toContainText("? Near Callisto");
+  await expect(listbox).toContainText("? Between Jupiter and Io");
+  await expect(listbox).toContainText("? Somewhere between Earth and Mars");
+  await expect(listbox).not.toContainText(EGG_NAME);
+  await expect(listbox).not.toContainText("Fictional references");
+  await page.screenshot({
+    path: testInfo.outputPath("focus-list-nothing-found.png"),
+  });
+
+  await focus.fill("Hubble");
+  await expect(
+    listbox.getByRole("option", { name: "Hubble Space Telescope" }),
+  ).toBeVisible();
+  // "star" names no real object here, so no egg is left to list.
+  await focus.fill("star");
+  await expect(listbox.getByRole("option")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("search-star.png") });
+
+  await focus.fill("James Webb Space Telescope");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jwst");
+  await page.getByRole("button", { name: "Next object" }).click();
+  await expect(scene).toHaveAttribute("data-selected-body", "sun");
+
+  const destinations = page.getByRole("combobox", {
+    name: "Navigation destination",
+  });
+  await expect(destinations.locator("option").first()).toBeAttached();
+  for (const option of await destinations.locator("option").allTextContents()) {
+    expect(option).not.toMatch(EGG_NAME);
+  }
+  expect(
+    await destinations
+      .locator("optgroup")
+      .evaluateAll((groups) =>
+        groups.map((group) => group.getAttribute("label")),
+      ),
+  ).not.toContain("Hidden surprises");
+  expect(
+    await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      FOUND_EGGS_KEY,
+    ),
+  ).toBeNull();
+  expect(pageErrors).toEqual([]);
+});
+
+test("a clue row flies to the clue body, not to the egg", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  const scene = await pauseScene(page);
+  await page.getByRole("button", { name: "Open focus list" }).click();
+  await page
+    .locator(".focus-popover")
+    .getByRole("option", { name: "? Near Callisto" })
+    .first()
+    .click();
+  await expect(scene).toHaveAttribute("data-focus-body", "callisto");
+  await expect(scene).toHaveAttribute("data-selected-body", "callisto");
+  expect(
+    await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      FOUND_EGGS_KEY,
+    ),
+  ).toBeNull();
+});
+
+test("names found eggs and celebrates the last find", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await seedFoundEggs(page, [
+    "death-star-1",
+    "death-star-2",
+    "deep-space-nine",
+    "uss-defiant",
+    "discovery-one",
+    "jovian-monolith",
+  ]);
+  const scene = await pauseScene(page);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await page.getByRole("button", { name: "Open focus list" }).click();
+  const listbox = page.locator(".focus-popover");
+  await expect(listbox).toContainText("Hidden surprises · 6 of 7 found");
+  for (const name of [
+    "Death Star I (fictional)",
+    "Death Star II (fictional)",
+    "Deep Space Nine (fictional)",
+    "USS Defiant (fictional)",
+    "Discovery One (fictional)",
+    "Jovian Monolith (fictional)",
+  ]) {
+    await expect(
+      listbox.getByRole("option", { name, exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    listbox.getByRole("option", {
+      name: "? Somewhere between Earth and Mars",
+    }),
+  ).toBeVisible();
+  await expect(listbox.getByRole("option", { name: /^\? Near/u })).toHaveCount(
+    0,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("focus-list-six-found.png"),
+  });
+
+  // A parent can still type the full name.
+  await focus.fill("Tesla Roadster and Starman");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "roadster");
+  const toast = page.getByRole("status").filter({ hasText: "You found" });
+  await expect(toast).toContainText("Starman's Tesla Roadster");
+  await expect(toast).toContainText(
+    "You found every hidden surprise! 7 of 7 found",
+  );
+  await expect(page.locator(".camera-journey")).toContainText("Tesla Roadster");
+  await expect(
+    page.getByRole("navigation", { name: "Current focus" }),
+  ).toContainText("Tesla Roadster and Starman");
+  await page.screenshot({ path: testInfo.outputPath("all-found-toast.png") });
   expect(pageErrors).toEqual([]);
 });
