@@ -128,7 +128,10 @@ import {
   JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./jovian-monolith";
-import { createDeathStarModel } from "./death-star-model";
+import {
+  createDeathStarModel,
+  DEATH_STAR_MODEL_VISUAL_SOURCE,
+} from "./death-star-model";
 import {
   FICTIONAL_ORBITERS,
   fictionalOrbiterById,
@@ -1569,25 +1572,22 @@ reflectedLight.directSpecular *= solarTransmission;`,
     const fictionalOrbiterGroups = new Map<string, Group>();
     const fictionalOrbiterLabels = new Map<string, HTMLButtonElement>();
     const fictionalOrbiterMarkers = new Map<string, HTMLSpanElement>();
-    for (const orbiter of FICTIONAL_ORBITERS) {
-      const group =
-        orbiter.id === "death-star-2"
-          ? new Group()
-          : createDeathStarModel(orbiter);
-      if (orbiter.id === "death-star-2") {
-        group.name = "Death Star II licensed model anchor";
-        group.userData["visualSource"] = "cc-by-sketchfab-pbr-glb";
+    let deathStarModelBuilt = false;
+    // Death Star I is built, and its textures requested, only when the frame
+    // loop first needs to draw it.
+    const ensureDeathStarModel = (): void => {
+      if (deathStarModelBuilt) {
+        return;
       }
-      group.visible = false;
-      scene.add(group);
-      fictionalOrbiterGroups.set(orbiter.id, group);
-      const visualSource: unknown = group.userData["visualSource"];
-      if (typeof visualSource !== "string") {
-        throw new Error(`${orbiter.name} visual provenance is unavailable`);
+      const orbiter = fictionalOrbiterById.get("death-star-1");
+      const anchor = fictionalOrbiterGroups.get("death-star-1");
+      if (orbiter === undefined || anchor === undefined) {
+        throw new Error("Death Star I scene objects are unavailable");
       }
-      container.dataset[`${orbiter.id.replaceAll("-", "")}VisualModel`] =
-        visualSource;
-      group.traverse((object) => {
+      deathStarModelBuilt = true;
+      const model = createDeathStarModel(orbiter);
+      anchor.add(model);
+      model.traverse((object) => {
         if (object.type === "Mesh") {
           const modelMesh = object as Mesh;
           additionalSelectableMeshes.push(modelMesh);
@@ -1609,6 +1609,20 @@ reflectedLight.directSpecular *= solarTransmission;`,
           }
         }
       });
+    };
+    for (const orbiter of FICTIONAL_ORBITERS) {
+      const group = new Group();
+      const visualSource =
+        orbiter.id === "death-star-2"
+          ? "cc-by-sketchfab-pbr-glb"
+          : DEATH_STAR_MODEL_VISUAL_SOURCE;
+      group.name = `${orbiter.name} model anchor`;
+      group.userData["visualSource"] = visualSource;
+      group.visible = false;
+      scene.add(group);
+      fictionalOrbiterGroups.set(orbiter.id, group);
+      container.dataset[`${orbiter.id.replaceAll("-", "")}VisualModel`] =
+        visualSource;
       const label = document.createElement("button");
       label.type = "button";
       label.className = "body-label fictional-object-label";
@@ -2121,15 +2135,6 @@ reflectedLight.directSpecular *= solarTransmission;`,
           roughness: body.type === "moon" ? 0.92 : 0.74,
           metalness: 0,
         });
-        if (body.id === "earth" && nasaEarthNightLightAsset !== undefined) {
-          surfaceMaterial.emissive.setHex(0xffd59a);
-          surfaceMaterial.emissiveMap = loadTexture(
-            nasaEarthNightLightAsset.file,
-            true,
-          );
-          surfaceMaterial.emissiveIntensity = 0.32;
-          container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
-        }
         configureSolarOcclusion(
           surfaceMaterial,
           body.id,
@@ -3060,15 +3065,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
       modelLoadPromises.set(asset.bodyId, loadPromise);
       return loadPromise;
     };
+    // A model is requested only once its body is focused, selected, or large
+    // enough on screen to draw, so the first load carries no model bytes.
     const ensureSourcedModel = (bodyId: string): void => {
+      if (bodyId === "death-star-1") {
+        ensureDeathStarModel();
+        return;
+      }
       const asset = sourcedModelAssetByBodyId.get(bodyId);
       if (asset !== undefined) {
         void loadSourcedModel(asset).catch(() => undefined);
       }
     };
-    for (const asset of spacecraftAssets) {
-      ensureSourcedModel(asset.bodyId);
-    }
     if (!sourcedModelGroups.has(ROADSTER_BODY_ID)) {
       throw new Error("Roadster sourced model group is unavailable");
     }
@@ -3788,6 +3796,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (bodyId === "moon" && nasaMoonHeightAsset !== undefined) {
         surfaceMaterial.bumpMap = loadTexture(nasaMoonHeightAsset.file, false);
         surfaceMaterial.bumpScale = 0.018;
+      }
+      if (bodyId === "earth" && nasaEarthNightLightAsset !== undefined) {
+        surfaceMaterial.emissive.setHex(0xffd59a);
+        surfaceMaterial.emissiveMap = loadTexture(
+          nasaEarthNightLightAsset.file,
+          true,
+        );
+        surfaceMaterial.emissiveIntensity = 0.32;
+        container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
       }
       if (bodyId === "earth" && nasaEarthCloudAsset !== undefined) {
         const cloudMaterial = new MeshStandardMaterial({
@@ -8199,6 +8216,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(DISCOVERY_ONE_BODY_ID);
+        }
         discoveryOneGroup.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8297,6 +8317,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(orbiter.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8385,6 +8408,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(object.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8455,6 +8481,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft && ephemerisValid;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(ISS_BODY_ID);
+        }
         issGroup.visible = geometryVisible;
         issLabel.hidden = !(
           showLabelsRef.current &&
@@ -8557,6 +8586,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(probe.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8645,6 +8677,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(spacecraft.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&

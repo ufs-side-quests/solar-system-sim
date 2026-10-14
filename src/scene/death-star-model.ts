@@ -294,12 +294,14 @@ function addIncompleteSuperstructure(
   frame.add(reactor);
 }
 
+export const DEATH_STAR_MODEL_VISUAL_SOURCE =
+  "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3";
+
 export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   const group = new Group();
   group.name = `${orbiter.name} detailed physical-scale visualization`;
   group.userData["bodyId"] = orbiter.id;
-  group.userData["visualSource"] =
-    "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3";
+  group.userData["visualSource"] = DEATH_STAR_MODEL_VISUAL_SOURCE;
   group.scale.setScalar(orbiter.diameterM / 2 / ASTRONOMICAL_UNIT_M);
   const modelRoot = new Group();
   modelRoot.name = `${orbiter.name} presentation geometry`;

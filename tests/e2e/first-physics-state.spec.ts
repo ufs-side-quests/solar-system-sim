@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 // Surface maps that the scene requests only when a body becomes large enough on
-// screen. The Earth night-light map and the Saturn ring profile load when the
-// scene is built, so they are not part of this budget.
+// screen. The Saturn ring profile loads when the scene is built, so it is not
+// part of this budget.
 const SURFACE_MAP_REQUEST =
-  /\/textures\/nasa\/(?!earth-night-lights\.|saturn-rings\.)([a-z-]+)\.(?:webp|png)$/u;
+  /\/textures\/nasa\/(?!saturn-rings\.)([a-z-]+)\.(?:webp|png)$/u;
+// 3D models, and the Death Star I textures that load with its built model.
+const MODEL_REQUEST =
+  /\/(?:models\/.+|textures\/fictional)\/([a-z0-9-]+)\.(?:glb|webp)$/u;
 const REBOUND_WASM_REQUEST = /\/rebound[^/]*\.wasm(?:\?.*)?$/u;
 const HELD_PHYSICS_MS = 5_000;
 
@@ -13,10 +16,15 @@ test("draws no body and requests no surface map before the first physics state",
 }) => {
   test.setTimeout(120_000);
   const surfaceMapRequests: string[] = [];
+  const modelRequests: string[] = [];
   page.on("request", (request) => {
     const match = SURFACE_MAP_REQUEST.exec(new URL(request.url()).pathname);
     if (match?.[1] !== undefined) {
       surfaceMapRequests.push(match[1]);
+    }
+    const model = MODEL_REQUEST.exec(new URL(request.url()).pathname);
+    if (model?.[1] !== undefined) {
+      modelRequests.push(model[1]);
     }
   });
   let releasePhysics = (): void => undefined;
@@ -44,6 +52,12 @@ test("draws no body and requests no surface map before the first physics state",
   if (startingClock === null) {
     throw new Error("The simulation clock has no text before physics starts");
   }
+  // Orrery mode draws a marker for every body that is too small to see, so
+  // the marker check below fails if any body is placed before the state.
+  const orrery = page.getByRole("button", { name: "Orrery" });
+  await orrery.click();
+  await expect(orrery).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => heldWasmRequests).toBeGreaterThan(0);
 
   // Hold the solver like a slow link does, while the scene draws frames.
   const heldFrames = await page.evaluate(async (heldMs) => {
@@ -60,7 +74,6 @@ test("draws no body and requests no surface map before the first physics state",
     return frames;
   }, HELD_PHYSICS_MS);
   expect(heldFrames).toBeGreaterThan(30);
-  expect(heldWasmRequests).toBeGreaterThan(0);
   await expect(
     page.getByText("Starting physics", { exact: true }),
   ).toBeVisible();
@@ -79,7 +92,11 @@ test("draws no body and requests no surface map before the first physics state",
   await expect(
     page.locator('.body-label[data-body-rendered="true"]'),
   ).toHaveCount(0);
+  // The renderer itself reports what it drew in the last frame: the
+  // starfield and guides are points and lines, so any triangle is a body.
+  await expect(scene).toHaveAttribute("data-render-triangles", "0");
   expect(surfaceMapRequests).toEqual([]);
+  expect(modelRequests).toEqual([]);
 
   releasePhysics();
   await expect(page.getByText("Starting physics", { exact: true })).toBeHidden({
@@ -88,16 +105,21 @@ test("draws no body and requests no surface map before the first physics state",
   await expect(clock).not.toHaveText(startingClock);
   const earthLabel = page.locator('.body-label[data-body-id="earth"]');
   await expect(earthLabel).toBeVisible();
-  // The Sun is drawn from its own shader, with no surface map to fetch.
-  await expect(page.locator('.body-label[data-body-id="sun"]')).toHaveAttribute(
-    "data-surface-asset-state",
-    "procedural",
-  );
+  await expect(
+    page.locator(".body-marker-layer > .orrery-marker").filter({
+      visible: true,
+    }),
+  ).not.toHaveCount(0);
+  await expect
+    .poll(async () => Number(await scene.getAttribute("data-render-triangles")))
+    .toBeGreaterThan(0);
   // At the overview Ganymede is far below a pixel, so its map stays unloaded.
   await expect(
     page.locator('.body-label[data-body-id="ganymede"]'),
   ).not.toHaveAttribute("data-surface-asset-state", /loading|loaded/u);
   expect(surfaceMapRequests).not.toContain("ganymede");
+  // No spacecraft is large enough to draw at the overview, so no model loads.
+  expect(modelRequests).toEqual([]);
 
   const focus = page.getByRole("combobox", { name: "Focus" });
   await focus.fill("Earth");
@@ -109,5 +131,15 @@ test("draws no body and requests no surface map before the first physics state",
     { timeout: 60_000 },
   );
   expect(surfaceMapRequests).toContain("earth");
+  expect(surfaceMapRequests).toContain("earth-night-lights");
   expect(surfaceMapRequests).not.toContain("ganymede");
+
+  await focus.fill("Hubble");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "hubble");
+  await expect(scene).toHaveAttribute("data-hubble-model-loaded", "true", {
+    timeout: 60_000,
+  });
+  expect(modelRequests).toContain("hubble");
+  expect(modelRequests).not.toContain("roadster-starman");
 });
