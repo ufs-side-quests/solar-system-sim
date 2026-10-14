@@ -276,6 +276,8 @@ Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
 That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
+When the open tour card or selected-body card reaches past 40% of the scene width, as at 1024 px but not at 1440 px, the picture glides right in about 300 ms so the subject sits in the middle of the open sky beside the card.
+The projection itself moves, so labels, picking, wayfinders, trails and the gravity well stay on their bodies; a drag holds the picture still, and a minimised card, the surface view and a phone keep it centred.
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
 The same press on the selected body travels to it and fits its default view, as the card's Fly there button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
