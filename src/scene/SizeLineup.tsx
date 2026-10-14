@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
+import { Color } from "three";
 
 import { majorBodySnapshot } from "../physics/solar-system-data";
 import {
@@ -20,7 +21,7 @@ import {
   sizeDuels,
 } from "./size-duel";
 import { sizeLineupLayout, type SizeLineupCircle } from "./size-lineup";
-import { SUNLIGHT_COLOR } from "./visual-assets";
+import { solarDiscLinearSrgb, SUN_SURFACE_WORDING } from "./solar-photosphere";
 
 const LAYOUT = sizeLineupLayout(majorBodySnapshot.bodies);
 // Built at module load, so a lineup body without a picture or wording fails
@@ -36,7 +37,6 @@ const BODY_COLUMNS = LAYOUT.circles.map((circle) => {
     surface,
   };
 });
-const SUN_SURFACE = "Plain colour";
 // Each duel carries its two pictures, so a missing one fails at load too.
 const DUELS = sizeDuels(LAYOUT.circles, SIZE_DUEL_PAIRS).map((duel) => ({
   duel,
@@ -53,6 +53,18 @@ function duelAt(index: number): (typeof DUELS)[number] {
   }
   return entry;
 }
+/**
+ * The 3D Sun's limb-darkened disc as a CSS gradient: stops evenly spaced in
+ * the angle from disc centre, so they crowd where the edge darkens fastest.
+ */
+const SUN_DISC_GRADIENT = `radial-gradient(circle closest-side, ${Array.from(
+  { length: 17 },
+  (_, step) => {
+    const angle = (step / 16) * (Math.PI / 2);
+    const colour = new Color().setRGB(...solarDiscLinearSrgb(Math.cos(angle)));
+    return `${colour.getStyle()} ${(Math.sin(angle) * 100).toFixed(2)}%`;
+  },
+).join(", ")})`;
 
 /** True when the lineup draws this body, so the card can offer it. */
 export function isInSizeLineup(bodyId: string): boolean {
@@ -143,7 +155,7 @@ export function SizeLineup({
   );
   const selected =
     selectedBodyId === LAYOUT.sun.id
-      ? { circle: LAYOUT.sun, surface: SUN_SURFACE }
+      ? { circle: LAYOUT.sun, surface: SUN_SURFACE_WORDING }
       : BODY_COLUMNS.find(({ circle }) => circle.id === selectedBodyId);
 
   // One status line stays mounted in both modes, so a screen reader hears
@@ -168,8 +180,8 @@ export function SizeLineup({
               style={
                 {
                   "--lineup-radius": LAYOUT.sun.radius,
-                  // The Sun has no picture: a plain disc in the 3D scene's sunlight colour.
-                  background: SUNLIGHT_COLOR,
+                  // The Sun has no picture: the 3D scene's computed disc.
+                  background: SUN_DISC_GRADIENT,
                 } as CSSProperties
               }
             />,

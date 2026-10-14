@@ -36,7 +36,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute(
     "data-solar-photosphere",
-    "temperature-colour-procedural-granulation",
+    "blackbody-colour-allen-limb-darkening",
   );
   await expect(scene).toHaveAttribute("data-solar-corona-layers", "3d-shell");
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
@@ -217,7 +217,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
     .toBeCloseTo(0.032, 6);
   await expect(
     tour.getByText(
-      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
+      "Photosphere, chromosphere and quiet corona · the Sun is drawn much dimmer than real so its darker edge shows",
       { exact: true },
     ),
   ).toBeVisible();

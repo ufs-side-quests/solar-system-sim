@@ -165,6 +165,10 @@ import {
   nasaTextureByBodyId,
 } from "./scene/visual-assets";
 import {
+  SUN_SURFACE_TECHNICAL,
+  SUN_SURFACE_WORDING,
+} from "./scene/solar-photosphere";
+import {
   VISUAL_QUALITY_PROFILES,
   type VisualQuality,
 } from "./scene/visual-quality";
@@ -2691,10 +2695,15 @@ export function App() {
           ? undefined
           : formatLiveOrbitalPeriod(liveOrbitalPeriodSeconds),
       spinNote: planetSpinNote(definition),
-      surface: PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour",
+      surface:
+        definition.type === "star"
+          ? SUN_SURFACE_WORDING
+          : (PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour"),
       surfaceTechnical:
-        surfaceClassification ??
-        "Neutral - no installed authoritative surface asset",
+        definition.type === "star"
+          ? SUN_SURFACE_TECHNICAL
+          : (surfaceClassification ??
+            "Neutral - no installed authoritative surface asset"),
       diameterKm,
       parentName: parentDefinition?.name,
       distanceRows,

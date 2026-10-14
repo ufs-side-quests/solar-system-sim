@@ -108,7 +108,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewDistanceAu: 3,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 86_400,
-    timeRateLabel: "1 day per second · solar rotation becomes visible",
+    timeRateLabel:
+      "1 day per second · the Sun spins once in about 25 days, but its smooth face hides the turn",
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: {
@@ -126,7 +127,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     description:
       "The Sun contains 99.86% of the Solar System's mass. Its visible photosphere lies beneath a thin chromosphere and an immense, faint corona that streams into space.",
     visualKey:
-      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
+      "Photosphere, chromosphere and quiet corona · the Sun is drawn much dimmer than real so its darker edge shows",
     narration: narrationFor("sun-atmosphere"),
   },
   {

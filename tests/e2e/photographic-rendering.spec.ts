@@ -66,6 +66,53 @@ async function hemisphereLuminance(
   return { left: leftTotal / leftCount, right: rightTotal / rightCount };
 }
 
+/** Mean linear sRGB in a thin ring of a disc at mu = cos(angle from centre). */
+async function discRingLinearRgb(
+  image: Buffer,
+  centreX: number,
+  centreY: number,
+  radius: number,
+): Promise<(mu: number) => readonly [number, number, number]> {
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const linear = (value: number) => {
+    const encoded = value / 255;
+    return encoded <= 0.04045
+      ? encoded / 12.92
+      : ((encoded + 0.055) / 1.055) ** 2.4;
+  };
+  return (mu) => {
+    const ringRadius = Math.sqrt(1 - mu * mu);
+    const [inner, outer] =
+      mu === 1 ? [0, 0.25] : [ringRadius - 0.012, ringRadius + 0.012];
+    const total: [number, number, number] = [0, 0, 0];
+    let count = 0;
+    for (let y = Math.floor(centreY - radius); y <= centreY + radius; y += 1) {
+      for (
+        let x = Math.floor(centreX - radius);
+        x <= centreX + radius;
+        x += 1
+      ) {
+        const distance = Math.hypot(x - centreX, y - centreY) / radius;
+        if (distance < inner || distance > outer) {
+          continue;
+        }
+        const offset = (y * info.width + x) * info.channels;
+        total[0] += linear(data[offset] ?? Number.NaN);
+        total[1] += linear(data[offset + 1] ?? Number.NaN);
+        total[2] += linear(data[offset + 2] ?? Number.NaN);
+        count += 1;
+      }
+    }
+    if (count === 0) {
+      throw new Error(`The solar disc has no samples at mu ${mu.toFixed(2)}`);
+    }
+    return [total[0] / count, total[1] / count, total[2] / count];
+  };
+}
+
 test("uses photographic rendering with inverse-square sunlight and measured diagnostics", async ({
   page,
 }, testInfo) => {
@@ -402,6 +449,57 @@ test("renders the restrained solar photosphere in the authored close-view scene"
     path: testInfo.outputPath("photographic-sun-close.png"),
     animations: "disabled",
   });
+
+  // Measure the bare disc with every panel and label hidden. A 5772 K star
+  // is nearly white at the centre; Allen limb darkening dims and reddens
+  // the edge (I(0.4)/I(1) is 0.635, edge blue/red falls to 0.67 of centre).
+  const sunLabel = page.locator('.body-label[data-body-id="sun"]');
+  await expect(sunLabel).toHaveAttribute("data-surface-asset-state", "derived");
+  // The tour camera has arrived when the Sun's drawn radius stops changing.
+  let previousRadius = Number.NaN;
+  await expect
+    .poll(
+      async () => {
+        const radius = Number(
+          await sunLabel.getAttribute("data-radius-pixels"),
+        );
+        const steady = Math.abs(radius - previousRadius) < 0.01;
+        previousRadius = radius;
+        return steady && radius > 60;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  const sceneBox = await scene.boundingBox();
+  if (sceneBox === null) {
+    throw new Error("The scene has no layout box");
+  }
+  const sunX =
+    sceneBox.x + Number(await sunLabel.getAttribute("data-screen-x"));
+  const sunY =
+    sceneBox.y + Number(await sunLabel.getAttribute("data-screen-y"));
+  const sunRadius = Number(await sunLabel.getAttribute("data-radius-pixels"));
+  await page.addStyleTag({
+    content:
+      "body *:not(canvas) { visibility: hidden !important; } canvas { visibility: visible !important; }",
+  });
+  const bareDisc = await page.screenshot({ animations: "disabled" });
+  await testInfo.attach("photographic-sun-bare-disc.png", {
+    body: bareDisc,
+    contentType: "image/png",
+  });
+  const ring = await discRingLinearRgb(bareDisc, sunX, sunY, sunRadius);
+  const luminance = ([red, green, blue]: readonly [number, number, number]) =>
+    0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  const blueToRed = ([red, , blue]: readonly [number, number, number]) =>
+    blue / red;
+  const centre = ring(1);
+  expect(blueToRed(centre)).toBeGreaterThanOrEqual(0.8);
+  expect(blueToRed(centre)).toBeLessThanOrEqual(0.98);
+  const midLimb = luminance(ring(0.4)) / luminance(centre);
+  expect(midLimb).toBeGreaterThanOrEqual(0.59);
+  expect(midLimb).toBeLessThanOrEqual(0.68);
+  expect(blueToRed(ring(0.2)) / blueToRed(centre)).toBeLessThan(0.75);
 });
 
 test("matches the reference image for a physical terminator", async ({

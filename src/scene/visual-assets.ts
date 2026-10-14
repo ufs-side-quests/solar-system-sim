@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import textureSnapshotJson from "../data/nasa-textures.snapshot.json";
+import { solarPhotosphere } from "./solar-photosphere";
 
 const assetSchema = z.object({
   id: z.string().min(1),
@@ -117,5 +118,5 @@ export const nasaSurfaceRoughnessByBodyId = new Map(
     .map((asset) => [asset.id.replace(/-roughness$/u, ""), asset] as const),
 );
 
-/** The colour of sunlight in the 3D scene, and of the Sun in the size lineup. */
-export const SUNLIGHT_COLOR = "#fff8ec";
+/** The colour of sunlight in the 3D scene: the whole Sun's blackbody colour. */
+export const SUNLIGHT_COLOR = solarPhotosphere.discMeanSrgbHex;
