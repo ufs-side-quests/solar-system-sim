@@ -274,12 +274,16 @@ Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navi
 The camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
+Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
 While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
 The Scale tour clock waits at the time the step began, because Scale steps set no time; the Eclipse story clock waits at the step's time.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Finish, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
 Exit, Finish, and Escape also reset the view of the current object at 1x and run the clock, even if it was paused before the tour, so a child never comes back to a frozen screen.
+When the last step's time runs out, the card shows an ending in place of the step: Fly home works like Finish, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
+A story started from an ending keeps the settings from before the first tour, so Fly home always returns to them.
+The Eclipse story ending repeats the eye-safety rule.
 The heliosphere diagram explains the solar wind, termination shock, heliopause, measured Voyager crossings, and the boundary's directional and time-varying nature.
 The following Oort Cloud diagram uses NASA's estimated 2,000-5,000 AU inner edge and 10,000-100,000 AU outer range while identifying every displayed particle as illustrative rather than catalogued.
 The Alpha Centauri scene is an explicitly labelled distance diagram rather than an extension of the live Solar System N-body calculation.

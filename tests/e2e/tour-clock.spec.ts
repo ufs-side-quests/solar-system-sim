@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const sceneSelector = '[aria-label^="Physics-driven Solar System"]';
 
@@ -434,4 +434,182 @@ test("a view change during a tour keeps the settings from before it", async ({
   await expect(
     page.getByRole("region", { name: "Time controls" }).locator(".run-status"),
   ).toContainText("1 day/s requested");
+});
+
+const SCALE_STEP_IDS_AFTER_EARTH = [
+  "moon-gap",
+  "sun-atmosphere",
+  "sun-from-mars",
+  "jupiter",
+  "jupiter-from-io",
+  "earth-from-jupiter",
+  "saturn",
+  "saturn-from-titan",
+  "neptune",
+  "voyager-2",
+  "voyager-1",
+  "solar-system",
+  "oort-cloud",
+  "alpha-centauri",
+] as const;
+
+const ECLIPSE_STEP_IDS_AFTER_ALIGNMENT = [
+  "london-before-contact",
+  "london-first-contact",
+  "london-maximum",
+  "shadow-axis",
+  "shadow-from-moon",
+  "spain-totality",
+  "london-final-contact",
+] as const;
+
+type Box = Readonly<{ x: number; y: number; width: number; height: number }>;
+
+async function boxOf(locator: Locator): Promise<Box> {
+  const box = await locator.boundingBox();
+  if (box === null) {
+    throw new Error("The element must be laid out");
+  }
+  return box;
+}
+
+function expectInside(inner: Box, outer: Box, label: string): void {
+  const detail = `${label}: ${JSON.stringify({ inner, outer })}`;
+  expect(inner.x, detail).toBeGreaterThanOrEqual(outer.x - 0.5);
+  expect(inner.y, detail).toBeGreaterThanOrEqual(outer.y - 0.5);
+  expect(inner.x + inner.width, detail).toBeLessThanOrEqual(
+    outer.x + outer.width + 0.5,
+  );
+  expect(inner.y + inner.height, detail).toBeLessThanOrEqual(
+    outer.y + outer.height + 0.5,
+  );
+}
+
+test("the scale tour ends with an ending card and Fly home restores the settings", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openApp(page, "reduce");
+  const settings = { playback: "paused" } as const;
+  await chooseSettingsBeforeTour(page, settings);
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+
+  // The child's line sits directly under the step title, in large type.
+  const kidLine = tour.locator(".tour-kid-line");
+  await expect(kidLine).toHaveText(
+    "Earth is 12,742 km wide. Here one hour passes each second, so watch it spin.",
+  );
+  expect(
+    await kidLine.evaluate((element) => ({
+      previous: element.previousElementSibling?.textContent,
+      fontSizePx: Number.parseFloat(getComputedStyle(element).fontSize),
+    })),
+  ).toEqual({ previous: "Earth is already enormous", fontSizePx: 16.8 });
+  const titleBox = await boxOf(
+    tour.getByRole("heading", { name: "Earth is already enormous" }),
+  );
+  expect((await boxOf(kidLine)).y).toBeGreaterThanOrEqual(
+    titleBox.y + titleBox.height,
+  );
+
+  for (const stepId of SCALE_STEP_IDS_AFTER_EARTH) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expect(tour).toHaveAttribute("data-tour-step", stepId);
+  }
+  await expect(tour.getByRole("button", { name: "Finish" })).toBeVisible();
+  await tour.getByRole("button", { name: "Resume tour" }).click();
+  // The last step's 28 s timer ends the tour.
+  await expect(
+    tour.getByRole("heading", { name: "You went from Earth to the next star" }),
+  ).toBeVisible({ timeout: 45_000 });
+  await expect(tour).toHaveAttribute("data-tour-ended", "true");
+  await expect(tour.getByText("The end of the tour")).toBeVisible();
+  await expect(
+    tour.getByText(
+      "Light from the nearest star system takes 4.3 years to reach us.",
+    ),
+  ).toBeVisible();
+  await expect(tour.locator(".tour-actions button")).toHaveText([
+    "Fly home",
+    "Watch the eclipse",
+    "Start again",
+  ]);
+
+  await tour.getByRole("button", { name: "Fly home" }).click();
+  await expect(tour).toHaveCount(0);
+  await expectSettingsRestoredAfterTour(page, settings);
+});
+
+test("the scale tour ending starts the eclipse story, which fits a phone to its own ending", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await openApp(page, "no-preference");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const viewport = { x: 0, y: 0, width: 390, height: 844 };
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  for (const stepId of SCALE_STEP_IDS_AFTER_EARTH) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expect(tour).toHaveAttribute("data-tour-step", stepId);
+  }
+  await expect(tour).toHaveAttribute("data-tour-ended", "true", {
+    timeout: 45_000,
+  });
+  await tour.getByRole("button", { name: "Watch the eclipse" }).click();
+
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
+  await expect(story).toHaveAttribute("data-tour-ended", "false");
+
+  for (const stepId of [
+    "eclipse-alignment",
+    ...ECLIPSE_STEP_IDS_AFTER_ALIGNMENT,
+  ]) {
+    if (stepId !== "eclipse-alignment") {
+      await story.getByRole("button", { name: "Next" }).click();
+    }
+    await expect(story).toHaveAttribute("data-tour-step", stepId);
+    const storyBox = await boxOf(story);
+    expectInside(storyBox, viewport, `${stepId} panel`);
+    expectInside(
+      await boxOf(story.locator(".tour-kid-line")),
+      storyBox,
+      `${stepId} child line`,
+    );
+  }
+
+  // The last step's 24 s timer ends the story.
+  await expect(
+    story.getByRole("heading", { name: "The eclipse is over" }),
+  ).toBeVisible({ timeout: 40_000 });
+  await expect(
+    story.getByText("Never look at the Sun without certified eclipse glasses."),
+  ).toBeVisible();
+  const endingButtons = story.locator(".tour-actions button");
+  await expect(endingButtons).toHaveText([
+    "Fly home",
+    "Take the Scale tour",
+    "Watch again",
+  ]);
+  const endingBox = await boxOf(story);
+  expectInside(endingBox, viewport, "ending panel");
+  for (const button of await endingButtons.all()) {
+    expectInside(await boxOf(button), endingBox, "ending button");
+  }
+
+  await story.getByRole("button", { name: "Watch again" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await expect(story).toHaveAttribute("data-tour-ended", "false");
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
 });

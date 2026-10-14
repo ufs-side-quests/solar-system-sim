@@ -28,6 +28,7 @@ export type ScaleTourStep = Readonly<{
   }>;
   eyebrow: string;
   title: string;
+  kidLine: string;
   scale: string;
   description: string;
   visualKey: string;
@@ -64,6 +65,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Start with home",
     title: "Earth is already enormous",
+    kidLine:
+      "Earth is 12,742 km wide. Here one hour passes each second, so watch it spin.",
     scale: "12,742 km across",
     description:
       "This shot fits Earth itself. Its 40,075 km equatorial circumference would take more than a year to walk without stopping, while the one-hour-per-second clock makes the planet's rotation visible.",
@@ -93,6 +96,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The Earth-Moon system",
     title: "Most of the picture is empty space",
+    kidLine: "About 30 Earths could fit in a row between Earth and the Moon.",
     scale: "384,400 km average separation",
     description:
       "The average centre-to-centre gap is about 30 Earth diameters. All eight planets could fit side by side across it, while the thin curve shows the Moon's modelled orbit rather than a decorative ring.",
@@ -122,6 +126,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The active star",
     title: "The Sun is more than a yellow ball",
+    kidLine: "The Sun holds 99.86% of all the mass in the Solar System.",
     scale: "1.39 million km across",
     description:
       "The Sun contains 99.86% of the Solar System's mass. Its visible photosphere lies beneath a thin chromosphere and an immense, faint corona that streams into space.",
@@ -153,6 +158,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Stand on another world",
     title: "The Sun seen from Mars",
+    kidLine:
+      "From Mars, the Sun looks only about two-thirds as wide as from Earth.",
     scale: "About two-thirds its Earth-sky diameter",
     description:
       "Mars is about half again as far from the Sun as Earth. From here the solar disc spans only about two-thirds of the angle it does in Earth's sky, so daylight is weaker and the Sun looks noticeably smaller.",
@@ -183,6 +190,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "A giant planet",
     title: "Jupiter is a system of its own",
+    kidLine:
+      "Jupiter is about 11 Earths wide, and its day lasts only about ten hours.",
     scale: "About 11 Earths wide",
     description:
       "Jupiter holds most of the mass in all the planets and rotates in about ten hours. Its major moons span millions of kilometres, with their physical orbital paths shown as thin curves.",
@@ -214,6 +223,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "A moon's-eye view",
     title: "Jupiter fills Io's sky",
+    kidLine:
+      "From Io, Jupiter looks more than thirty times wider than our Moon does.",
     scale: "Roughly 19° across",
     description:
       "Io circles only 422,000 kilometres from Jupiter's centre. The giant planet spans roughly 19 degrees here, more than thirty times the apparent width of the Moon in Earth's sky.",
@@ -245,6 +256,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Look back toward home",
     title: "Earth seen from Jupiter",
+    kidLine:
+      "From Jupiter, the whole Earth is smaller than one dot on your screen.",
     scale: "Only a sub-pixel point at true scale",
     description:
       "Across several astronomical units, Earth shrinks below the resolution of a screen pixel. Its label marks the calculated direction of home; the planet itself has not been enlarged.",
@@ -275,6 +288,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "A vast ring system",
     title: "Saturn's rings dwarf Earth",
+    kidLine:
+      "Saturn's rings are more than 21 Earths wide, but made of countless tiny pieces.",
     scale: "273,560 km across the observed main rings",
     description:
       "The observed main rings span more than 21 Earth diameters but are extraordinarily thin. They are countless orbiting particles, rendered from a Cassini radial mosaic rather than as a solid disc.",
@@ -305,6 +320,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Beyond Titan's haze",
     title: "Saturn seen from Titan",
+    kidLine:
+      "Titan, the moon we watch from, is bigger than the planet Mercury.",
     scale: "The rings span several degrees of sky",
     description:
       "Titan orbits about 1.2 million kilometres from Saturn. Above its dense orange atmosphere, Saturn and its rings would stretch across several degrees of sky.",
@@ -335,6 +352,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The outer planets",
     title: "Neptune is thirty times farther out",
+    kidLine:
+      "Neptune is 30 times farther from the Sun than Earth. Its year lasts nearly 165 of ours.",
     scale: "About 30 AU from the Sun",
     description:
       "The camera moves to Neptune's sunward side, where its physical globe remains visible while the Sun wayfinder carries the full distance. Sunlight takes roughly four hours to arrive, and one orbit lasts nearly 165 Earth years.",
@@ -366,6 +385,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Beyond the heliosphere",
     title: "Voyager 2 follows a different road",
+    kidLine: "A radio message takes almost 20 hours to reach Voyager 2.",
     scale: "More than 140 AU from the Sun at the 2026 epoch",
     description:
       "Voyager 2 crossed the heliopause in 2018 and now samples interstellar space. From this distance, a one-way radio signal takes almost 20 hours, so its 3.7 metre dish must remain aimed back at Earth.",
@@ -398,6 +418,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The human frontier",
     title: "Voyager 1 is almost lost in the dark",
+    kidLine:
+      "Voyager 1 is the farthest spacecraft people have built. Radio takes more than 23 hours.",
     scale: "More than 160 AU from the Sun at the 2026 epoch",
     description:
       "A one-way radio signal now takes more than 23 hours to reach Voyager 1. Its 3.7 metre dish points toward a barely distinguishable Earth near the Sun, while the 13 metre spacecraft itself would be far below one screen pixel at true distance.",
@@ -429,6 +451,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The Sun's wind bubble",
     title: "The heliosphere is not the edge of the Solar System",
+    kidLine:
+      "The Sun's wind blows a giant bubble around the planets. Both Voyagers have left it.",
     scale: "Voyager crossings reveal a boundary around 120 AU",
     description:
       "The solar wind inflates a magnetised region called the heliosphere. Its outer boundary, the heliopause, separates solar-wind plasma from interstellar space; both Voyagers have crossed it.",
@@ -463,6 +487,8 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     eyebrow: "The Sun's distant comet reservoir",
     title:
       "The Oort Cloud may reach more than a third of the way to the next star",
+    kidLine:
+      "Far out, there may be a huge shell of icy comets. No spacecraft has been there.",
     scale: "Estimated from about 2,000 to as far as 100,000 AU",
     description:
       "The Oort Cloud is a predicted spherical shell of icy bodies on extremely long solar orbits. It is not the heliosphere, no spacecraft has reached it, and its individual objects have not been mapped.",
@@ -495,6 +521,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "The nearest stellar neighbours",
     title: "Alpha Centauri is another scale entirely",
+    kidLine: "Light from the nearest star system takes 4.3 years to reach us.",
     scale: "About 4.3 light-years · roughly 272,000 AU",
     description:
       "Even a possible 100,000 AU outer Oort Cloud reaches only about 37% of this distance. Light needs 4.3 years; Voyager 1 would need about 75,000 years at its present speed and is not heading there.",
