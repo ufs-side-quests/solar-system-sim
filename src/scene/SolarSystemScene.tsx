@@ -331,9 +331,11 @@ const PLANET_TRAIL_BODY_IDS = [
   "neptune",
 ] as const;
 const LABEL_MINIMUM_RADIUS_PIXELS = 0.5;
-const LABEL_CHARACTER_WIDTH_PX = 5;
+// The overlap boxes scale with the label font size, which comes from the CSS.
+// A name's width is about 0.6 em a letter; the box is 2 em tall.
+const LABEL_CHARACTER_WIDTH_EM = 0.6;
 const LABEL_HORIZONTAL_CHROME_PX = 14;
-const LABEL_HALF_HEIGHT_PX = 9;
+const LABEL_HALF_HEIGHT_EM = 1;
 // A press on the canvas that moves no farther than this is a tap: it selects
 // the body under it, and during a camera flight it keeps the flight.
 const TAP_SLOP_PX = 8;
@@ -920,9 +922,15 @@ export function SolarSystemScene({
     };
     const cameraJourney = document.createElement("div");
     cameraJourney.className = "camera-journey";
-    cameraJourney.setAttribute("aria-live", "polite");
+    // The visible text changes every frame with the viewpoint speed, so screen
+    // readers hear only the start and the end of a flight, from its sibling.
+    cameraJourney.setAttribute("aria-hidden", "true");
     cameraJourney.hidden = true;
     container.append(cameraJourney);
+    const cameraJourneyAnnouncer = document.createElement("div");
+    cameraJourneyAnnouncer.className = "visually-hidden";
+    cameraJourneyAnnouncer.setAttribute("aria-live", "polite");
+    container.append(cameraJourneyAnnouncer);
     const markerLayer = document.createElement("div");
     markerLayer.className = "body-marker-layer";
     markerLayer.setAttribute("aria-hidden", "true");
@@ -4125,6 +4133,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastSemanticZoomLevel: SemanticZoomLevel | undefined;
     let lastSmallBodyGpuUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSunGuideUpdateAt = Number.NEGATIVE_INFINITY;
+    // Body labels keep clear of the Sun and planet guide labels.
+    let wayfinderLabelRectangles: Readonly<{
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    }>[] = [];
     let lastNavigationMapUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSmallBodiesVisible: boolean | undefined;
     let lastSceneMutationKey = "";
@@ -4138,9 +4153,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastRenderedAtMs = performance.now();
     let frameIntervalEmaMs = 1000 / 60;
 
+    let labelFontPx = Number.NaN;
     const resize = (width: number, height: number): void => {
       if (width <= 0 || height <= 0) {
         return;
+      }
+      labelFontPx = Number.parseFloat(getComputedStyle(issLabel).fontSize);
+      if (!(labelFontPx > 0)) {
+        throw new Error("Body label font size is unavailable");
       }
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -5038,6 +5058,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : "position-only";
       activeCameraTransition = undefined;
       cameraJourney.hidden = true;
+      cameraJourneyAnnouncer.textContent = `Arrived at ${transition.destinationName}`;
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionRemainingDistanceAu"] = "0.000000";
@@ -5178,6 +5199,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       cameraJourney.title =
         "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
       cameraJourney.textContent = `Turning toward ${activeCameraTransition.destinationName}`;
+      cameraJourneyAnnouncer.textContent = `Flying to ${activeCameraTransition.destinationName}`;
       return true;
     };
 
@@ -7523,6 +7545,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
 
       if (renderNowMs - lastSunGuideUpdateAt >= SUN_GUIDE_UPDATE_INTERVAL_MS) {
         lastSunGuideUpdateAt = renderNowMs;
+        wayfinderLabelRectangles = [];
         const activeWayfinderMode = wayfinderModeRef.current;
         container.dataset["wayfinderMode"] = activeWayfinderMode;
         const wayfinderVisuals = [
@@ -7718,7 +7741,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             visual.label.dataset["location"] = location;
             showLabelSelection(visual.label, targetBodyId);
             visual.label.hidden = false;
-            const labelWidth = visual.label.getBoundingClientRect().width;
+            const labelBounds = visual.label.getBoundingClientRect();
+            const labelWidth = labelBounds.width;
             if (labelWidth <= 0) {
               throw new Error(
                 `Wayfinder label for ${targetDefinition.name} has no measurable width`,
@@ -7756,6 +7780,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
               visual.label.dataset["positionX"] = labelX.toFixed(3);
               visual.label.dataset["positionY"] = labelY.toFixed(3);
             }
+            const placedX = Number(visual.label.dataset["positionX"]);
+            const placedY = Number(visual.label.dataset["positionY"]);
+            wayfinderLabelRectangles.push({
+              left: placedX,
+              right: placedX + labelWidth,
+              top: placedY - labelBounds.height / 2,
+              bottom: placedY + labelBounds.height / 2,
+            });
             if (targetBodyId === "sun") {
               sunLocation = location;
               sunDistanceAu = distanceAu;
@@ -7972,12 +8004,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
       let visibleLabelCount = 0;
       let visibleOrreryMarkerCount = 0;
-      const occupiedLabelRectangles: Readonly<{
-        left: number;
-        right: number;
-        top: number;
-        bottom: number;
-      }>[] = [];
+      const occupiedLabelRectangles = [...wayfinderLabelRectangles];
+      const labelHalfHeightPx = LABEL_HALF_HEIGHT_EM * labelFontPx;
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
         const label = bodyLabels.get(body.id);
@@ -8060,7 +8088,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const projectedLabelY =
           ((-projected.y + 1) * container.clientHeight) / 2;
         const labelWidth =
-          body.name.length * LABEL_CHARACTER_WIDTH_PX +
+          body.name.length * LABEL_CHARACTER_WIDTH_EM * labelFontPx +
           LABEL_HORIZONTAL_CHROME_PX;
         const candidateOffsets = isCameraTarget
           ? [
@@ -8100,8 +8128,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
               rectangle: {
                 left: x,
                 right: x + labelWidth,
-                top: y - LABEL_HALF_HEIGHT_PX,
-                bottom: y + LABEL_HALF_HEIGHT_PX,
+                top: y - labelHalfHeightPx,
+                bottom: y + labelHalfHeightPx,
               },
             };
           })
@@ -8119,8 +8147,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const candidateRectangle = placement?.rectangle ?? {
           left: labelX,
           right: labelX + labelWidth,
-          top: labelY - LABEL_HALF_HEIGHT_PX,
-          bottom: labelY + LABEL_HALF_HEIGHT_PX,
+          top: labelY - labelHalfHeightPx,
+          bottom: labelY + labelHalfHeightPx,
         };
         const overlapsExistingLabel = occupiedLabelRectangles.some(
           (rectangle) =>
@@ -9036,6 +9064,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.removeChild(rangeLegend);
       container.removeChild(sourcedModelStatus);
       container.removeChild(cameraJourney);
+      container.removeChild(cameraJourneyAnnouncer);
       container.removeChild(bodyHoverTooltip);
       for (const { element } of zodiacLabels) {
         container.removeChild(element);
