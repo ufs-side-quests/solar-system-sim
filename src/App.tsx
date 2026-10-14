@@ -15,6 +15,7 @@ import { useInterfaceAudio } from "./audio/use-interface-audio";
 import {
   discoveryMessage,
   type EasterEggId,
+  hintsAtUnfoundEasterEgg,
   isEasterEggId,
   loadFoundEasterEggs,
   saveFoundEasterEggs,
@@ -84,6 +85,7 @@ import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
   JOVIAN_MONOLITH_NAME,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./scene/jovian-monolith";
 import {
@@ -1445,7 +1447,9 @@ export function App() {
       (selectedBodyId === "jwst" || isVoyagerBodyId(selectedBodyId)
         ? "sun"
         : undefined) ??
-      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID
+        ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+        : undefined) ??
       (selectedBodyId === DISCOVERY_ONE_BODY_ID
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : undefined) ??
@@ -1957,7 +1961,7 @@ export function App() {
       return undefined;
     }
     const parentId = isJovianMonolith
-      ? "jupiter"
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
       : isDiscoveryOne
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : isFictionalOrbiter
@@ -2323,7 +2327,9 @@ export function App() {
     : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
-    (focusBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+    (focusBodyId === JOVIAN_MONOLITH_BODY_ID
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+      : undefined) ??
     (focusBodyId === DISCOVERY_ONE_BODY_ID
       ? DISCOVERY_ONE_PARENT_BODY_ID
       : undefined) ??
@@ -2356,9 +2362,12 @@ export function App() {
       data-tour-presentation={activeTourStep?.presentation}
       onClickCapture={(event) => {
         const target = event.target;
+        // A hidden-surprise label is an unfound easter egg: its discovery
+        // chime replaces the button sound.
         if (
           target instanceof Element &&
-          target.closest("button:not(:disabled), summary") !== null
+          target.closest("button:not(:disabled), summary") !== null &&
+          target.closest(".is-hidden-surprise") === null
         ) {
           audio.interact("button");
         }
@@ -3125,6 +3134,17 @@ export function App() {
                 </button>
               </div>
             </div>
+            {selectedBodyPanelCollapsed ||
+            !showLabels ||
+            !objectVisibility.spacecraft ||
+            !hintsAtUnfoundEasterEgg(
+              selectedBodyId,
+              foundEasterEggIds,
+            ) ? null : (
+              <p className="selected-body-egg-hint">
+                Something hidden is out there. Look closely!
+              </p>
+            )}
             {selectedBodyPanelCollapsed ? null : (
               <div className="selected-body-metrics">
                 {selectedBodyDetail.distance === undefined ? null : (

@@ -840,7 +840,7 @@ h1 {
   background: transparent;
 }
 
-.body-label.is-unknown-object {
+.body-label.is-hidden-surprise {
   color: #ffd98a;
   font-size: 0.68rem;
   font-weight: 650;
@@ -2385,6 +2385,13 @@ h1 {
 
 .selected-body-collapse {
   color: var(--muted);
+}
+
+.selected-body-egg-hint {
+  margin: 0 0.9rem 0.6rem;
+  color: #ffd98a;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .selected-body-metrics {

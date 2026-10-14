@@ -17,7 +17,6 @@ import {
   LineBasicMaterial,
   LineLoop,
   LineSegments,
-  Line3,
   Matrix4,
   Material,
   Mesh,
@@ -49,7 +48,8 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import {
   easterEgg,
   type EasterEggId,
-  UNKNOWN_OBJECT_LABEL,
+  HIDDEN_SURPRISE_LABEL,
+  segmentClearsSphere,
 } from "../tour/easter-eggs";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
 import type { BodyState, SimulationState } from "../physics/contracts";
@@ -125,6 +125,7 @@ import {
   JOVIAN_MONOLITH_BOUNDING_RADIUS_M,
   JOVIAN_MONOLITH_DIMENSIONS_M,
   JOVIAN_MONOLITH_NAME,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./jovian-monolith";
 import { createDeathStarModel } from "./death-star-model";
@@ -550,7 +551,7 @@ function parentBodyId(bodyId: string): string | undefined {
     : bodyId === "hubble"
       ? "earth"
       : bodyId === JOVIAN_MONOLITH_BODY_ID
-        ? "jupiter"
+        ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
         : bodyId === DISCOVERY_ONE_BODY_ID
           ? DISCOVERY_ONE_PARENT_BODY_ID
           : isDeepSpaceNineObjectId(bodyId)
@@ -1426,29 +1427,40 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
 
-    // An easter egg near the focused or selected body shows its label as an
-    // unknown object, unless that body hides it from the camera.
+    // An easter egg near the focused or selected body shows its label as a
+    // hidden surprise, unless that body hides it from the camera. Tour steps
+    // never hint: the label list is undefined only while no step is active.
     const easterEggHintVisible = (
       eggId: EasterEggId,
       eggPosition: Vector3,
-    ): boolean =>
-      easterEgg(eggId).hintBodyIds.some((hintBodyId) => {
+    ): boolean => {
+      if (spacecraftLabelBodyIdsRef.current !== undefined) {
+        return false;
+      }
+      for (const hintBodyId of easterEgg(eggId).hintBodyIds) {
         if (
           focusBodyIdRef.current !== hintBodyId &&
           selectedBodyIdRef.current !== hintBodyId
         ) {
-          return false;
+          continue;
         }
         const hintMesh = bodyMeshes.get(hintBodyId);
         if (hintMesh === undefined) {
           throw new Error(`Easter egg hint body ${hintBodyId} is unavailable`);
         }
-        return (
-          new Line3(camera.position, eggPosition)
-            .closestPointToPoint(hintMesh.position, true, new Vector3())
-            .distanceTo(hintMesh.position) >= hintMesh.scale.x
-        );
-      });
+        if (
+          segmentClearsSphere(
+            camera.position,
+            eggPosition,
+            hintMesh.position,
+            hintMesh.scale.x,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
     // The real name appears once the child has selected the egg.
     const nameEasterEggLabel = (
       label: HTMLButtonElement,
@@ -1456,11 +1468,11 @@ reflectedLight.directSpecular *= solarTransmission;`,
       name: string,
     ): void => {
       const found = foundEasterEggIdsRef.current.has(eggId);
-      const text = found ? name : UNKNOWN_OBJECT_LABEL;
+      const text = found ? name : HIDDEN_SURPRISE_LABEL;
       if (label.textContent !== text) {
         label.textContent = text;
         label.setAttribute("aria-label", `Focus ${text}`);
-        label.classList.toggle("is-unknown-object", !found);
+        label.classList.toggle("is-hidden-surprise", !found);
       }
     };
 

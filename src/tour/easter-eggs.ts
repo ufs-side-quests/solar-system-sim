@@ -1,17 +1,42 @@
 import {
   DEEP_SPACE_NINE_BODY_ID,
+  DEEP_SPACE_NINE_PARENT_BODY_ID,
   USS_DEFIANT_BODY_ID,
 } from "../scene/deep-space-nine";
-import { DISCOVERY_ONE_BODY_ID } from "../scene/discovery-one";
-import { JOVIAN_MONOLITH_BODY_ID } from "../scene/jovian-monolith";
+import {
+  DISCOVERY_ONE_BODY_ID,
+  DISCOVERY_ONE_PARENT_BODY_ID,
+} from "../scene/discovery-one";
+import {
+  type FictionalOrbiter,
+  type FictionalOrbiterId,
+  fictionalOrbiterById,
+} from "../scene/fictional-orbiters";
+import {
+  JOVIAN_MONOLITH_BODY_ID,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
+  JOVIAN_MONOLITH_SECONDARY_BODY_ID,
+} from "../scene/jovian-monolith";
 import { ROADSTER_BODY_ID } from "../scene/spacecraft-assets";
 
 export const FOUND_EASTER_EGGS_STORAGE_KEY = "solar-explorer.found-eggs.v1";
-export const UNKNOWN_OBJECT_LABEL = "? Unknown object";
+// Game wording, so a child never reads the hint as a real astronomical
+// discovery.
+export const HIDDEN_SURPRISE_LABEL = "? Hidden surprise";
+
+function fictionalOrbiterParentBodyId(
+  id: FictionalOrbiterId,
+): FictionalOrbiter["parentBodyId"] {
+  const orbiter = fictionalOrbiterById.get(id);
+  if (orbiter === undefined) {
+    throw new Error(`Fictional orbiter ${id} is unavailable`);
+  }
+  return orbiter.parentBodyId;
+}
 
 /**
  * Hidden objects a child can discover. `hintBodyIds` are the major bodies
- * whose focus or selection shows the egg as an unknown object; each one also
+ * whose focus or selection shows the egg as a hidden surprise; each one also
  * hides the hint while the egg is behind it.
  */
 export const EASTER_EGGS = [
@@ -19,37 +44,40 @@ export const EASTER_EGGS = [
     id: "death-star-1",
     name: "the Death Star",
     origin: "fictional, from Star Wars",
-    hintBodyIds: ["callisto"],
+    hintBodyIds: [fictionalOrbiterParentBodyId("death-star-1")],
   },
   {
     id: "death-star-2",
     name: "the second Death Star",
     origin: "fictional, from Star Wars",
-    hintBodyIds: ["ganymede"],
+    hintBodyIds: [fictionalOrbiterParentBodyId("death-star-2")],
   },
   {
     id: DEEP_SPACE_NINE_BODY_ID,
     name: "Deep Space Nine",
     origin: "fictional, from Star Trek",
-    hintBodyIds: ["callisto"],
+    hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
   },
   {
     id: USS_DEFIANT_BODY_ID,
     name: "the USS Defiant",
     origin: "fictional, from Star Trek",
-    hintBodyIds: ["callisto"],
+    hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
   },
   {
     id: DISCOVERY_ONE_BODY_ID,
     name: "Discovery One",
     origin: "fictional, from 2001: A Space Odyssey",
-    hintBodyIds: ["io"],
+    hintBodyIds: [DISCOVERY_ONE_PARENT_BODY_ID],
   },
   {
     id: JOVIAN_MONOLITH_BODY_ID,
     name: "the Monolith",
     origin: "fictional, from 2010: Odyssey Two",
-    hintBodyIds: ["jupiter", "io"],
+    hintBodyIds: [
+      JOVIAN_MONOLITH_PRIMARY_BODY_ID,
+      JOVIAN_MONOLITH_SECONDARY_BODY_ID,
+    ],
   },
   {
     id: ROADSTER_BODY_ID,
@@ -71,8 +99,46 @@ const easterEggById = new Map<string, EasterEgg>(
   EASTER_EGGS.map((egg) => [egg.id, egg]),
 );
 
-export function isEasterEggId(bodyId: string | null): bodyId is EasterEggId {
-  return bodyId !== null && easterEggById.has(bodyId);
+export function isEasterEggId(bodyId: string): bodyId is EasterEggId {
+  return easterEggById.has(bodyId);
+}
+
+/** True when the body hints at an egg the child has not found yet. */
+export function hintsAtUnfoundEasterEgg(
+  bodyId: string,
+  found: ReadonlySet<EasterEggId>,
+): boolean {
+  return EASTER_EGGS.some(
+    (egg) =>
+      !found.has(egg.id) &&
+      egg.hintBodyIds.some((hintBodyId) => hintBodyId === bodyId),
+  );
+}
+
+type Point = Readonly<{ x: number; y: number; z: number }>;
+
+/**
+ * True when the straight segment from `start` to `end` never enters the
+ * sphere. A start inside the sphere never clears it.
+ */
+export function segmentClearsSphere(
+  start: Point,
+  end: Point,
+  centre: Point,
+  radius: number,
+): boolean {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const dz = end.z - start.z;
+  const cx = centre.x - start.x;
+  const cy = centre.y - start.y;
+  const cz = centre.z - start.z;
+  const lengthSquared = dx * dx + dy * dy + dz * dz;
+  const t =
+    lengthSquared === 0
+      ? 0
+      : Math.min(1, Math.max(0, (cx * dx + cy * dy + cz * dz) / lengthSquared));
+  return Math.hypot(cx - t * dx, cy - t * dy, cz - t * dz) >= radius;
 }
 
 export function easterEgg(id: EasterEggId): EasterEgg {
