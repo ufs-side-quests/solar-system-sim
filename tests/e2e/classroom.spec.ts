@@ -126,12 +126,28 @@ test("a presentation clicker steps the tour with Page Down and Page Up", async (
     }
   });
   const rate = page.getByRole("slider", { name: "Playback rate" });
+  // A step applies its own rate a moment after the step changes, so each
+  // step's rate is read once two consecutive polls agree.
+  const settledRate = async (): Promise<string> => {
+    let lastRead: string | null = null;
+    await expect
+      .poll(
+        async () => {
+          const previous = lastRead;
+          lastRead = await rate.inputValue();
+          return lastRead === previous;
+        },
+        { intervals: [250], timeout: 10_000 },
+      )
+      .toBe(true);
+    return rate.inputValue();
+  };
   await page.keyboard.press("PageDown");
   await expect(tour).toHaveAttribute("data-tour-step", "moon-gap");
-  const moonGapRate = await rate.inputValue();
+  const moonGapRate = await settledRate();
   await page.keyboard.press("PageUp");
   await expect(tour).toHaveAttribute("data-tour-step", "earth");
-  const earthRate = await rate.inputValue();
+  const earthRate = await settledRate();
 
   // The clicker still steps the tour after a click on the playback slider,
   // and the slider does not move as well: it shows each step's own rate.
