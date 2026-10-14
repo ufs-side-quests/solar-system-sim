@@ -236,9 +236,16 @@ for (const [search, bodyId, distanceText, litWindowMaterials] of [
       `data-${datasetKey}-window-luminance-cd-m2`,
       "300",
     );
+    // The test browser (Chrome with WebGL) supports anisotropic filtering, so
+    // the profile's anisotropy is above 1; at 1 a model texture left at the
+    // default could not be told apart.
+    const sceneAnisotropy = Number(
+      await scene.getAttribute("data-texture-anisotropy"),
+    );
+    expect(sceneAnisotropy).toBeGreaterThan(1);
     await expect(scene).toHaveAttribute(
       `data-${datasetKey}-model-texture-anisotropy`,
-      (await scene.getAttribute("data-texture-anisotropy")) ?? "missing",
+      String(sceneAnisotropy),
     );
     await expect(page.getByRole("complementary")).toContainText(distanceText);
     await expect(page.getByRole("complementary")).toContainText("Sketchfab");

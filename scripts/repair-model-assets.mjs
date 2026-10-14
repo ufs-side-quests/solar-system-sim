@@ -23,7 +23,10 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 
 import { getBounds, NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import {
+  ALL_EXTENSIONS,
+  KHRDracoMeshCompression,
+} from "@gltf-transform/extensions";
 import { prune } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
 import sharp from "sharp";
@@ -130,11 +133,26 @@ function removeDeadEmissiveBindings(document) {
 // (TEXCOORD_1) that runs around the station axis and a small repeating window
 // texture. Model units: 1,451.82 m / 502.5 units = about 2.89 m per unit.
 // The station axis is the mesh y axis; the rings lie in the x-z plane.
+// The window columns are lines of constant angle: each region has a whole
+// number of them, round(2 pi r / pitchAround) at the middle radius r of its
+// band, so they meet at the +-pi seam. Away from that radius the pitch around
+// scales with the radius.
 const WINDOW_REGIONS = [
   {
-    // Inner and outer walls of the habitat ring, 3.5 m decks, 5 m window pitch.
-    name: "habitat ring",
-    radius: [75, 115],
+    // The habitat ring, 3.5 m decks, 5 m window pitch: its inner wall
+    // (radius about 76 to 84 units) and outer wall (about 92 to 115) are
+    // separate regions, so each gets its own column count.
+    name: "habitat ring inner wall",
+    radius: [75, 88],
+    height: [-195, -160],
+    radialNormal: (radial) => Math.abs(radial) >= 0.8,
+    wallDirection: [0, 1],
+    pitchAround: 1.75,
+    pitchAlong: 1.2,
+  },
+  {
+    name: "habitat ring outer wall",
+    radius: [88, 115],
     height: [-195, -160],
     radialNormal: (radial) => Math.abs(radial) >= 0.8,
     wallDirection: [0, 1],
@@ -153,6 +171,13 @@ const WINDOW_REGIONS = [
     pitchAlong: 3.5,
   },
 ];
+const windowColumns = (region) =>
+  Math.round(
+    (2 * Math.PI * (region.radius[0] + region.radius[1])) /
+      2 /
+      region.pitchAround,
+  );
+
 /** One window in a repeating 32 px tile: 37.5 % of the width, 31 % of the height. */
 const WINDOW_TILE_PX = 32;
 const WINDOW_TILE_LIT = { x: [10, 22], y: [11, 21] };
@@ -248,18 +273,20 @@ async function lightDeepSpaceNineWindows(document) {
         }
         counts.set(region.name, counts.get(region.name) + 1);
         // The window grid is a function of position only, so it runs on
-        // unbroken across neighbouring triangles: u is arc length around the
-        // axis (each corner's angle unwrapped next to the triangle centre's,
-        // so no triangle spans the seam at +-pi), v is length along the
-        // region's wall direction in the plane through the axis.
+        // unbroken across neighbouring triangles: u counts window columns
+        // around the axis (each corner's angle unwrapped next to the triangle
+        // centre's, so no triangle spans the seam at +-pi; across the seam u
+        // jumps by the whole column count), v is length along the region's
+        // wall direction in the plane through the axis.
         const centreAngle = Math.atan2(centre[2], centre[0]);
+        const columns = windowColumns(region);
         corners.forEach((corner, k) => {
           let angle = Math.atan2(p[k][2], p[k][0]) - centreAngle;
           angle -= 2 * Math.PI * Math.round(angle / (2 * Math.PI));
           const cornerRadius = Math.hypot(p[k][0], p[k][2]);
           windows.push([
             corner,
-            ((centreAngle + angle) * cornerRadius) / region.pitchAround,
+            ((centreAngle + angle) * columns) / (2 * Math.PI),
             (region.wallDirection[0] * cornerRadius +
               region.wallDirection[1] * p[k][1]) /
               region.pitchAlong,
@@ -315,13 +342,36 @@ async function lightDeepSpaceNineWindows(document) {
     if (count === 0) {
       throw new Error(`No Deep Space Nine ${name} window triangles found`);
     }
-    console.log(`Deep Space Nine ${name}: ${count} window triangles`);
+    const region = WINDOW_REGIONS.find((candidate) => candidate.name === name);
+    console.log(
+      `Deep Space Nine ${name}: ${count} window triangles, ${windowColumns(region)} columns`,
+    );
   }
 }
+
+// Draco's default 12-bit texture coordinates put the window grid (up to 364
+// tiles around) out by up to 0.045 of a tile, about an eighth of a window's
+// width, and its 14-bit positions by up to 0.0066 units (about 19 mm).
+// 16 bits measured 0.0028 of a tile and 0.0016 units. Draco options apply to
+// the whole file.
+const DEEP_SPACE_NINE_DRACO_QUANTIZATION_BITS = { POSITION: 16, TEX_COORD: 16 };
 
 async function repairDeepSpaceNine(document) {
   removeDeadEmissiveBindings(document);
   await lightDeepSpaceNineWindows(document);
+  const draco = document
+    .getRoot()
+    .listExtensionsUsed()
+    .find(
+      (extension) =>
+        extension.extensionName === KHRDracoMeshCompression.EXTENSION_NAME,
+    );
+  if (draco === undefined) {
+    throw new Error("Deep Space Nine is not Draco compressed");
+  }
+  draco.setEncoderOptions({
+    quantizationBits: DEEP_SPACE_NINE_DRACO_QUANTIZATION_BITS,
+  });
 }
 
 const MODEL_REPAIRS = [

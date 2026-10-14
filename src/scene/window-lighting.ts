@@ -1,33 +1,60 @@
 import {
   CanvasTexture,
+  Color,
   LinearSRGBColorSpace,
   type MeshStandardMaterial,
   type Texture,
 } from "three";
 
+import solarPhotosphereJson from "../data/solar-photosphere.snapshot.json" with { type: "json" };
+
 // Lit windows calibrated to the scene's sunlight.
 //
 // The Sun is a light of intensity SOLAR_IRRADIANCE_AT_1_AU with inverse-square
-// decay and distances in AU, so a surface square to the Sun at 1 AU gets 7
-// scene irradiance units. That stands for the luminous solar constant, about
-// 133,000 lx (Darula, Kittler and Gueymard 2005, "Reference luminous solar
-// constant and solar luminance for illuminance calculations", Solar Energy
-// 79(5): 559-565).
-//   1 scene irradiance unit = 133,000 lx / 7 = about 19,000 lx.
+// decay and distances in AU, coloured SUNLIGHT_COLOR (the photosphere
+// snapshot's disc mean, #fff1ea). three.js multiplies the intensity by the
+// linear colour, so a surface square to the Sun at 1 AU gets
+//   7 x Rec. 709 luminance of linear #fff1ea = 7 x 0.901 = about 6.31
+// scene irradiance units (SUNLIGHT_LUMINANCE_AT_1_AU). That stands for the
+// luminous solar constant, about 133,000 lx (Darula, Kittler and Gueymard
+// 2005, "Reference luminous solar constant and solar luminance for
+// illuminance calculations", Solar Energy 79(5): 559-565).
+//   1 scene irradiance unit = 133,000 lx / 6.31 = about 21,000 lx.
 // A white matte surface lit by E lx has luminance E / pi cd/m2, and three.js
 // shades it as E / pi scene radiance units, so
-//   1 scene radiance unit = about 19,000 cd/m2.
+//   1 scene radiance unit = about 21,000 cd/m2.
 // A lit room seen through a window is taken as 300 cd/m2 (an assumed typical
 // interior luminance, not a measurement of any station), so
-//   window radiance = 300 / 19,000 = about 0.016 scene radiance units.
-// After the auto exposure at Jupiter (about 27 times, the inverse square of
-// 5.2 AU) that is about as bright as a sunlit grey hull; at 1 AU it is faint.
+//   window radiance = 300 / 21,000 = about 0.014 scene radiance units.
+// The calibration assumes that the hull receives one sun.
+// Beside a sunlit mid-grey hull (reflectance 0.5, also an assumption) the
+// windows are dim: the hull has luminance 0.5 x E / pi, that is
+//   at 1 AU: 0.5 x 133,000 / pi = about 21,000 cd/m2, 70 times the windows;
+//   at Jupiter (5.2 AU, E = 133,000 / 27 = about 4,900 lx):
+//     0.5 x 4,900 / pi = about 780 cd/m2, so the windows are 300 / 780,
+//     about 0.4 (a little more than a third) as bright as the hull.
 
 export const SOLAR_IRRADIANCE_AT_1_AU = 7;
+
+/** The Sun's colour: the photosphere snapshot's disc mean (SUNLIGHT_COLOR). */
+const sunlightColor = new Color(solarPhotosphereJson.discMeanSrgbHex);
+if (
+  `#${sunlightColor.getHexString()}` !== solarPhotosphereJson.discMeanSrgbHex
+) {
+  throw new Error(
+    `Photosphere disc mean ${solarPhotosphereJson.discMeanSrgbHex} is not a lowercase #rrggbb colour`,
+  );
+}
+/** Rec. 709 luminance of the scene's sunlight, linear, at 1 AU. */
+export const SUNLIGHT_LUMINANCE_AT_1_AU =
+  SOLAR_IRRADIANCE_AT_1_AU *
+  (0.2126 * sunlightColor.r +
+    0.7152 * sunlightColor.g +
+    0.0722 * sunlightColor.b);
 export const LUMINOUS_SOLAR_CONSTANT_LX = 133_000;
 export const LIT_WINDOW_LUMINANCE_CD_M2 = 300;
 export const LIT_WINDOW_RADIANCE =
-  (LIT_WINDOW_LUMINANCE_CD_M2 * SOLAR_IRRADIANCE_AT_1_AU) /
+  (LIT_WINDOW_LUMINANCE_CD_M2 * SUNLIGHT_LUMINANCE_AT_1_AU) /
   LUMINOUS_SOLAR_CONSTANT_LX;
 
 /** Warm white, an authored colour in linear sRGB, not a measured spectrum. */
@@ -43,9 +70,12 @@ export const LIT_WINDOW_EMISSIVE_LINEAR_RGB = WARM_WHITE_LINEAR_RGB.map(
   (channel) => (channel * LIT_WINDOW_RADIANCE) / WARM_WHITE_LUMINANCE,
 ) as [number, number, number];
 
-/** Texels darker than this are a whole window; lighter than the upper bound, hull. */
-const PORTHOLE_DARK_LUMINANCE = 0.15;
-const PORTHOLE_HULL_LUMINANCE = 0.35;
+/**
+ * Luma (Rec. 709 weights on the sRGB-encoded bytes, not linear luminance):
+ * texels darker than this are a whole window; lighter than the upper bound, hull.
+ */
+const PORTHOLE_DARK_LUMA = 0.15;
+const PORTHOLE_HULL_LUMA = 0.35;
 
 /**
  * A window mask from a hull texture whose portholes are painted black: 255
@@ -60,14 +90,13 @@ export function portholeMaskFromHullTexture(
   }
   const mask = new Uint8ClampedArray(rgba.length);
   for (let index = 0; index < rgba.length; index += 4) {
-    const luminance =
+    const luma =
       (0.2126 * (rgba[index] ?? 0) +
         0.7152 * (rgba[index + 1] ?? 0) +
         0.0722 * (rgba[index + 2] ?? 0)) /
       255;
     const lit =
-      (PORTHOLE_HULL_LUMINANCE - luminance) /
-      (PORTHOLE_HULL_LUMINANCE - PORTHOLE_DARK_LUMINANCE);
+      (PORTHOLE_HULL_LUMA - luma) / (PORTHOLE_HULL_LUMA - PORTHOLE_DARK_LUMA);
     const value = Math.round(255 * Math.min(1, Math.max(0, lit)));
     mask[index] = value;
     mask[index + 1] = value;

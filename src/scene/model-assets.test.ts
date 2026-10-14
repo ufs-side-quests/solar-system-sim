@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import { fictionalModelAssets } from "./fictional-model-assets";
 import { spacecraftAssets } from "./spacecraft-assets";
+import { SUNLIGHT_COLOR } from "./visual-assets";
 import {
   LIT_WINDOW_EMISSIVE_LINEAR_RGB,
   LIT_WINDOW_RADIANCE,
   portholeMaskFromHullTexture,
+  SUNLIGHT_LUMINANCE_AT_1_AU,
 } from "./window-lighting";
 
 type GltfJson = Readonly<{
@@ -111,8 +113,29 @@ describe("installed 3D model files", () => {
 });
 
 describe("lit window calibration", () => {
-  it("puts 300 cd/m2 at about 0.016 scene radiance units", () => {
-    expect(LIT_WINDOW_RADIANCE).toBeCloseTo(300 / 19_000, 4);
+  it("reads the sunlight luminance from the scene's sunlight colour", () => {
+    // IEC 61966-2-1 decoding of each sRGB byte, then Rec. 709 weights.
+    const linear = [1, 3, 5].map((start) => {
+      const encoded =
+        Number.parseInt(SUNLIGHT_COLOR.slice(start, start + 2), 16) / 255;
+      return encoded <= 0.04045
+        ? encoded / 12.92
+        : ((encoded + 0.055) / 1.055) ** 2.4;
+    });
+    expect(SUNLIGHT_COLOR).toBe("#fff1ea");
+    expect(SUNLIGHT_LUMINANCE_AT_1_AU).toBeCloseTo(
+      7 *
+        (0.2126 * (linear[0] ?? Number.NaN) +
+          0.7152 * (linear[1] ?? Number.NaN) +
+          0.0722 * (linear[2] ?? Number.NaN)),
+      10,
+    );
+    expect(SUNLIGHT_LUMINANCE_AT_1_AU).toBeCloseTo(6.31, 2);
+  });
+
+  it("puts 300 cd/m2 at about 0.014 scene radiance units", () => {
+    // 133,000 lx / 6.31 scene units = about 21,000 cd/m2 per radiance unit.
+    expect(LIT_WINDOW_RADIANCE).toBeCloseTo(300 / 21_080, 5);
     const [red, green, blue] = LIT_WINDOW_EMISSIVE_LINEAR_RGB;
     expect(0.2126 * red + 0.7152 * green + 0.0722 * blue).toBeCloseTo(
       LIT_WINDOW_RADIANCE,

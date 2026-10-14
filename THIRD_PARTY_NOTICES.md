@@ -144,7 +144,7 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `25d9ac75c8991d978be60b1eb5b9cf40c586b8fc8731a7f9905727d52728ed78`
+- Installed SHA-256: `fe6995519797e99414b5f3a7518d3485e8881b9f1d1421394693ba3fb4cb1cc9`
 - Modified from the original: `scripts/repair-model-assets.mjs` removes emissive texture bindings that had no emissive factor, and adds lit windows on the habitat ring walls and the Promenade (window triangles with their own materials, a second UV set and a repeating window texture).
   The original's SHA-256 is `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`.
 
