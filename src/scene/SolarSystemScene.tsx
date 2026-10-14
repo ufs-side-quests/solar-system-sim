@@ -122,8 +122,11 @@ import {
 } from "./camera-orbit";
 import { PARENT_BODY_ID } from "./body-facts";
 import {
+  type AnchoredCameraMove,
+  anchoredCameraMove,
+  applyAnchoredCameraMove,
+  chooseTurnSide,
   formatViewpointSpeed,
-  interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
   sampleOrientationTransition,
 } from "./camera-transition";
@@ -289,38 +292,6 @@ function voyagerEarthPointingQuaternion(
   );
 }
 
-function interpolateCameraPositionAroundAnchor(
-  outputPosition: Vector3,
-  startPosition: Vector3,
-  endPosition: Vector3,
-  anchor: Vector3,
-  progress: number,
-): void {
-  const startOffset = startPosition.clone().sub(anchor);
-  const endOffset = endPosition.clone().sub(anchor);
-  const startDistance = startOffset.length();
-  const endDistance = endOffset.length();
-  const distance = interpolateLogarithmicDistance(
-    startDistance,
-    endDistance,
-    progress,
-  );
-  const startDirection = startOffset.normalize();
-  const endDirection = endOffset.normalize();
-  const completeRotation = new Quaternion().setFromUnitVectors(
-    startDirection,
-    endDirection,
-  );
-  const interpolatedRotation = new Quaternion().slerp(
-    completeRotation,
-    progress,
-  );
-  outputPosition
-    .copy(startDirection)
-    .applyQuaternion(interpolatedRotation)
-    .multiplyScalar(distance)
-    .add(anchor);
-}
 const MAX_MOON_TRAIL_POINTS = 8_192;
 const MAX_PLANET_TRAIL_POINTS = 8_192;
 const PLANET_TRAIL_BODY_IDS = [
@@ -347,6 +318,15 @@ const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
 const ORIENTATION_PRESET_TRANSITION_DURATION_MS = 1_200;
+// Scratch values for the per-frame camera moves, so a frame allocates none.
+const scratchCameraMove: AnchoredCameraMove = {
+  anchor: new Vector3(),
+  rotation: new Quaternion(),
+  scale: 1,
+};
+const scratchOrientationTarget = new Vector3();
+const scratchOrientationStart = new Vector3();
+const scratchOrientationEnd = new Vector3();
 const ALPHA_CENTAURI_DISTANCE_AU = 272_000;
 const VOYAGER_1_HELIOPAUSE_AU = 122;
 const VOYAGER_2_HELIOPAUSE_AU = 119;
@@ -4115,6 +4095,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           endPosition: Vector3;
           endTarget: Vector3;
           endOffset: Vector3;
+          // The centre of the body the flight closes in on, which the camera
+          // turns round and never passes through, and the side it turns
+          // through, chosen once when the flight begins.
+          destinationCentre: Vector3;
+          turnSide: Vector3;
           destinationFocusBodyId: string | null;
           destinationTargetBodyId: string | undefined;
           destinationName: string;
@@ -4132,6 +4117,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           startedAtMs: number;
           startOffset: Vector3;
           endOffset: Vector3;
+          turnSide: Vector3;
           startUp: Vector3;
           endUp: Vector3;
         }
@@ -4988,6 +4974,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         startedAtMs: performance.now(),
         startOffset,
         endOffset,
+        turnSide: chooseTurnSide(startOffset, endOffset, ECLIPTIC_NORTH),
         startUp,
         endUp,
       };
@@ -5006,13 +4993,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
         Math.max(0, nowMs - transition.startedAtMs),
         ORIENTATION_PRESET_TRANSITION_DURATION_MS,
       );
-      const target = controls.target.clone();
-      interpolateCameraPositionAroundAnchor(
+      const target = scratchOrientationTarget.copy(controls.target);
+      const startPosition = scratchOrientationStart
+        .copy(target)
+        .add(transition.startOffset);
+      applyAnchoredCameraMove(
         camera.position,
-        target.clone().add(transition.startOffset),
-        target.clone().add(transition.endOffset),
-        target,
-        sample.progress,
+        startPosition,
+        anchoredCameraMove(
+          scratchCameraMove,
+          startPosition,
+          scratchOrientationEnd.copy(target).add(transition.endOffset),
+          target,
+          sample.progress,
+          transition.turnSide,
+        ),
       );
       camera.up
         .lerpVectors(transition.startUp, transition.endUp, sample.progress)
@@ -5035,6 +5030,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       camera.near = transition.endNear;
       camera.far = transition.endFar;
       camera.updateProjectionMatrix();
+      container.dataset["cameraNearAu"] = camera.near.toPrecision(9);
+      delete container.dataset["cameraTransitionDestinationDistanceAu"];
       controls.minDistance = transition.endMinimumDistance;
       controls.maxDistance = transition.endMaximumDistance;
       controls.enabled = true;
@@ -5114,6 +5111,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
       );
       const endPosition = camera.position.clone();
       const endTarget = controls.target.clone();
+      // The overview flight closes in on its look target.
+      const destinationCentre = endTarget.clone();
+      if (requestedFocusBodyId === "moon" && apolloInspectionPose() !== null) {
+        moonSurfaceMesh.getWorldPosition(destinationCentre);
+      } else if (requestedFocusBodyId !== null) {
+        const destinationState = bodyStateById(current, requestedFocusBodyId);
+        if (destinationState === undefined) {
+          throw new Error(
+            `Flight destination ${requestedFocusBodyId} is unavailable`,
+          );
+        }
+        destinationCentre.copy(scenePosition(destinationState.positionM));
+      }
       const startLookDistanceAu = Math.max(
         startPosition.distanceTo(startTarget),
         DEFAULT_CAMERA_NEAR_AU * 10,
@@ -5149,6 +5159,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
         endPosition,
         endTarget,
         endOffset: endPosition.clone().sub(endTarget),
+        destinationCentre,
+        turnSide: chooseTurnSide(
+          startPosition.clone().sub(destinationCentre),
+          endPosition.clone().sub(destinationCentre),
+          ECLIPTIC_NORTH,
+        ),
         destinationFocusBodyId: requestedFocusBodyId,
         destinationTargetBodyId: cameraTargetBodyIdRef.current,
         destinationName: bodyName(requestedFocusBodyId),
@@ -5248,6 +5264,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         transition.endOffset.copy(
           inspectionPose.position.clone().sub(inspectionPose.target),
         );
+        moonSurfaceMesh.getWorldPosition(transition.destinationCentre);
       } else if (
         current !== undefined &&
         transition.destinationFocusBodyId !== null
@@ -5261,6 +5278,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ? undefined
             : bodyStateById(current, transition.destinationTargetBodyId);
         if (focusState !== undefined) {
+          transition.destinationCentre.copy(
+            scenePosition(focusState.positionM),
+          );
           transition.endTarget.copy(
             targetState === undefined
               ? scenePosition(focusState.positionM)
@@ -5313,16 +5333,46 @@ float saturnRingTransmission(vec3 surfacePosition) {
           false,
         );
       } else {
-        camera.position.lerpVectors(
+        // A straight line keeps the destination under a pixel until the last
+        // moment; closing the distance to the destination's centre by a
+        // constant factor per step lets the child watch it grow, and keeps
+        // the camera outside it. The look target rides the same move, so a
+        // flight to a body stays centred on it; an observer's look target
+        // then slides to the body it looks at.
+        const move = anchoredCameraMove(
+          scratchCameraMove,
           transition.startPosition,
           transition.endPosition,
+          transition.destinationCentre,
           directSample.segmentProgress,
+          transition.turnSide,
         );
-        controls.target.lerpVectors(
+        applyAnchoredCameraMove(
+          camera.position,
+          transition.startPosition,
+          move,
+        );
+        applyAnchoredCameraMove(
+          controls.target,
           transition.orientationTarget,
-          transition.endTarget,
-          directSample.segmentProgress,
+          move,
+        ).lerp(transition.endTarget, directSample.segmentProgress);
+        // The near plane shrinks with the distance to the destination and
+        // reaches the arrival's own near plane on arrival, so the camera never
+        // cuts into a small body or a landing site it closes in on. The
+        // logarithmic depth buffer keeps the depth order over the range.
+        const destinationDistanceAu = camera.position.distanceTo(
+          transition.destinationCentre,
         );
+        camera.near = Math.min(
+          DEFAULT_CAMERA_NEAR_AU,
+          (transition.endNear * destinationDistanceAu) /
+            transition.endPosition.distanceTo(transition.destinationCentre),
+        );
+        camera.updateProjectionMatrix();
+        container.dataset["cameraNearAu"] = camera.near.toPrecision(9);
+        container.dataset["cameraTransitionDestinationDistanceAu"] =
+          destinationDistanceAu.toPrecision(9);
         camera.up
           .lerpVectors(
             ECLIPTIC_NORTH,
