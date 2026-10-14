@@ -443,7 +443,7 @@ function rounded(value: number, fractionDigits: number): string {
   });
 }
 
-function roundedRatio(ratio: number): string {
+export function roundedRatio(ratio: number): string {
   return rounded(ratio, ratio >= 10 ? 0 : 1);
 }
 

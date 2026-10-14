@@ -162,6 +162,192 @@ test("compare sizes draws every body at one true scale and selects by tap", asyn
   await expect(opener).toBeFocused();
 });
 
+async function openDuel(page: Page) {
+  const scene = await waitForScene(page);
+  await focusBody(page, scene, "Moon");
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Compare sizes" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Compare sizes" });
+  return { scene, dialog };
+}
+
+test("guess first shows two equal globes, then their true sizes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const { scene, dialog } = await openDuel(page);
+  // One live region in both modes, so each new question is announced.
+  const status = dialog.locator('[aria-live="polite"]');
+  await expect(status).toHaveCount(1);
+  await expect(status).toContainText("Moon");
+  const statusNode = await status.elementHandle();
+  const isSameStatus = () =>
+    status.evaluate((element, node) => element === node, statusNode);
+  // One button switches the mode, so focus stays on it as its name flips.
+  const mode = dialog.locator(".size-lineup-mode");
+  await expect(mode).toHaveText("Guess first");
+  await mode.click();
+  await expect(mode).toBeFocused();
+  await expect(mode).toHaveText("See all");
+
+  await expect(status).toHaveText("Which is wider: the Moon or Pluto?");
+  expect(await isSameStatus()).toBe(true);
+  await expect(dialog.locator(".size-lineup-caption")).toHaveText(
+    "Same size for now. Guess first!",
+  );
+  await expect(dialog.locator("[data-lineup-body]")).toHaveCount(2);
+  const drawnRatio = async () =>
+    (await drawnDiameter(dialog, "moon")) /
+    (await drawnDiameter(dialog, "pluto"));
+  expect(Math.abs((await drawnRatio()) - 1)).toBeLessThan(0.01);
+  for (const choice of await dialog.locator("[data-lineup-body]").all()) {
+    const target = await choice.boundingBox();
+    expect(target?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(target?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
+  await expect(dialog.getByText("Wider", { exact: true })).toHaveCount(0);
+
+  // Reduced motion reveals at once; the measure also waits for any transition.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  // The keyboard chooses: the globes are buttons.
+  const pluto = dialog.getByRole("button", { name: "Pluto" });
+  await pluto.focus();
+  await page.keyboard.press("Enter");
+  await expect(status).toHaveText(
+    "Not quite! The Moon is about 1.5 times wider than Pluto.",
+  );
+  await expect(pluto).toHaveAttribute("aria-pressed", "true");
+  await expect(pluto).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog.locator(".size-lineup-caption")).toHaveText(
+    "Sizes to scale.",
+  );
+  // The wider body carries the tag; the wrong guess is dashed, not accented.
+  await expect(
+    dialog.locator('[data-lineup-body="moon"] .size-duel-wider'),
+  ).toHaveText("Wider");
+  await expect(pluto.locator(".size-duel-wider")).toHaveCount(0);
+  expect(
+    await pluto.evaluate((element) => getComputedStyle(element).borderStyle),
+  ).toBe("dashed");
+  await dialog.evaluate((element) =>
+    Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished),
+    ),
+  );
+  const sourcedRatio = sourcedRadiusM("moon") / sourcedRadiusM("pluto");
+  expect(Math.abs((await drawnRatio()) / sourcedRatio - 1)).toBeLessThan(0.01);
+  // The guess is not navigation: the scene still shows the Moon.
+  await expect(scene).toHaveAttribute("data-focus-body", "moon");
+
+  await dialog.getByRole("button", { name: "Next pair" }).click();
+  await expect(status).toHaveText("Which is wider: the Moon or Mercury?");
+  expect(await isSameStatus()).toBe(true);
+  const mercury = dialog.getByRole("button", { name: "Mercury" });
+  await mercury.click();
+  await expect(status).toHaveText(
+    "Yes! Mercury is about 1.4 times wider than the Moon.",
+  );
+  await expect(mercury.locator(".size-duel-wider")).toHaveText("Wider");
+  expect(
+    await mercury.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.borderStyle, style.borderTopColor];
+    }),
+  ).toEqual(["solid", "rgb(127, 199, 255)"]);
+
+  await mode.click();
+  await expect(mode).toHaveText("Guess first");
+  await expect(dialog.locator(".size-lineup-caption")).toHaveText(
+    "Sizes to scale. Distances are not.",
+  );
+  await expect(dialog.locator("[data-lineup-body]")).toHaveCount(11);
+  expect(await isSameStatus()).toBe(true);
+});
+
+test("the Saturn and Jupiter duel says rings do not count before the guess", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const { dialog } = await openDuel(page);
+  await dialog.locator(".size-lineup-mode").click();
+  const status = dialog.locator('[aria-live="polite"]');
+  for (let pair = 0; pair < 4; pair += 1) {
+    await dialog.getByRole("button", { name: "Next pair" }).click();
+  }
+  await expect(status).toHaveText(
+    "Which is wider: Saturn or Jupiter? Rings do not count.",
+  );
+  await dialog.getByRole("button", { name: "Saturn" }).click();
+  await expect(status).toHaveText(
+    "Not quite! Jupiter is about 1.2 times wider than Saturn. We measure the planet itself, not its rings.",
+  );
+  await expect(
+    dialog.locator('[data-lineup-body="jupiter"] .size-duel-wider'),
+  ).toHaveText("Wider");
+});
+
+test("a right guess plays the discovery chime, a wrong one only a click", async ({
+  page,
+}) => {
+  // Record every scheduled frequency: the chime's top note is G5, 783.99 Hz.
+  await page.addInitScript(() => {
+    const testWindow = window as unknown as Window & {
+      scheduledValues: number[];
+    };
+    testWindow.scheduledValues = [];
+    const original: (
+      this: AudioParam,
+      value: number,
+      startTime: number,
+    ) => AudioParam = Reflect.get(AudioParam.prototype, "setValueAtTime");
+    AudioParam.prototype.setValueAtTime = function setValueAtTime(
+      value: number,
+      startTime: number,
+    ): AudioParam {
+      testWindow.scheduledValues.push(value);
+      return original.call(this, value, startTime);
+    };
+  });
+  // The button click starts at 520 Hz.
+  const scheduled = (hertz: number) =>
+    page.evaluate(
+      (value) =>
+        (
+          window as unknown as Window & { scheduledValues: number[] }
+        ).scheduledValues.filter((scheduledValue) => scheduledValue === value)
+          .length,
+      hertz,
+    );
+  await page.goto("/");
+  const { dialog } = await openDuel(page);
+  await dialog.locator(".size-lineup-mode").click();
+  await expect(page.locator(".app-shell")).toHaveAttribute(
+    "data-audio-state",
+    "running",
+  );
+  await expect.poll(() => scheduled(520)).toBeGreaterThan(0);
+
+  // A wrong guess plays one plain click and no chime.
+  const clicksBeforeWrong = await scheduled(520);
+  await dialog.getByRole("button", { name: "Pluto" }).click();
+  await expect(dialog.locator(".size-lineup-comparison")).toContainText(
+    "Not quite!",
+  );
+  await expect.poll(() => scheduled(520)).toBe(clicksBeforeWrong + 1);
+
+  await dialog.getByRole("button", { name: "Next pair" }).click();
+  await expect.poll(() => scheduled(520)).toBe(clicksBeforeWrong + 2);
+  // A right guess plays the chime in place of the click.
+  await dialog.getByRole("button", { name: "Mercury" }).click();
+  await expect(dialog.locator(".size-lineup-comparison")).toContainText("Yes!");
+  await expect.poll(() => scheduled(783.99)).toBe(1);
+  expect(await scheduled(520)).toBe(clicksBeforeWrong + 2);
+});
+
 test("compare sizes says which picture failed to load", async ({ page }) => {
   await page.route("**/textures/lineup/mars.webp", (route) =>
     route.fulfill({ status: 404, body: "" }),

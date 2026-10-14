@@ -41,6 +41,10 @@ Card distances come from live states, are rounded so they do not change with cam
 Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
 Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
 Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
+"Guess first" turns the dialog into a size duel: two globes at the same size and a question such as "Which is wider: the Moon or Pluto?".
+For Saturn and Jupiter the question adds "Rings do not count.", because Saturn with its rings is wider than Jupiter.
+After the child taps one, the narrower globe shrinks to its true size, a "Wider" tag marks the winner, and the same line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
+"Next pair" steps through six fixed pairs, and "See all" returns to the lineup.
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
@@ -54,7 +58,7 @@ While a cool shot is active, the clock runs, and no discovery message shows, a c
 A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
 When a shot ends, the playback rate and direction from before the shot come back, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
-Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -78,8 +82,9 @@ Objects without installed radii, including catalogue-only moons and the asteroid
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
-Collision-aware labels retain all overview planets and move overlapping labels onto nearby leader lines rather than hiding the body or inflating it into a false large sphere.
-Body and wayfinder labels are borderless transparent annotations; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
+Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
+Body and wayfinder labels are borderless transparent annotations at 0.7rem or larger; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
+A label focused from the keyboard shows a 2 px accent ring on a dark chip, which keeps the ring readable over the Sun's disc; the navigation map shows the same ring.
 The time controls support paused, stepped, and continuous forward or backward integration from one second per real second through one simulated year per real second.
 The explorer starts at one simulated hour per real second so surface rotation remains visually traceable; Pause freezes orbital and rotational state together.
 Playback rate is independent of solver keyframe size: continuous playback integrates one simulated day or less per REBOUND endpoint and uses velocity-constrained Hermite interpolation only between completed states.
@@ -155,12 +160,18 @@ It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
 
 These references, and the real Tesla Roadster, are easter eggs.
-When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth and Mars for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth, Mars and the Sun for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
 The label uses game wording so that a child never reads it as a real astronomical discovery.
 While that body has an unfound egg, its selected-body card also says "Something hidden is out there. Look closely!", because on a phone the card can cover the label.
 Guided tour steps never show these hints.
 The first selection reveals the real name, shows a short "You found" message with the egg's origin, and plays a three-note chime through the interface sound effects setting.
 Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
+Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
+The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Sun: the Roadster is usually far from both planets, and its hint is in view from the Sun.
+Once found, the Roadster joins the map's Spacecraft list as a real craft.
+Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
+The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
@@ -237,6 +248,7 @@ The photographic-rendering journey verifies the three rendering profiles, bounde
 The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
 It also decodes each picture and measures the opaque globe across and down against the frame half width and the sourced radii within 2 px, so a render with a wrong camera scale fails.
 The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.
+The size-duel journey checks the equal globes while guessing, that one live region carries the lineup line, each question and each result, the keyboard guess, the "Wider" tag, the dashed wrong guess and accented right guess, the drawn Moon to Pluto ratio within 1 percent under reduced motion, the rings rule for Saturn and Jupiter, the return to the lineup, and that only a right guess plays the chime.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.
@@ -248,6 +260,9 @@ Every focused view can show physics-derived wayfinders for the Sun and the neare
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
 The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
+The on-screen journey text with its viewpoint speed is hidden from screen readers; a separate polite live region says only "Flying to Mars" when a flight starts and "Arrived at Mars" when it ends.
+A drag that takes the camera clears that message, and a tour flight says nothing because the tour's own narration speaks.
+Readouts that follow the scene every frame (exposure, magnification, orbit flight and the clock) are silent outputs; a readout of a slider the child moves still speaks.
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
