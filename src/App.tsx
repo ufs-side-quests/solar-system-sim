@@ -35,7 +35,6 @@ import {
   knownSatelliteById,
 } from "./physics/known-satellites";
 import {
-  ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
   majorBodySystem,
   type MajorBodyDefinition,
@@ -68,6 +67,7 @@ import {
   formatDistanceAu,
   formatExactDistanceKm,
   formatGapInParentWidths,
+  formatPlainDistance,
   formatSunDistance,
   formatSunlightTravelTime,
   PLAIN_SURFACE_BY_BODY_ID,
@@ -655,21 +655,6 @@ function bodyRelativeSpeedMps(first: BodyState, second: BodyState): number {
   );
 }
 
-function formatDistance(
-  distanceM: number,
-  semanticZoom: SemanticZoomLevel,
-): string {
-  if (
-    semanticZoom === "solar-system" &&
-    distanceM >= 0.1 * ASTRONOMICAL_UNIT_M
-  ) {
-    return `${(distanceM / ASTRONOMICAL_UNIT_M).toLocaleString(undefined, { maximumFractionDigits: 5 })} AU`;
-  }
-  return `${(distanceM / 1_000).toLocaleString(undefined, {
-    maximumFractionDigits: semanticZoom === "surface" ? 2 : 0,
-  })} km`;
-}
-
 function formatEffectiveRate(secondsPerSecond: number): string {
   const absolute = Math.abs(secondsPerSecond);
   if (absolute >= DAY_SECONDS) {
@@ -717,45 +702,83 @@ function parentPhrase(parent: MajorBodyDefinition): string {
   return parent.id === "sun" ? "the Sun" : parent.name;
 }
 
+/** A card row whose value never shows without its label. */
+type LabelledValue = Readonly<{ label: string; value: string }>;
+
 /**
- * The child-first distance rows of a major body, from the live distance to
- * its parent: Sun orbiters compare with Earth and add the sunlight time,
- * moons count parent widths in the gap. Exact values go to "More detail".
+ * The selected-body distance rows. Rounded child-first values sit on the
+ * card; the exact live kilometres (and AU for Sun orbiters) go to
+ * "More detail". None of them change with camera zoom.
  */
-function childDistanceRows(
+type DistanceRows = Readonly<{
+  distance: LabelledValue;
+  exactDistance: LabelledValue;
+  sunlight?: string;
+  distanceAu?: string;
+}>;
+
+/** A Sun orbiter compares with Earth's average distance and adds the sunlight time. */
+function sunDistanceRows(bodyId: string, distanceM: number): DistanceRows {
+  return {
+    distance: {
+      label: "From the Sun",
+      value: formatSunDistance(bodyId, distanceM),
+    },
+    exactDistance: {
+      label: "Distance from the Sun, centre to centre (live)",
+      value: formatExactDistanceKm(distanceM),
+    },
+    sunlight: formatSunlightTravelTime(distanceM),
+    distanceAu: formatDistanceAu(distanceM),
+  };
+}
+
+/** An Earth-centred or fictional object states its centre distance in plain words. */
+function plainDistanceRows(label: string, distanceM: number): DistanceRows {
+  return {
+    distance: { label, value: formatPlainDistance(distanceM) },
+    exactDistance: {
+      label: `${label} (live)`,
+      value: formatExactDistanceKm(distanceM),
+    },
+  };
+}
+
+/** Spacecraft: Sun orbiters get the Sun rows, the rest a plain distance. */
+function spacecraftDistanceRows(
+  bodyId: string,
+  parent: MajorBodyDefinition,
+  distanceM: number,
+): DistanceRows {
+  return parent.id === "sun"
+    ? sunDistanceRows(bodyId, distanceM)
+    : plainDistanceRows(`Distance from ${parentPhrase(parent)}`, distanceM);
+}
+
+/** Planets and Pluto get the Sun rows; moons compare the gap with the parent's width. */
+function majorBodyDistanceRows(
   body: MajorBodyDefinition,
   parent: MajorBodyDefinition,
   distanceM: number,
-): {
-  distanceLabel: string;
-  distance: string;
-  sunlight?: string;
-  exactDistanceLabel: string;
-  exactDistance: string;
-  distanceAu?: string;
-} {
-  const exactDistanceLabel = `Distance from ${parentPhrase(parent)} (live)`;
-  const exactDistance = formatExactDistanceKm(distanceM);
-  return parent.id === "sun"
-    ? {
-        distanceLabel: "From the Sun",
-        distance: formatSunDistance(body.id, distanceM),
-        sunlight: formatSunlightTravelTime(distanceM),
-        exactDistanceLabel,
-        exactDistance,
-        distanceAu: formatDistanceAu(distanceM),
-      }
-    : {
-        distanceLabel: `From ${parent.name}`,
-        distance: formatGapInParentWidths(
-          distanceM,
-          parent.name,
-          parent.meanRadiusM,
-          body.meanRadiusM,
-        ),
-        exactDistanceLabel,
-        exactDistance,
-      };
+): DistanceRows {
+  if (parent.id === "sun") {
+    return sunDistanceRows(body.id, distanceM);
+  }
+  return {
+    distance: {
+      label: `From ${parent.name}`,
+      value: formatGapInParentWidths(
+        distanceM,
+        parent.name,
+        parent.meanRadiusM,
+        body.meanRadiusM,
+      ),
+    },
+    exactDistance: {
+      label: `Distance from ${parent.name}, centre to centre (live)`,
+      value: formatExactDistanceKm(distanceM),
+    },
+  };
 }
 
 function normalizedDegrees(value: number): number {
@@ -1979,8 +2002,7 @@ export function App() {
         name: `${apolloSite.mission} · ${apolloSite.siteName}`,
         surface: `${apolloSite.lunarModule} descent stage and deployed equipment remain at the landing site`,
         parentName: "Moon",
-        distanceLabel: "LRO landing coordinates",
-        distance: `${Math.abs(apolloSite.latitudeDeg).toFixed(5)}° ${apolloSite.latitudeDeg < 0 ? "S" : "N"} · ${Math.abs(apolloSite.longitudeDeg).toFixed(5)}° ${apolloSite.longitudeDeg < 0 ? "W" : "E"}`,
+        landingCoordinates: `${Math.abs(apolloSite.latitudeDeg).toFixed(5)}° ${apolloSite.latitudeDeg < 0 ? "S" : "N"} · ${Math.abs(apolloSite.longitudeDeg).toFixed(5)}° ${apolloSite.longitudeDeg < 0 ? "W" : "E"}`,
         mass: "Not represented as a gravitational source",
         composition: {
           summary:
@@ -2065,14 +2087,13 @@ export function App() {
         surface:
           "Fictional black rectangular object from 2001 / 2010 · physical scale",
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                "Distance from Jupiter",
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: "Distance from Jupiter",
         speed:
           parentState === undefined
             ? undefined
@@ -2086,7 +2107,7 @@ export function App() {
           sourceUrl:
             "https://www.nasa.gov/history/50-years-ago-1968-welcomed-2001/",
         },
-        dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString()} m · 1:4:9`,
+        dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString("en-GB")} m · 1:4:9`,
         ephemerisStatus:
           "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
       };
@@ -2100,14 +2121,13 @@ export function App() {
         name: DISCOVERY_ONE_NAME,
         surface: `${asset.credit} · physical scale`,
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                "Distance from Io",
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: "Distance from Io",
         speed:
           parentState === undefined
             ? undefined
@@ -2139,14 +2159,13 @@ export function App() {
               ? "Original high-detail complete battle-station visualization · physical scale"
               : "Original high-detail incomplete battle-station visualization with layered exposed construction · physical scale",
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                `Distance from ${parentDefinition?.name ?? orbiter.parentBodyId}`,
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: `Distance from ${parentDefinition?.name ?? orbiter.parentBodyId}`,
         speed:
           parentState === undefined
             ? undefined
@@ -2162,7 +2181,7 @@ export function App() {
               : "Star Wars Databank and CC model attribution",
           sourceUrl: licensedAsset?.pageUrl ?? orbiter.sourceUrl,
         },
-        dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString()} km diameter`,
+        dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString("en-GB")} km diameter`,
         ephemerisStatus:
           "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
       };
@@ -2180,16 +2199,15 @@ export function App() {
         name: isStation ? DEEP_SPACE_NINE_NAME : USS_DEFIANT_NAME,
         surface: `${asset.credit} · physical scale`,
         parentName: isStation ? parentDefinition?.name : DEEP_SPACE_NINE_NAME,
-        distance:
+        distanceRows:
           displayParentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                isStation
+                  ? "Distance from Callisto"
+                  : "Distance from Deep Space Nine",
                 bodyDistanceM(bodyState, displayParentState),
-                semanticZoom,
               ),
-        distanceLabel: isStation
-          ? "Distance from Callisto"
-          : "Distance from Deep Space Nine",
         speed:
           displayParentState === undefined
             ? undefined
@@ -2210,7 +2228,7 @@ export function App() {
             : USS_DEFIANT_SOURCE_URL,
         },
         dimensionsM: isStation
-          ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString()} m diameter`
+          ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString("en-GB")} m diameter`
           : `${USS_DEFIANT_LENGTH_M.toFixed(2)} m long`,
         ephemerisStatus: isStation
           ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
@@ -2229,17 +2247,14 @@ export function App() {
               ? "Detailed MIT-licensed Roadster and Starman model · Horizons tracks the complete attached payload stack"
               : "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
-          distance:
-            parentState === undefined
+          distanceRows:
+            parentState === undefined || parentDefinition === undefined
               ? undefined
-              : formatDistance(
+              : spacecraftDistanceRows(
+                  bodyId,
+                  parentDefinition,
                   bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
                 ),
-          distanceLabel:
-            bodyId === "hubble"
-              ? "Distance from Earth"
-              : "Distance from the Sun",
           speed:
             parentState === undefined
               ? undefined
@@ -2265,14 +2280,10 @@ export function App() {
           name: voyager.name,
           surface: "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
-          distance:
+          distanceRows:
             parentState === undefined
               ? undefined
-              : formatDistance(
-                  bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
-                ),
-          distanceLabel: "Distance from the Sun",
+              : sunDistanceRows(bodyId, bodyDistanceM(bodyState, parentState)),
           speed:
             parentState === undefined
               ? undefined
@@ -2290,14 +2301,13 @@ export function App() {
           name: "International Space Station",
           surface: "Official NASA 3D model · physical scale · SGP4 trajectory",
           parentName: parentDefinition?.name,
-          distance:
+          distanceRows:
             parentState === undefined
               ? undefined
-              : formatDistance(
+              : plainDistanceRows(
+                  "Geocentric distance",
                   bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
                 ),
-          distanceLabel: "Geocentric distance",
           altitudeKm:
             parentState === undefined || parentDefinition === undefined
               ? undefined
@@ -2321,17 +2331,13 @@ export function App() {
         name: knownSatellite?.name ?? bodyId,
         surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined || parentDefinition === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                `Distance from ${parentPhrase(parentDefinition)}`,
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel:
-          parentDefinition === undefined
-            ? undefined
-            : `Distance from ${parentPhrase(parentDefinition)}`,
         speed:
           parentState === undefined
             ? undefined
@@ -2353,7 +2359,7 @@ export function App() {
     const distanceRows =
       parentState === undefined || parentDefinition === undefined
         ? undefined
-        : childDistanceRows(
+        : majorBodyDistanceRows(
             definition,
             parentDefinition,
             bodyDistanceM(bodyState, parentState),
@@ -2385,12 +2391,7 @@ export function App() {
         "Neutral - no installed authoritative surface asset",
       diameterKm,
       parentName: parentDefinition?.name,
-      distanceLabel: distanceRows?.distanceLabel,
-      distance: distanceRows?.distance,
-      sunlight: distanceRows?.sunlight,
-      exactDistanceLabel: distanceRows?.exactDistanceLabel,
-      exactDistance: distanceRows?.exactDistance,
-      distanceAu: distanceRows?.distanceAu,
+      distanceRows,
       speed:
         parentState === undefined
           ? undefined
@@ -2404,7 +2405,7 @@ export function App() {
           .primeMeridianDeg,
       ),
     };
-  }, [selectedBodyId, semanticZoom, state]);
+  }, [selectedBodyId, state]);
 
   const selectedApolloSite = isApolloLandingSiteId(selectedBodyId)
     ? apolloLandingSiteById.get(selectedBodyId)
@@ -3301,22 +3302,31 @@ export function App() {
                       : `, ${selectedBodyDetail.spinNote}`}
                   </span>
                 )}
-                {selectedBodyDetail.distance === undefined ? null : (
+                {selectedBodyDetail.landingCoordinates === undefined ? null : (
                   <span>
-                    <small>{selectedBodyDetail.distanceLabel}</small>
-                    {selectedBodyDetail.distance}
+                    <small>LRO landing coordinates</small>
+                    {selectedBodyDetail.landingCoordinates}
                   </span>
                 )}
-                {selectedBodyDetail.sunlight === undefined ? null : (
+                {selectedBodyDetail.distanceRows === undefined ? null : (
+                  <span>
+                    <small>
+                      {selectedBodyDetail.distanceRows.distance.label}
+                    </small>
+                    {selectedBodyDetail.distanceRows.distance.value}
+                  </span>
+                )}
+                {selectedBodyDetail.distanceRows?.sunlight ===
+                undefined ? null : (
                   <span>
                     <small>Sunlight</small>
-                    {selectedBodyDetail.sunlight}
+                    {selectedBodyDetail.distanceRows.sunlight}
                   </span>
                 )}
                 {selectedBodyDetail.altitudeKm === undefined ? null : (
                   <span>
                     <small>Altitude</small>
-                    {selectedBodyDetail.altitudeKm.toLocaleString(undefined, {
+                    {selectedBodyDetail.altitudeKm.toLocaleString("en-GB", {
                       maximumFractionDigits: 1,
                     })}{" "}
                     km
@@ -3374,57 +3384,69 @@ export function App() {
                   {selectedBodyDetail.composition?.summary ??
                     "Not provided by the installed authority snapshot"}
                 </span>
-                {selectedBodyDetail.surfaceTechnical === undefined ? null : (
+                {selectedBodyDetail.distanceRows === undefined &&
+                selectedBodyDetail.surfaceTechnical === undefined ? null : (
                   <details className="selected-body-more">
                     <summary>More detail</summary>
                     <div className="selected-body-more-grid">
-                      <span>
-                        <small>Diameter</small>
-                        {selectedBodyDetail.diameterKm.toLocaleString(
-                          undefined,
-                          { maximumFractionDigits: 0 },
-                        )}{" "}
-                        km
-                      </span>
-                      {selectedBodyDetail.exactDistance === undefined ? null : (
+                      {selectedBodyDetail.distanceRows === undefined ? null : (
                         <span>
-                          <small>{selectedBodyDetail.exactDistanceLabel}</small>
-                          {selectedBodyDetail.exactDistance}
+                          <small>
+                            {
+                              selectedBodyDetail.distanceRows.exactDistance
+                                .label
+                            }
+                          </small>
+                          {selectedBodyDetail.distanceRows.exactDistance.value}
                         </span>
                       )}
-                      {selectedBodyDetail.distanceAu === undefined ? null : (
+                      {selectedBodyDetail.distanceRows?.distanceAu ===
+                      undefined ? null : (
                         <span title="1 AU is Earth's average distance from the Sun: 149,597,870.7 km">
                           <small>Distance from the Sun in AU (live)</small>
-                          {selectedBodyDetail.distanceAu}
+                          {selectedBodyDetail.distanceRows.distanceAu}
                         </span>
                       )}
-                      {selectedBodyDetail.liveOrbitalPeriod ===
+                      {selectedBodyDetail.surfaceTechnical ===
                       undefined ? null : (
-                        <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
-                          <small>{"This moment's orbit (live)"}</small>
-                          {selectedBodyDetail.liveOrbitalPeriod}
-                        </span>
+                        <>
+                          <span>
+                            <small>Diameter</small>
+                            {selectedBodyDetail.diameterKm.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 0 },
+                            )}{" "}
+                            km
+                          </span>
+                          {selectedBodyDetail.liveOrbitalPeriod ===
+                          undefined ? null : (
+                            <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
+                              <small>{"This moment's orbit (live)"}</small>
+                              {selectedBodyDetail.liveOrbitalPeriod}
+                            </span>
+                          )}
+                          <span>
+                            <small>Sidereal rotation</small>
+                            {selectedBodyDetail.rotationHours.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 2 },
+                            )}{" "}
+                            h
+                          </span>
+                          <span>
+                            <small>Rotation angle</small>
+                            {selectedBodyDetail.primeMeridianDeg.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 1 },
+                            )}
+                            °
+                          </span>
+                          <span>
+                            <small>Surface map</small>
+                            {selectedBodyDetail.surfaceTechnical}
+                          </span>
+                        </>
                       )}
-                      <span>
-                        <small>Sidereal rotation</small>
-                        {selectedBodyDetail.rotationHours.toLocaleString(
-                          undefined,
-                          { maximumFractionDigits: 2 },
-                        )}{" "}
-                        h
-                      </span>
-                      <span>
-                        <small>Rotation angle</small>
-                        {selectedBodyDetail.primeMeridianDeg.toLocaleString(
-                          undefined,
-                          { maximumFractionDigits: 1 },
-                        )}
-                        °
-                      </span>
-                      <span>
-                        <small>Surface map</small>
-                        {selectedBodyDetail.surfaceTechnical}
-                      </span>
                     </div>
                   </details>
                 )}

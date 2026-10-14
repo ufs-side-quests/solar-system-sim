@@ -567,7 +567,7 @@ export function formatPlainDistance(distanceM: number): string {
   if (km >= 1e6) {
     return `about ${rounded(km / 1e6, 0)} million km`;
   }
-  return `about ${rounded(km, 0)} km`;
+  return `about ${rounded(km, km < 10 ? 1 : 0)} km`;
 }
 
 /**
@@ -580,31 +580,45 @@ export function formatSunDistance(bodyId: string, distanceM: number): string {
     return plain;
   }
   const ratio = distanceM / ASTRONOMICAL_UNIT_M;
-  const comparison =
-    ratio >= 1.1
-      ? `about ${roundedRatio(ratio)} times as far as Earth`
-      : ratio > 0.9
-        ? "about as far as Earth"
-        : `Earth is about ${roundedRatio(1 / ratio)} times as far`;
-  return `${comparison} (${plain})`;
-}
-
-/** How long sunlight takes to travel the given distance, in minutes or hours. */
-export function formatSunlightTravelTime(distanceM: number): string {
-  requirePositiveDistance(distanceM, "Distance");
-  const minutes = distanceM / SPEED_OF_LIGHT_MPS / 60;
-  const time =
-    minutes < 1
-      ? "less than a minute"
-      : minutes < 120
-        ? `about ${counted(minutes, 0, "minute")}`
-        : `about ${counted(minutes / 60, 0, "hour")}`;
-  return `takes ${time} to get here`;
+  if (ratio >= 1.1) {
+    return `about ${roundedRatio(ratio)} times as far as Earth (${plain})`;
+  }
+  if (ratio > 0.9) {
+    return `about as far as Earth (${plain})`;
+  }
+  return `${plain}. Earth is about ${roundedRatio(1 / ratio)} times as far.`;
 }
 
 /**
- * How many parent-body widths fit in the surface-to-surface gap between a
- * moon and its parent, for example "about 30 Earths would fit in the gap".
+ * How long sunlight takes to travel the given distance: whole minutes under
+ * an hour, "1 hour 20 minutes" to the nearest 5 minutes up to 90 minutes,
+ * then whole hours.
+ */
+export function formatSunlightTravelTime(distanceM: number): string {
+  requirePositiveDistance(distanceM, "Distance");
+  const minutes = distanceM / SPEED_OF_LIGHT_MPS / 60;
+  return `takes ${sunlightTime(minutes)} to get here`;
+}
+
+function sunlightTime(minutes: number): string {
+  if (minutes < 1) {
+    return "less than a minute";
+  }
+  if (Math.round(minutes) < 60) {
+    return `about ${counted(minutes, 0, "minute")}`;
+  }
+  if (minutes < 90) {
+    const extraMinutes = Math.round(minutes / 5) * 5 - 60;
+    return extraMinutes === 0
+      ? "about 1 hour"
+      : `about 1 hour ${String(extraMinutes)} minutes`;
+  }
+  return `about ${counted(minutes / 60, 0, "hour")}`;
+}
+
+/**
+ * The surface-to-surface gap between a moon and its parent compared with the
+ * parent's width, for example "the gap is about 30 times as wide as Earth".
  */
 export function formatGapInParentWidths(
   distanceM: number,
@@ -620,23 +634,26 @@ export function formatGapInParentWidths(
     throw new Error(`The moon and ${parentName} overlap`);
   }
   const ratio = gapM / (2 * parentRadiusM);
+  if (ratio < 0.5) {
+    return `the gap is less than half as wide as ${parentName}`;
+  }
   if (ratio < 0.95) {
-    return `less than one ${parentName} would fit in the gap`;
+    return `the gap is almost as wide as ${parentName}`;
   }
   const text = roundedRatio(ratio);
-  const name =
-    text === "1"
-      ? parentName
-      : parentName.endsWith("s")
-        ? `${parentName}es`
-        : `${parentName}s`;
-  return `about ${text} ${name} would fit in the gap`;
+  return text === "1"
+    ? `the gap is about as wide as ${parentName}`
+    : `the gap is about ${text} times as wide as ${parentName}`;
 }
 
-/** The exact live distance in whole kilometres, for the "More detail" grid. */
+/**
+ * The exact live distance for the "More detail" grid: whole kilometres, or
+ * to the metre under 100 km so a short patrol keeps its detail.
+ */
 export function formatExactDistanceKm(distanceM: number): string {
   requirePositiveDistance(distanceM, "Distance");
-  return `${rounded(distanceM / 1_000, 0)} km`;
+  const km = distanceM / 1_000;
+  return `${rounded(km, km < 100 ? 3 : 0)} km`;
 }
 
 /** The live distance in astronomical units to three decimal places. */

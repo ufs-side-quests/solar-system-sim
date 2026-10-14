@@ -244,10 +244,11 @@ test("selected body card gives distances a child can feel", async ({
   await expect(row("Sunlight")).toHaveText(
     "Sunlighttakes about 4 hours to get here",
   );
-  await expect(row("Distance from the Sun (live)")).toBeHidden();
+  const sunCentreLabel = "Distance from the Sun, centre to centre (live)";
+  await expect(row(sunCentreLabel)).toBeHidden();
   await card.getByText("More detail", { exact: true }).click();
-  await expect(row("Distance from the Sun (live)")).toHaveText(
-    /^Distance from the Sun \(live\)4,[45]\d\d,\d{3},\d{3} km$/u,
+  await expect(row(sunCentreLabel)).toHaveText(
+    /^Distance from the Sun, centre to centre \(live\)4,[45]\d\d,\d{3},\d{3} km$/u,
   );
   await expect(row("Distance from the Sun in AU (live)")).toHaveText(
     /^Distance from the Sun in AU \(live\)(?:29|30)\.\d{3} AU$/u,
@@ -270,12 +271,12 @@ test("selected body card gives distances a child can feel", async ({
   await selectFocus(focus, "Moon");
   await expect(scene).toHaveAttribute("data-focus-body", "moon");
   await expect(row("From Earth")).toHaveText(
-    /^From Earthabout (?:2[789]|3[01]) Earths would fit in the gap$/u,
+    /^From Earththe gap is about (?:2[789]|3[01]) times as wide as Earth$/u,
   );
   await expect(row("Sunlight")).toHaveCount(0);
   await card.getByText("More detail", { exact: true }).click();
-  await expect(row("Distance from Earth (live)")).toHaveText(
-    /^Distance from Earth \(live\)(?:3[5-9]\d|40\d),\d{3} km$/u,
+  await expect(row("Distance from Earth, centre to centre (live)")).toHaveText(
+    /^Distance from Earth, centre to centre \(live\)(?:3[5-9]\d|40\d),\d{3} km$/u,
   );
   await page.screenshot({
     path: testInfo.outputPath("selected-body-distance-moon.png"),
@@ -286,6 +287,126 @@ test("selected body card gives distances a child can feel", async ({
   await selectFocus(focus, "Io");
   await expect(scene).toHaveAttribute("data-focus-body", "io");
   await expect(row("From Jupiter")).toHaveText(
-    /^From Jupiterabout 2\.[45] Jupiters would fit in the gap$/u,
+    /^From Jupiterthe gap is about 2\.[45] times as wide as Jupiter$/u,
+  );
+
+  await selectFocus(focus, "Deimos");
+  await expect(scene).toHaveAttribute("data-focus-body", "deimos");
+  await expect(row("From Mars")).toHaveText(
+    "From Marsthe gap is about 3 times as wide as Mars",
+  );
+
+  await selectFocus(focus, "Phobos");
+  await expect(scene).toHaveAttribute("data-focus-body", "phobos");
+  await expect(row("From Mars")).toHaveText(
+    "From Marsthe gap is almost as wide as Mars",
+  );
+
+  // Mercury runs from 46 to 70 million km, so Earth is 2.1 to 3.3 times as far.
+  await selectFocus(focus, "Mercury");
+  await expect(scene).toHaveAttribute("data-focus-body", "mercury");
+  await expect(row("From the Sun")).toHaveText(
+    /^From the Sunabout (?:4[67]|[56]\d|70) million km\. Earth is about (?:2\.\d|3\.[0-3]) times as far\.$/u,
+  );
+
+  // Saturn runs from 9.0 to 10.1 AU: sunlight takes 75 to 84 minutes.
+  await selectFocus(focus, "Saturn");
+  await expect(scene).toHaveAttribute("data-focus-body", "saturn");
+  await expect(row("Sunlight")).toHaveText(
+    /^Sunlighttakes about 1 hour (?:15|20|25) minutes to get here$/u,
+  );
+});
+
+test("spacecraft and fictional cards keep distances steady and exact values in More detail", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const row = (label: string): Locator =>
+    card.locator("span", {
+      has: page.getByText(label, { exact: true }),
+    });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  await selectFocus(focus, "Voyager 1 (interstellar space)");
+  await expect(scene).toHaveAttribute("data-focus-body", "voyager-1");
+  await expect(row("From the Sun")).toHaveText(
+    /^From the Sunabout 1[67]\d times as far as Earth \(about 2[4-7] billion km\)$/u,
+  );
+  await expect(row("Sunlight")).toHaveText(
+    /^Sunlighttakes about 2[2-4] hours to get here$/u,
+  );
+  const sunCentreLabel = "Distance from the Sun, centre to centre (live)";
+  await expect(row(sunCentreLabel)).toBeHidden();
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row(sunCentreLabel)).toHaveText(
+    /^Distance from the Sun, centre to centre \(live\)2\d,\d{3},\d{3},\d{3} km$/u,
+  );
+  await expect(row("Distance from the Sun in AU (live)")).toHaveText(
+    /^Distance from the Sun in AU \(live\)1[67]\d\.\d{3} AU$/u,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("selected-body-distance-voyager-1.png"),
+    animations: "disabled",
+  });
+  await card.getByText("More detail", { exact: true }).click();
+
+  // The Roadster runs from about 0.99 to 1.66 AU from the Sun.
+  await selectFocus(focus, "Tesla Roadster and Starman");
+  await expect(scene).toHaveAttribute("data-focus-body", "roadster");
+  await expect(row("From the Sun")).toHaveText(
+    /^From the Sun(?:about as far as Earth|about 1\.[1-7] times as far as Earth) \(about (?:1[4-9]\d|2[0-5]\d) million km\)$/u,
+  );
+  await expect(row("Sunlight")).toHaveText(
+    /^Sunlighttakes about (?:[89]|1[0-4]) minutes to get here$/u,
+  );
+
+  await selectFocus(focus, "International Space Station (Earth)");
+  await expect(scene).toHaveAttribute("data-focus-body", "iss");
+  const issRow = row("Geocentric distance");
+  await expect(issRow).toHaveText(/^Geocentric distanceabout 6,[6-9]00 km$/u);
+  const issDistance = await issRow.textContent();
+  if (issDistance === null) {
+    throw new Error("The ISS distance row has no text");
+  }
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row("Geocentric distance (live)")).toHaveText(
+    /^Geocentric distance \(live\)6,[6-9]\d\d km$/u,
+  );
+  await card.getByText("More detail", { exact: true }).click();
+  // The card row no longer switches units or digits with camera zoom.
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 35_000 },
+  );
+  await expect(scene).toHaveAttribute("data-semantic-zoom-level", "surface");
+  await expect(issRow).toHaveText(issDistance);
+  await page.mouse.move(720, 450);
+  await expect
+    .poll(async () => {
+      await page.mouse.wheel(0, 2_000);
+      return scene.getAttribute("data-semantic-zoom-level");
+    })
+    .toBe("moon-system");
+  await expect(issRow).toHaveText(issDistance);
+
+  await selectFocus(focus, "USS Defiant (fictional)");
+  await expect(scene).toHaveAttribute("data-focus-body", "uss-defiant");
+  await expect(row("Distance from Deep Space Nine")).toHaveText(
+    "Distance from Deep Space Nineabout 2.5 km",
+  );
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row("Distance from Deep Space Nine (live)")).toHaveText(
+    /^Distance from Deep Space Nine \(live\)2\.\d{1,3} km$/u,
   );
 });

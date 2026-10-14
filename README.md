@@ -24,8 +24,19 @@ The camera uses standard orbit controls: left drag orbits, right drag pans, and 
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
 The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from a sourced sidereal orbital period (NASA NSSDC fact sheets for planets, Pluto and the Moon; JPL SSD satellite mean elements for moons), one sidereal spin with "spins backwards" or "spins on its side" for planets, and speed compared with a named, rounded 900 km/h jet airliner reference.
-Distances come from live states and say what they are from: a Sun orbiter's distance is compared with 1 AU, Earth's average distance, with the plain kilometres beside it and the time sunlight takes to arrive; a moon's row counts how many parent widths would fit in the surface-to-surface gap, from sourced mean radii.
-The exact live kilometres and AU sit under "More detail".
+Card distances come from live states, are rounded so they do not change with camera zoom, and say what they are from:
+
+- Planets, Pluto, the Tesla Roadster and both Voyagers show "From the Sun" and "Sunlight".
+  Earth shows its plain distance, such as "about 150 million km".
+  Bodies beyond 1.1 AU compare with 1 AU, Earth's average distance, such as "about 30 times as far as Earth (about 4.5 billion km)".
+  Mercury and Venus put their own distance first, such as "about 58 million km. Earth is about 2.6 times as far."
+  Between 0.9 and 1.1 AU, which the Roadster reaches near perihelion, the row reads "about as far as Earth".
+  Sunlight time reads in whole minutes under an hour, as "about 1 hour 20 minutes" to the nearest 5 minutes up to 90 minutes, and in whole hours after that.
+- Moons show "From Earth", "From Jupiter" and so on: the surface-to-surface gap, from the live centre distance less both sourced mean radii, compared with the parent's width.
+  It reads "the gap is about 28 times as wide as Earth", "the gap is almost as wide as Mars" below 0.95 widths, or "the gap is less than half as wide as Mars" below 0.5 widths.
+- The ISS, known satellites and fictional objects show their centre-to-centre distance in plain words, such as "about 6,800 km".
+- "More detail" holds the exact live centre-to-centre kilometres on every card with a distance, and the live distance in AU for every Sun orbiter.
+
 "Compare sizes" on the selected-body card opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
 Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
 Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.

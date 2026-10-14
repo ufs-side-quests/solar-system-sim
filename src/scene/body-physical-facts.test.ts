@@ -219,7 +219,10 @@ describe("child-first distances", () => {
       "about 5.2 times as far as Earth (about 780 million km)",
     );
     expect(formatSunDistance("mercury", 0.387 * AU_M)).toBe(
-      "Earth is about 2.6 times as far (about 58 million km)",
+      "about 58 million km. Earth is about 2.6 times as far.",
+    );
+    expect(formatSunDistance("venus", 0.723 * AU_M)).toBe(
+      "about 110 million km. Earth is about 1.4 times as far.",
     );
     expect(formatSunDistance("earth", 147_102_684_000)).toBe(
       "about 150 million km",
@@ -230,11 +233,16 @@ describe("child-first distances", () => {
     expect(formatSunDistance("mars", 1.1 * AU_M)).toMatch(
       /^about 1\.1 times as far as Earth/u,
     );
+    // The Tesla Roadster card reaches this branch: its orbit runs from
+    // about 0.99 AU to about 1.66 AU.
+    expect(formatSunDistance("roadster", 0.99 * AU_M)).toBe(
+      "about as far as Earth (about 150 million km)",
+    );
     expect(formatSunDistance("roadster", 1.09 * AU_M)).toMatch(
       /^about as far as Earth/u,
     );
     expect(formatSunDistance("venus", 0.9 * AU_M)).toMatch(
-      /^Earth is about 1\.1 times as far/u,
+      /^about 130 million km\. Earth is about 1\.1 times as far\.$/u,
     );
     expect(formatSunDistance("saturn", 9.96 * AU_M)).toMatch(
       /^about 10 times as far as Earth/u,
@@ -249,6 +257,9 @@ describe("child-first distances", () => {
     expect(formatPlainDistance(9_376_000)).toBe("about 9,400 km");
     expect(formatPlainDistance(24_990_000_000_000)).toBe("about 25 billion km");
     expect(formatPlainDistance(999_999_000_000)).toBe("about 1 billion km");
+    // USS Defiant patrols 2.5 km from Deep Space Nine.
+    expect(formatPlainDistance(2_500)).toBe("about 2.5 km");
+    expect(formatPlainDistance(9_960)).toBe("about 10 km");
   });
 
   it("says how long sunlight takes to arrive", () => {
@@ -261,11 +272,29 @@ describe("child-first distances", () => {
     expect(formatSunlightTravelTime(5.2 * AU_M)).toBe(
       "takes about 43 minutes to get here",
     );
-    expect(formatSunlightTravelTime(119 * 60 * 299_792_458)).toBe(
-      "takes about 119 minutes to get here",
+    const lightMinutes = (minutes: number): number =>
+      minutes * 60 * 299_792_458;
+    expect(formatSunlightTravelTime(lightMinutes(59.4))).toBe(
+      "takes about 59 minutes to get here",
     );
-    expect(formatSunlightTravelTime(120 * 60 * 299_792_458)).toBe(
+    expect(formatSunlightTravelTime(lightMinutes(59.6))).toBe(
+      "takes about 1 hour to get here",
+    );
+    expect(formatSunlightTravelTime(9.58 * AU_M)).toBe(
+      "takes about 1 hour 20 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(89.9))).toBe(
+      "takes about 1 hour 30 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(90))).toBe(
       "takes about 2 hours to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(119))).toBe(
+      "takes about 2 hours to get here",
+    );
+    // Voyager 1, about 169 AU from the Sun in 2026.
+    expect(formatSunlightTravelTime(169 * AU_M)).toBe(
+      "takes about 23 hours to get here",
     );
     expect(formatSunlightTravelTime(60 * 299_792_458)).toBe(
       "takes about 1 minute to get here",
@@ -283,7 +312,7 @@ describe("child-first distances", () => {
         sourcedRadiusM("earth"),
         sourcedRadiusM("moon"),
       ),
-    ).toBe("about 30 Earths would fit in the gap");
+    ).toBe("the gap is about 30 times as wide as Earth");
     expect(
       formatGapInParentWidths(
         421_800_000,
@@ -291,7 +320,7 @@ describe("child-first distances", () => {
         sourcedRadiusM("jupiter"),
         sourcedRadiusM("io"),
       ),
-    ).toBe("about 2.5 Jupiters would fit in the gap");
+    ).toBe("the gap is about 2.5 times as wide as Jupiter");
     expect(
       formatGapInParentWidths(
         23_460_000,
@@ -299,7 +328,7 @@ describe("child-first distances", () => {
         sourcedRadiusM("mars"),
         sourcedRadiusM("deimos"),
       ),
-    ).toBe("about 3 Marses would fit in the gap");
+    ).toBe("the gap is about 3 times as wide as Mars");
     expect(
       formatGapInParentWidths(
         9_376_000,
@@ -307,24 +336,44 @@ describe("child-first distances", () => {
         sourcedRadiusM("mars"),
         sourcedRadiusM("phobos"),
       ),
-    ).toBe("less than one Mars would fit in the gap");
+    ).toBe("the gap is almost as wide as Mars");
+    expect(
+      formatGapInParentWidths(
+        129_900_000,
+        "Uranus",
+        sourcedRadiusM("uranus"),
+        sourcedRadiusM("miranda"),
+      ),
+    ).toBe("the gap is about 2.1 times as wide as Uranus");
   });
 
   it("rounds parent widths at their boundaries", () => {
     const gapForWidths = (widths: number): number => (2 * widths + 1) * 1 + 1;
+    expect(formatGapInParentWidths(gapForWidths(0.499), "Earth", 1, 1)).toBe(
+      "the gap is less than half as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(0.5), "Earth", 1, 1)).toBe(
+      "the gap is almost as wide as Earth",
+    );
     expect(formatGapInParentWidths(gapForWidths(0.949), "Earth", 1, 1)).toBe(
-      "less than one Earth would fit in the gap",
+      "the gap is almost as wide as Earth",
     );
     expect(formatGapInParentWidths(gapForWidths(0.95), "Earth", 1, 1)).toBe(
-      "about 1 Earth would fit in the gap",
+      "the gap is about as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(1.06), "Earth", 1, 1)).toBe(
+      "the gap is about 1.1 times as wide as Earth",
     );
     expect(formatGapInParentWidths(gapForWidths(9.96), "Earth", 1, 1)).toBe(
-      "about 10 Earths would fit in the gap",
+      "the gap is about 10 times as wide as Earth",
     );
   });
 
   it("formats the exact live values for More detail", () => {
     expect(formatExactDistanceKm(779_739_602_760)).toBe("779,739,603 km");
+    expect(formatExactDistanceKm(2_497_400)).toBe("2,497 km");
+    expect(formatExactDistanceKm(99_999)).toBe("99.999 km");
+    expect(formatExactDistanceKm(2_500)).toBe("2.5 km");
     expect(formatDistanceAu(5.21198 * AU_M)).toBe("5.212 AU");
     expect(formatDistanceAu(AU_M)).toBe("1.000 AU");
   });
