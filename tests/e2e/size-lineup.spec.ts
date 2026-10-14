@@ -501,3 +501,19 @@ for (const viewport of [
     }
   });
 }
+
+test("a tour closes Compare sizes, so only the clock and the tour card show", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const { dialog } = await openDuel(page);
+  await expect(dialog).toBeVisible();
+  // The lineup is not modal: the dock's Scale tour button still takes focus.
+  await page.getByRole("button", { name: "Scale tour" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("dialog", { name: "Scale of the Solar System tour" }),
+  ).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+});

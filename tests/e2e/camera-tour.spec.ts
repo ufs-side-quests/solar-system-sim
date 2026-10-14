@@ -299,3 +299,44 @@ test("keeps escape navigation visible and guides the user through scale", async 
   await expect(tour).toHaveCount(0);
   await expect(cameraNavigation).toBeVisible();
 });
+
+// Outside a tour the camera dock shows, and its buttons do what they say.
+test("the dock's Zoom out and Re-centre buttons move the camera", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  const cameraNavigation = page.getByRole("navigation", {
+    name: "Camera navigation",
+  });
+  await expect(cameraNavigation).toBeVisible();
+  const distanceBefore = Number(
+    await scene.getAttribute("data-camera-distance-au"),
+  );
+  expect(distanceBefore).toBeGreaterThan(0);
+
+  await cameraNavigation.getByRole("button", { name: "Zoom out" }).click();
+  await expect(scene).toHaveAttribute(
+    "data-camera-navigation-action",
+    "zoom-out",
+  );
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-camera-distance-au")),
+    )
+    .toBeGreaterThan(distanceBefore);
+
+  const resetTokenBefore = Number(
+    await scene.getAttribute("data-reset-view-token"),
+  );
+  await cameraNavigation.getByRole("button", { name: "Re-centre" }).click();
+  await expect
+    .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
+    .toBeGreaterThan(resetTokenBefore);
+});

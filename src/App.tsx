@@ -2243,6 +2243,8 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    // A tour shows only the clock and its card.
+    setSizeLineupOpen(false);
     endCinematicShot();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
@@ -2264,6 +2266,8 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    // A tour shows only the clock and its card.
+    setSizeLineupOpen(false);
     endCinematicShot();
     setOrbitViewEnabled(false);
     setTourMinimised(false);
@@ -2491,10 +2495,8 @@ export function App() {
         showScreen();
         return;
       }
-      // A control that took the key (Escape closes the Display panel) keeps it.
-      if (event.defaultPrevented) {
-        return;
-      }
+      // The controls that take Escape (the Display panel, Compare sizes)
+      // close or hide when a tour starts, so a tour's Escape is its own.
       if (event.key === "Escape" && tourStepIndex !== null) {
         event.preventDefault();
         exitTour();
@@ -2689,9 +2691,12 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    // No shot starts during a tour: a tour hides every shot button
-    // (.is-tour-story). A shot after a shot keeps the view and rate from
-    // before the first one.
+    // A tour hides every shot button (.is-tour-story), and its settings
+    // restore would fight the shot's.
+    if (tourStepIndex !== null) {
+      throw new Error(`${shot.name} cannot start during a tour`);
+    }
+    // A shot after a shot keeps the view and rate from before the first one.
     if (viewBeforeShotRef.current === null) {
       shotFocusReturnRef.current = document.activeElement;
     }

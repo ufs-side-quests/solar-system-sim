@@ -49,7 +49,7 @@ Each surface map has its own plain wording, such as "Radar map of the ground und
 Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
-An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
+Outside a tour, a camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
 Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecliptic so Mercury to Mars fill the view, turns on orbit guides, planet trails and labels, and runs the clock forward at 30 days per second, so Mercury laps Earth about every 4 seconds.
 In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
 The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
@@ -288,7 +288,7 @@ The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet,
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
-Home keeps the clock in its current play state; when it ends an active tour, the clock runs, as after Exit.
+Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
 Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.
@@ -319,7 +319,7 @@ The shadow step plays 17:40 to 18:28 UTC, inside the time the shadow's axis meet
 If the clock leaves that time, the view says "The Moon's dark shadow is not on Earth now" and the camera stays over the spot where the shadow left.
 A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
-Any way out of a tour (Exit, Fly home, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
+Any way out of a tour (Exit, Fly home, Escape, or choosing another object) restores the display, surface observer, playback rate, and direction settings from before the tour.
 Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x.
 A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
 When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour for the Solar System overview, as Home does, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
