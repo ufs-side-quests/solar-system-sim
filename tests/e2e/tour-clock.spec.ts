@@ -574,29 +574,90 @@ test("the eclipse maximum stays on screen after a long seek lands", async ({
 test("a seek back from years away starts again from the epoch", async ({
   page,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   await openApp(page, "no-preference");
-  await pushClockPast(page, 5 * 365);
+  // Record the solver calls (Comlink messages) in the order the page sends
+  // them.
+  await page.evaluate(() => {
+    const post: unknown = Reflect.get(Worker.prototype, "postMessage");
+    if (typeof post !== "function") {
+      throw new Error("Worker.postMessage is unavailable");
+    }
+    const calls: { name: string; seconds?: number }[] = [];
+    (window as unknown as { solverCalls: typeof calls }).solverCalls = calls;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      const message = args[0] as {
+        path?: string[];
+        argumentList?: { value?: unknown }[];
+      };
+      const name = message.path?.join(".");
+      if (name !== undefined) {
+        const first = message.argumentList?.[0]?.value;
+        calls.push(
+          typeof first === "number" ? { name, seconds: first } : { name },
+        );
+      }
+      Reflect.apply(post, this, args);
+    };
+  });
   const story = page.getByRole("dialog", {
     name: "12 August 2026 eclipse story",
   });
-  const clickedAt = Date.now();
-  await page.getByRole("button", { name: "Eclipse story" }).click();
-  const stepSeconds = Number(
-    await story.getAttribute("data-tour-time-seconds"),
+  // The time from the click until the clock shows the story's first step.
+  const storySeek = async (): Promise<{
+    seekMs: number;
+    stepSeconds: number;
+  }> => {
+    await page.evaluate(() => {
+      (window as unknown as { solverCalls: unknown[] }).solverCalls.length = 0;
+    });
+    const clickedAt = Date.now();
+    await page.getByRole("button", { name: "Eclipse story" }).click();
+    const stepSeconds = Number(
+      await story.getAttribute("data-tour-time-seconds"),
+    );
+    await page.waitForFunction(
+      (requestedSeconds) =>
+        Math.abs(
+          Number(
+            document.querySelector<HTMLElement>("time.global-simulation-clock")
+              ?.dataset.timeSeconds,
+          ) - requestedSeconds,
+        ) < 1,
+      stepSeconds,
+      { polling: "raf", timeout: 60_000 },
+    );
+    const seekMs = Date.now() - clickedAt;
+    await story.getByRole("button", { name: "Exit" }).click();
+    await expect(story).toHaveCount(0);
+    return { seekMs, stepSeconds };
+  };
+  // From the epoch the story's time is about 220 days ahead.
+  const near = await storySeek();
+  await pushClockPast(page, 5 * 365);
+  const far = await storySeek();
+  const farCalls = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          solverCalls: { name: string; seconds?: number }[];
+        }
+      ).solverCalls,
   );
-  await page.waitForFunction(
-    (requestedSeconds) =>
-      Math.abs(
-        Number(
-          document.querySelector<HTMLElement>("time.global-simulation-clock")
-            ?.dataset.timeSeconds,
-        ) - requestedSeconds,
-      ) < 1,
-    stepSeconds,
-    { polling: "raf", timeout: 30_000 },
+  console.log(JSON.stringify({ nearMs: near.seekMs, farMs: far.seekMs }));
+  // Five years back from the clock costs about as much as the near seek,
+  // whatever the machine's load, because it starts again from the epoch.
+  expect(far.seekMs).toBeLessThan(3 * near.seekMs + 1_000);
+  const integrateIndex = farCalls.findIndex(
+    (call) =>
+      call.name === "integrateTo" &&
+      call.seconds !== undefined &&
+      Math.abs(call.seconds - far.stepSeconds) < 1,
   );
-  expect(Date.now() - clickedAt).toBeLessThan(3_000);
+  expect(integrateIndex).toBeGreaterThan(0);
+  expect(farCalls.slice(0, integrateIndex).map((call) => call.name)).toContain(
+    "initialize",
+  );
 });
 
 test("a scale step's time on screen starts when the camera arrives", async ({
