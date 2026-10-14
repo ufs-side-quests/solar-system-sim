@@ -54,11 +54,12 @@ Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecl
 In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
 The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
-While a cool shot is active, the clock runs, and no discovery message shows, a caption names it and says what to watch; a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
+While a cool shot is active, the clock runs, and no discovery message shows, a caption names it, says what to watch, and offers Stop; Stop, Home, a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
 A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
-When a shot ends, the playback rate and direction from before the shot come back, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
+When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, except one the child changed in the Display panel during the shot.
+The playback rate and direction from before the shot come back too, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
-Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Fly there or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -183,11 +184,11 @@ The Earth uses NASA Black Marble night emission and Blue Marble-derived roughnes
 Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes mutual planet-ring shadowing, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
 The command bar includes a native Full screen action that expands the simulation to the display, hides application controls, the navigation map, the date (kept during the Eclipse story, whose steps happen at named times) and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
-The F key opens and closes full screen too, also during the Eclipse story, which hides the command bar.
+A tour hides the command bar, so the tour card has its own Full screen button, and leaving full screen puts the keyboard focus back on it.
+The F key opens and closes full screen too, also during a tour.
 In full screen a running tour keeps its card, its labels and the shot caption, so a class on a projector can follow it.
-For a presentation clicker, Page Down and Page Up move a tour to the next and previous step, also after a click on the playback slider; a held key moves one step, and with Ctrl, Cmd or Alt the keys stay with the browser.
+For a presentation clicker, Page Down and Page Up move a tour to the next and previous step from any control, because a tour hides every text box, list and slider; a held key moves one step, and with Ctrl, Cmd or Alt the keys stay with the browser.
 B or the full stop blanks the window and pauses the tour, its narration and the clock behind it until any key or click, which play on as before; a held key, a modifier alone, a browser shortcut or a media key leaves the cover in place.
-A key that a control already took, such as Escape closing the Display panel, does not also end the tour.
 Start fresh in Display › View asks first, then forgets the hidden surprises found and the sound settings on this computer and reloads, so the next child starts from the beginning.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
 The Sun combines a computed photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
@@ -266,7 +267,7 @@ It also decodes each picture and measures the opaque globe across and down again
 The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.
 The size-duel journey checks the equal globes while guessing, that one live region carries the lineup line, each question and each result, the keyboard guess, the "Wider" tag, the dashed wrong guess and accented right guess, the drawn Moon to Pluto ratio within 1 percent under reduced motion, the rings rule for Saturn and Jupiter, the return to the lineup, and that only a right guess plays the chime.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, navigation map, date, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
-The classroom journey keeps the Scale tour card and its labels in full screen, opens full screen with F during the Eclipse story, steps the tour with Page Down and Page Up (from the slider too, without moving it), blanks the window with B or the full stop with the tour paused behind it, ignores Ctrl+Page Down, a held Page Down, browser shortcuts and an Escape the Display panel took, and checks that Start fresh shows 0 of 7 surprises and the default narration volume after the reload and that Cancel keeps both stored settings.
+The classroom journey keeps the Scale tour card and its labels in full screen, opens full screen with F during the Eclipse story, steps the tour with Page Down and Page Up (from a tour button too, without moving the rate), blanks the window with B or the full stop with the tour paused behind it, ignores Ctrl+Page Down, a held Page Down, and browser shortcuts, checks that a tour hides the search box and the Display button, and checks that Start fresh shows 0 of 7 surprises and the default narration volume after the reload and that Cancel keeps both stored settings.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.
 The same panel independently controls ambient music, interface feedback, tour narration, and their volume levels.
@@ -276,7 +277,7 @@ The Sun remains visible as the reference origin even when every category is hidd
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
 That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
-The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
+The same press on the selected body travels to it and fits its default view, as the card's Fly there button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
 The on-screen journey text with its viewpoint speed is hidden from screen readers; a separate polite live region says only "Flying to Mars" when a flight starts and "Arrived at Mars" when it ends.
 A drag that takes the camera clears that message, and a tour flight says nothing because the tour's own narration speaks.
@@ -284,7 +285,7 @@ Readouts that follow the scene every frame (exposure, magnification, orbit fligh
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
-Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Focus.
+Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
 Home keeps the clock in its current play state; when it ends an active tour, the clock runs, as after Exit.
 Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
@@ -296,9 +297,10 @@ The optional Orrery minor-body trail uses fading screen-space history of actual 
 Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
-Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
+Re-centre or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
 On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
-On a phone a tour shows only the clock and the tour card, which sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
+At every screen size a tour (the Scale tour or the Eclipse story) shows only the clock and the tour card; the command bar, camera dock, time controls, and navigation map come back when it ends.
+On a phone the tour card sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
 On a phone the selected-body card opens short, with the name, Expand, and a size line such as "As wide as 11 Earths · Compare" that opens Compare sizes; every flight makes it short again.
 On a phone the navigation plot folds into a "Mini map" button, and every flight folds it again; a window that grows out of the phone layout opens it.
 Outside a tour, the camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
@@ -316,9 +318,9 @@ If the clock leaves that time, the view says "The Moon's dark shadow is not on E
 A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Fly home, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
-Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit, Fly home, and Escape also reset the view of the current object at 1x.
+Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x.
 A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
-When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
+When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour for the Solar System overview, as Home does, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
 When focus was inside the tour card, it moves to Fly home.
 A Scale tour started from an ending replays from the clock time when the first tour began, or from the epoch when that time lies outside the validated window.
 A story started from an ending keeps the settings from before the first tour, so Fly home always returns to them.

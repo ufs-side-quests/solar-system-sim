@@ -259,6 +259,17 @@ type DisplaySettingsBeforeTour = Readonly<{
   direction: -1 | 1;
   timeRateIndex: number;
 }>;
+// The view settings a cool shot overrides, restored when the shot ends.
+type ViewSettingsBeforeShot = Pick<
+  DisplaySettingsBeforeTour,
+  | "viewMode"
+  | "bodyVisibilityPercent"
+  | "showLabels"
+  | "showOrbitGuides"
+  | "showTacticalOverlay"
+  | "showEclipticPlane"
+  | "showPlanetTrails"
+>;
 type GuidedTourStep = ScaleTourStep | EclipseStoryStep;
 
 const CAMERA_ZOOM_PRESETS = [
@@ -1229,6 +1240,9 @@ export function App() {
     direction: -1 | 1;
     timeRateIndex: number;
   } | null>(null);
+  // The view settings from before the active cool shot, or null when no shot
+  // runs.
+  const viewBeforeShotRef = useRef<ViewSettingsBeforeShot | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -1289,6 +1303,8 @@ export function App() {
   const displayPanelWasOpenRef = useRef(false);
   const appShellRef = useRef<HTMLElement>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  // A tour hides the command bar, so its card has its own Full screen button.
+  const tourFullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
   orbitViewEnabledRef.current = orbitViewEnabled;
@@ -1349,7 +1365,11 @@ export function App() {
         return;
       }
       if (document.fullscreenElement === null) {
-        requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+        requestAnimationFrame(() =>
+          (
+            tourFullscreenButtonRef.current ?? fullscreenButtonRef.current
+          )?.focus(),
+        );
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1763,11 +1783,22 @@ export function App() {
     setSimulationRunToken((current) => current + 1);
   }, []);
 
-  // Ends the active cool shot. A shot sets its own playback rate, so the rate
-  // and direction from before it come back, unless the child chose a rate
-  // during the shot. Returns the restored rate index, or null when the rate
-  // stays.
+  // Ends the active cool shot. The view settings from before it come back. A
+  // shot sets its own playback rate, so the rate and direction from before it
+  // come back too, unless the child chose a rate during the shot. Returns the
+  // restored rate index, or null when the rate stays.
   const endCinematicShot = useCallback((): number | null => {
+    const view = viewBeforeShotRef.current;
+    viewBeforeShotRef.current = null;
+    if (view !== null) {
+      setViewMode(view.viewMode);
+      setBodyVisibilityPercent(view.bodyVisibilityPercent);
+      setShowLabels(view.showLabels);
+      setShowOrbitGuides(view.showOrbitGuides);
+      setShowTacticalOverlay(view.showTacticalOverlay);
+      setShowEclipticPlane(view.showEclipticPlane);
+      setShowPlanetTrails(view.showPlanetTrails);
+    }
     const before = playbackBeforeShotRef.current;
     playbackBeforeShotRef.current = null;
     setActiveCinematicShotId(null);
@@ -1778,6 +1809,16 @@ export function App() {
     setTimeRateIndex(before.timeRateIndex);
     return before.timeRateIndex;
   }, []);
+
+  // The child's own view choice during a cool shot outlasts it, as the
+  // child's playback rate does: the view saved from before the shot takes it.
+  const keepViewChoiceAfterShot = (
+    choice: Partial<ViewSettingsBeforeShot>,
+  ): void => {
+    if (viewBeforeShotRef.current !== null) {
+      viewBeforeShotRef.current = { ...viewBeforeShotRef.current, ...choice };
+    }
+  };
 
   // The scene reads the displayed state, which follows a new frame one render
   // later, so a landed step's seek counts once that state is on screen.
@@ -2111,7 +2152,11 @@ export function App() {
     }
   };
 
+  // Home, the breadcrumb's Solar System and a tour's Fly home all end at the
+  // Solar System overview.
   const navigateHome = (): void => {
+    endCinematicShot();
+    endTour();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourPlaying(false);
@@ -2160,8 +2205,9 @@ export function App() {
       surfaceObserverTargetBodyId,
       surfaceObserverLatitudeDeg,
       surfaceObserverLongitudeDeg,
-      // A cool shot's own rate is not the child's: the tour returns to the
-      // rate from before the shot.
+      // A cool shot's own view and rate are not the child's: the tour
+      // returns to those from before the shot.
+      ...viewBeforeShotRef.current,
       ...(playbackBeforeShotRef.current ?? { direction, timeRateIndex }),
     };
   };
@@ -2408,9 +2454,9 @@ export function App() {
         return;
       }
       const target = event.target;
-      // A clicker sends Page Down and Page Up. They step the tour even from
-      // the playback slider, which would otherwise take them; only a text box
-      // or a list keeps them.
+      // A clicker sends Page Down and Page Up. They step the tour from any
+      // control: a tour hides every text box, list and slider (.is-tour-story),
+      // so no control on screen takes them.
       // Ctrl+Page Down and Ctrl+Page Up stay with the browser to switch tabs.
       if (
         (event.key === "PageDown" || event.key === "PageUp") &&
@@ -2418,13 +2464,7 @@ export function App() {
         !event.metaKey &&
         !event.altKey &&
         tourStepIndex !== null &&
-        !tourEnded &&
-        !(target instanceof HTMLSelectElement) &&
-        !(target instanceof HTMLTextAreaElement) &&
-        !(
-          target instanceof HTMLInputElement &&
-          !["range", "checkbox", "radio"].includes(target.type)
-        )
+        !tourEnded
       ) {
         event.preventDefault();
         // A held key would race through the steps to the ending.
@@ -2602,13 +2642,19 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    // The tour's saved rate is the one from before this shot, and a shot
-    // after a shot keeps the rate from before the first one.
-    const beforeTour = endTour();
-    playbackBeforeShotRef.current ??= {
-      direction: beforeTour?.direction ?? direction,
-      timeRateIndex: beforeTour?.timeRateIndex ?? timeRateIndex,
+    // No shot starts during a tour: a tour hides every shot button
+    // (.is-tour-story). A shot after a shot keeps the view and rate from
+    // before the first one.
+    viewBeforeShotRef.current ??= {
+      viewMode,
+      bodyVisibilityPercent,
+      showLabels,
+      showOrbitGuides,
+      showTacticalOverlay,
+      showEclipticPlane,
+      showPlanetTrails,
     };
+    playbackBeforeShotRef.current ??= { direction, timeRateIndex };
     if (shot.loopEndTimeSeconds !== null) {
       restartSimulation();
     }
@@ -3278,7 +3324,7 @@ export function App() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourStepIndex === null ? "" : " is-touring"}${tourKind === "eclipse" || (tourKind !== null && phoneLayout) ? " is-tour-story" : ""}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourStepIndex === null ? "" : " is-touring"}${tourKind === null ? "" : " is-tour-story"}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -3372,9 +3418,6 @@ export function App() {
           }}
         />
         <div className="command-actions">
-          <button type="button" onClick={requestResetView}>
-            Reset
-          </button>
           <button
             ref={fullscreenButtonRef}
             type="button"
@@ -3484,10 +3527,21 @@ export function App() {
         {activeCinematicShot === undefined ||
         !playing ||
         discoveredEasterEggId !== null ? null : (
-          <p className="cinematic-shot-caption" role="status">
-            <strong>{activeCinematicShot.name}</strong>
-            <span>{activeCinematicShot.description}</span>
-          </p>
+          <div className="cinematic-shot-caption">
+            <p role="status">
+              <strong>{activeCinematicShot.name}</strong>
+              <span>{activeCinematicShot.description}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                endCinematicShot();
+                requestResetView();
+              }}
+            >
+              Stop
+            </button>
+          </div>
         )}
 
         <time
@@ -3893,6 +3947,14 @@ export function App() {
                 >
                   {tourMinimised ? "Restore" : "Minimise"}
                 </button>
+                <button
+                  ref={tourFullscreenButtonRef}
+                  type="button"
+                  className="tour-fullscreen-button"
+                  onClick={enterImmersiveMode}
+                >
+                  Full screen
+                </button>
                 <button type="button" onClick={exitTour}>
                   Exit
                 </button>
@@ -4008,7 +4070,7 @@ export function App() {
                   ref={tourFlyHomeRef}
                   type="button"
                   className="primary-action"
-                  onClick={exitTour}
+                  onClick={navigateHome}
                 >
                   Fly home
                 </button>
@@ -4144,7 +4206,7 @@ export function App() {
                     }
                   >
                     {selectedApolloSite === undefined
-                      ? "Focus"
+                      ? "Fly there"
                       : "Show on Moon"}
                   </button>
                 )}
@@ -5148,23 +5210,45 @@ export function App() {
               </label>
               {(
                 [
-                  ["Orbit guides", showOrbitGuides, setShowOrbitGuides],
+                  [
+                    "Orbit guides",
+                    "showOrbitGuides",
+                    showOrbitGuides,
+                    setShowOrbitGuides,
+                  ],
                   [
                     "Tactical overlay",
+                    "showTacticalOverlay",
                     showTacticalOverlay,
                     setShowTacticalOverlay,
                   ],
-                  ["Ecliptic grid", showEclipticPlane, setShowEclipticPlane],
-                  ["Zodiac signs", showZodiac, setShowZodiac],
-                  ["Apollo landing sites", showApolloSites, setShowApolloSites],
+                  [
+                    "Ecliptic grid",
+                    "showEclipticPlane",
+                    showEclipticPlane,
+                    setShowEclipticPlane,
+                  ],
+                  ["Zodiac signs", null, showZodiac, setShowZodiac],
+                  [
+                    "Apollo landing sites",
+                    null,
+                    showApolloSites,
+                    setShowApolloSites,
+                  ],
                 ] as const
-              ).map(([label, checked, setter]) => (
+              ).map(([label, shotSetting, checked, setter]) => (
                 <label className="switch-control guide-only" key={label}>
                   <input
                     type="checkbox"
                     checked={checked}
                     disabled={viewMode === "schematic"}
-                    onChange={(event) => setter(event.currentTarget.checked)}
+                    onChange={(event) => {
+                      const value = event.currentTarget.checked;
+                      if (shotSetting !== null) {
+                        keepViewChoiceAfterShot({ [shotSetting]: value });
+                      }
+                      setter(value);
+                    }}
                   />
                   <span>{label}</span>
                 </label>
@@ -5184,9 +5268,11 @@ export function App() {
                   type="checkbox"
                   checked={showLabels}
                   disabled={viewMode === "schematic"}
-                  onChange={(event) =>
-                    setShowLabels(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showLabels: value });
+                    setShowLabels(value);
+                  }}
                 />
                 <span>Labels</span>
               </label>
@@ -5199,11 +5285,11 @@ export function App() {
                     max="100"
                     step="1"
                     value={bodyVisibilityPercent}
-                    onChange={(event) =>
-                      setBodyVisibilityPercent(
-                        Number(event.currentTarget.value),
-                      )
-                    }
+                    onChange={(event) => {
+                      const value = Number(event.currentTarget.value);
+                      keepViewChoiceAfterShot({ bodyVisibilityPercent: value });
+                      setBodyVisibilityPercent(value);
+                    }}
                   />
                   <output>
                     {bodyVisibilityPercent === 0
@@ -5277,9 +5363,11 @@ export function App() {
                 <input
                   type="checkbox"
                   checked={showPlanetTrails}
-                  onChange={(event) =>
-                    setShowPlanetTrails(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showPlanetTrails: value });
+                    setShowPlanetTrails(value);
+                  }}
                 />
                 <span>Planet trails</span>
               </label>

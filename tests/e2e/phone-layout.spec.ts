@@ -142,6 +142,31 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await expect(page.locator(".reality-navigation-map")).toBeHidden();
       await expect(page.locator(".global-simulation-clock")).toBeVisible();
       await tour.getByRole("button", { name: "Minimise" }).tap({ trial: true });
+      // The heading row holds Minimise, Full screen and Exit on one line.
+      await tour
+        .getByRole("button", { name: "Full screen" })
+        .tap({ trial: true });
+      const heading = tour.locator(".tour-progress-heading");
+      const headingButtons = heading.getByRole("button");
+      await expect(headingButtons).toHaveCount(3);
+      const headingBox = await heading.boundingBox();
+      if (headingBox === null) {
+        throw new Error("The tour heading has no box");
+      }
+      const firstButtonBox = await headingButtons.first().boundingBox();
+      if (firstButtonBox === null) {
+        throw new Error("The first tour heading button has no box");
+      }
+      for (const button of await headingButtons.all()) {
+        const box = await button.boundingBox();
+        if (box === null) {
+          throw new Error("A tour heading button has no box");
+        }
+        expect(box.x + box.width).toBeLessThanOrEqual(
+          headingBox.x + headingBox.width,
+        );
+        expect(Math.abs(box.y - firstButtonBox.y)).toBeLessThan(1);
+      }
       await tour.getByRole("button", { name: "Next" }).tap();
       await page.screenshot({
         path: testInfo.outputPath(`scale-tour-${size}.png`),
@@ -215,7 +240,9 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await expect(chip).toHaveText("Mini map");
       await expect(chip).toBeVisible();
       await expect(map).toHaveJSProperty("open", false);
-      const travel = page.getByRole("button", { name: "Travel" });
+      const travel = page
+        .locator(".reality-navigation-map")
+        .getByRole("button", { name: "Fly there" });
       await expect(travel).toBeHidden();
       await chip.tap();
       await expect(map).toHaveJSProperty("open", true);
@@ -258,7 +285,9 @@ test.describe("a window that resizes across the phone layout", () => {
     test.setTimeout(90_000);
     await openExplorer(page);
     const map = page.locator(".reality-navigation-map");
-    const travel = page.getByRole("button", { name: "Travel" });
+    const travel = page
+      .locator(".reality-navigation-map")
+      .getByRole("button", { name: "Fly there" });
     await expect(map).toHaveJSProperty("open", false);
     await expect(travel).toBeHidden();
     await page.setViewportSize({ width: 1440, height: 900 });

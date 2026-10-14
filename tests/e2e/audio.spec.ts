@@ -71,7 +71,7 @@ test("starts original ambient audio after interaction and persists controls", as
           .audioOscillatorStarts,
     );
   const beforeButton = await oscillatorStarts();
-  await page.getByRole("button", { name: "Reset" }).click();
+  await page.getByRole("button", { name: "Re-centre" }).click();
   await expect.poll(oscillatorStarts).toBeGreaterThan(beforeButton);
 
   const beforeOption = await oscillatorStarts();

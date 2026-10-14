@@ -3417,7 +3417,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     navigationMapCanvas.setAttribute("role", "application");
     navigationMapCanvas.setAttribute(
       "aria-label",
-      "Top-down map. Select an object; select it again or press Travel to fly there.",
+      "Top-down map. Select an object, then select it again or press Fly there.",
     );
     const navigationTooltip = document.createElement("span");
     navigationTooltip.className = "reality-navigation-map__tooltip";
@@ -3430,9 +3430,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       "aria-label",
       "Navigation destination",
     );
-    const navigationTravelButton = document.createElement("button");
-    navigationTravelButton.type = "button";
-    navigationTravelButton.textContent = "Travel";
+    const navigationFlyButton = document.createElement("button");
+    navigationFlyButton.type = "button";
+    navigationFlyButton.textContent = "Fly there";
     const navigationDestinationGroups = new Map<string, HTMLOptGroupElement>();
     const navigationDestinations = [
       ...majorBodySnapshot.bodies.map((body) => ({
@@ -3518,12 +3518,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
     navigationDestinationSelect.value = focusBodyIdRef.current ?? "sun";
     navigationDestinationRow.append(
       navigationDestinationSelect,
-      navigationTravelButton,
+      navigationFlyButton,
     );
     const navigationMapScale = document.createElement("small");
     const navigationMapHelp = document.createElement("small");
     navigationMapHelp.textContent =
-      "Select an object; select it again or press Travel to fly there.";
+      "Select an object, then select it again or press Fly there.";
     navigationMap.append(
       navigationMapSummary,
       navigationMapHeader,
@@ -3588,7 +3588,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       navigationDestinationSelect.value = hit.bodyId;
       pickBody(hit.bodyId);
     };
-    const travelToNavigationDestination = (): void => {
+    const flyToNavigationDestination = (): void => {
       const bodyId = navigationDestinationSelect.value;
       if (!navigationDestinationById.has(bodyId)) {
         throw new Error(`Navigation destination ${bodyId} is unavailable`);
@@ -3612,10 +3612,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       "change",
       handleNavigationDestinationChange,
     );
-    navigationTravelButton.addEventListener(
-      "click",
-      travelToNavigationDestination,
-    );
+    navigationFlyButton.addEventListener("click", flyToNavigationDestination);
 
     const raycaster = new Raycaster();
     const pointer = new Vector2();
@@ -4875,6 +4872,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
         controls.minDistance = 0;
         controls.maxDistance = Number.POSITIVE_INFINITY;
+        // The overview holds its position, as a flight that settles there.
+        container.dataset["cameraTracking"] = "position-only";
         delete container.dataset["focusDistanceAu"];
         delete container.dataset["cameraObserverBody"];
         delete container.dataset["cameraTargetBody"];
@@ -5645,7 +5644,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         updateJourneyStatus(
           directSample.phase === "arriving"
             ? `Approaching ${transition.destinationName}`
-            : `Travelling to ${transition.destinationName}`,
+            : `Flying to ${transition.destinationName}`,
           true,
         );
       }
@@ -9777,9 +9776,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         handleNavigationDestinationChange,
       );
       phoneLayoutQuery.removeEventListener("change", syncNavigationMapOpen);
-      navigationTravelButton.removeEventListener(
+      navigationFlyButton.removeEventListener(
         "click",
-        travelToNavigationDestination,
+        flyToNavigationDestination,
       );
       gpuLayer?.dispose();
       gravityWellLayer.dispose();
