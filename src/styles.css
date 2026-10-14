@@ -3401,12 +3401,14 @@ h1 {
   background: var(--surface-strong);
 }
 
-.size-lineup [aria-current="true"] {
+.size-lineup [aria-current="true"],
+.size-lineup [aria-pressed="true"] {
   border-color: var(--accent);
   background: rgb(127 199 255 / 14%);
 }
 
-.size-lineup [aria-current="true"] span {
+.size-lineup [aria-current="true"] span,
+.size-lineup [aria-pressed="true"] span {
   color: var(--accent-strong);
   font-weight: 650;
 }
@@ -3444,4 +3446,52 @@ h1 {
   color: var(--danger);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.size-lineup .panel-heading button {
+  min-height: 2.75rem;
+}
+
+.size-lineup-mode {
+  margin-left: auto;
+}
+
+.size-duel-question {
+  margin: 0;
+  padding: 0 0.9rem 0.4rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+/* The wider globe is drawn at Jupiter's lineup size; a smaller floor keeps
+   Saturn's rings and Jupiter side by side on a phone. */
+.size-duel-row {
+  --lineup-largest: clamp(5rem, 22vw, 12rem);
+
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.6rem 1.2rem;
+  padding: 0.6rem 0.9rem;
+}
+
+.size-duel-row .size-lineup-disc {
+  transition: width 0.9s ease-in-out;
+}
+
+/* Room for two lines, so the dialog does not jump when the result appears. */
+.size-duel-result {
+  min-height: calc(2lh + 0.7rem);
+}
+
+.size-duel-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0.9rem 0.8rem;
+}
+
+.size-lineup-action {
+  min-height: 2.75rem;
+  padding: 0.35rem 0.9rem;
 }
