@@ -37,7 +37,8 @@ function fictionalOrbiterParentBodyId(
 /**
  * Hidden objects a child can discover. `hintBodyIds` are the major bodies
  * whose focus or selection shows the egg as a hidden surprise; each one also
- * hides the hint while the egg is behind it.
+ * hides the hint while the egg is behind it. `cardHint` marks eggs that stay
+ * near their hint body, so the selected-body card can promise one is close.
  */
 export const EASTER_EGGS = [
   {
@@ -45,30 +46,35 @@ export const EASTER_EGGS = [
     name: "the Death Star",
     origin: "fictional, from Star Wars",
     hintBodyIds: [fictionalOrbiterParentBodyId("death-star-1")],
+    cardHint: true,
   },
   {
     id: "death-star-2",
     name: "the second Death Star",
     origin: "fictional, from Star Wars",
     hintBodyIds: [fictionalOrbiterParentBodyId("death-star-2")],
+    cardHint: true,
   },
   {
     id: DEEP_SPACE_NINE_BODY_ID,
     name: "Deep Space Nine",
     origin: "fictional, from Star Trek",
     hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
+    cardHint: true,
   },
   {
     id: USS_DEFIANT_BODY_ID,
     name: "the USS Defiant",
     origin: "fictional, from Star Trek",
     hintBodyIds: [DEEP_SPACE_NINE_PARENT_BODY_ID],
+    cardHint: true,
   },
   {
     id: DISCOVERY_ONE_BODY_ID,
     name: "Discovery One",
     origin: "fictional, from 2001: A Space Odyssey",
     hintBodyIds: [DISCOVERY_ONE_PARENT_BODY_ID],
+    cardHint: true,
   },
   {
     id: JOVIAN_MONOLITH_BODY_ID,
@@ -78,18 +84,22 @@ export const EASTER_EGGS = [
       JOVIAN_MONOLITH_PRIMARY_BODY_ID,
       JOVIAN_MONOLITH_SECONDARY_BODY_ID,
     ],
+    cardHint: true,
   },
   {
     id: ROADSTER_BODY_ID,
     name: "Starman's Tesla Roadster",
     origin: "real, launched by SpaceX in 2018",
     hintBodyIds: ["earth", "mars"],
+    // The Roadster orbits the Sun and is seldom near Earth or Mars.
+    cardHint: false,
   },
 ] as const satisfies readonly Readonly<{
   id: string;
   name: string;
   origin: string;
   hintBodyIds: readonly string[];
+  cardHint: boolean;
 }>[];
 
 export type EasterEgg = (typeof EASTER_EGGS)[number];
@@ -103,13 +113,14 @@ export function isEasterEggId(bodyId: string): bodyId is EasterEggId {
   return easterEggById.has(bodyId);
 }
 
-/** True when the body hints at an egg the child has not found yet. */
+/** True when the card of this body should hint at an unfound nearby egg. */
 export function hintsAtUnfoundEasterEgg(
   bodyId: string,
   found: ReadonlySet<EasterEggId>,
 ): boolean {
   return EASTER_EGGS.some(
     (egg) =>
+      egg.cardHint &&
       !found.has(egg.id) &&
       egg.hintBodyIds.some((hintBodyId) => hintBodyId === bodyId),
   );

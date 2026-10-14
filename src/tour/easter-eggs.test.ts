@@ -75,6 +75,8 @@ describe("easter egg hints", () => {
       ),
     ).toBe(false);
     expect(hintsAtUnfoundEasterEgg("saturn", new Set())).toBe(false);
+    // The Roadster orbits the Sun, so Earth's card makes no promise.
+    expect(hintsAtUnfoundEasterEgg("earth", new Set())).toBe(false);
   });
 
   it("takes each hint body from the egg's real parent", () => {
