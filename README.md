@@ -56,7 +56,8 @@ The race restarts the simulation from the snapshot epoch with a fresh physics wo
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
 While a cool shot is active, the clock runs, and no discovery message shows, a caption names it, says what to watch, and offers Stop; Stop, Home, a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
 A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
-When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, and so do the playback rate and direction, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
+When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, except one the child changed in the Display panel during the shot.
+The playback rate and direction from before the shot come back too, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
 Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Fly there or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
@@ -183,11 +184,11 @@ The Earth uses NASA Black Marble night emission and Blue Marble-derived roughnes
 Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes mutual planet-ring shadowing, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
 The command bar includes a native Full screen action that expands the simulation to the display, hides application controls, the navigation map, the date (kept during the Eclipse story, whose steps happen at named times) and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
-The F key opens and closes full screen too, also during a tour, which hides the command bar.
+A tour hides the command bar, so the tour card has its own Full screen button, and leaving full screen puts the keyboard focus back on it.
+The F key opens and closes full screen too, also during a tour.
 In full screen a running tour keeps its card, its labels and the shot caption, so a class on a projector can follow it.
 For a presentation clicker, Page Down and Page Up move a tour to the next and previous step from any control, because a tour hides every text box, list and slider; a held key moves one step, and with Ctrl, Cmd or Alt the keys stay with the browser.
 B or the full stop blanks the window and pauses the tour, its narration and the clock behind it until any key or click, which play on as before; a held key, a modifier alone, a browser shortcut or a media key leaves the cover in place.
-A key that a control already took, such as Escape closing the Display panel, does not also end the tour.
 Start fresh in Display › View asks first, then forgets the hidden surprises found and the sound settings on this computer and reloads, so the next child starts from the beginning.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
 The Sun combines a computed photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.

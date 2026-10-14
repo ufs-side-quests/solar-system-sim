@@ -177,7 +177,7 @@ p {
     .display-panel,
     .timeline-dock
   ),
-.app-shell.is-immersive .reality-navigation-map,
+.app-shell.is-immersive :is(.reality-navigation-map, .tour-fullscreen-button),
 .app-shell.is-immersive .scene :is(.camera-journey, .gravity-field-legend),
 .app-shell.is-immersive:not(.is-touring)
   .scene

@@ -11,6 +11,9 @@ async function openApp(page: Page): Promise<void> {
   });
 }
 
+// The controls that would keep Page Down and Page Up for themselves.
+const TEXT_FIELDS = "input:visible, select:visible, textarea:visible";
+
 async function blurFocus(page: Page): Promise<void> {
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) {
@@ -44,10 +47,13 @@ test("keeps the Scale tour and its labels on a full screen, without the map or c
   const tour = await startScaleTour(page);
   const earthLabel = page.locator('.body-label[data-body-id="earth"]');
   await expect(earthLabel).toBeVisible();
-  // A tour hides the header's Full screen button: the f key opens it.
-  await blurFocus(page);
-  await page.keyboard.press("f");
+  // A tour hides the header's Full screen button, so a teacher with only a
+  // mouse or a tablet opens full screen from the tour card.
+  await expect(page.locator(".command-bar .fullscreen-button")).toBeHidden();
+  const tourFullScreen = tour.getByRole("button", { name: "Full screen" });
+  await tourFullScreen.click();
   await expect(app).toHaveAttribute("data-immersive-mode", "true");
+  await expect(tourFullScreen).toBeHidden();
 
   await expect(tour).toBeVisible();
   await expect(earthLabel).toBeVisible();
@@ -99,6 +105,11 @@ test("the f key opens and closes full screen during the Eclipse story", async ({
   await page.keyboard.press("f");
   await expect(app).toHaveAttribute("data-immersive-mode", "false");
   await expect(story).toBeVisible();
+  // The header's Full screen button is hidden, so the story card's takes the
+  // focus back.
+  await expect(
+    story.getByRole("button", { name: "Full screen" }),
+  ).toBeFocused();
 
   // A letter typed into the search box is text, not a shortcut.
   await page.getByRole("button", { name: "Exit" }).click();
@@ -110,6 +121,41 @@ test("the f key opens and closes full screen during the Eclipse story", async ({
   await search.press("b");
   await expect(search).toHaveValue("b");
   await expect(page.locator(".blackout-cover")).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("an Eclipse observer step and a phone tour show no text box, list or slider", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await openApp(page);
+  const fields = page.locator(TEXT_FIELDS);
+  // Without a tour the screen has them.
+  await expect(fields).not.toHaveCount(0);
+
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await story.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute(
+    "data-tour-step",
+    "london-before-contact",
+  );
+  await expect(page.locator("[data-surface-observer-body]")).toHaveAttribute(
+    "data-surface-observer-body",
+    "earth",
+  );
+  await expect(fields).toHaveCount(0);
+  await story.getByRole("button", { name: "Exit" }).click();
+  await expect(story).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(fields).not.toHaveCount(0);
+  await startScaleTour(page);
+  await expect(fields).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 
@@ -181,9 +227,9 @@ test("a presentation clicker steps the tour with Page Down and Page Up", async (
     ),
   ).toEqual([true, true]);
 
-  // A tour hides the search box, the one text box that would keep Page
+  // A tour hides every text box, list and slider, which would keep Page
   // Down, so the clicker always steps the tour.
-  await expect(page.getByRole("combobox", { name: "Focus" })).toBeHidden();
+  await expect(page.locator(TEXT_FIELDS)).toHaveCount(0);
   await expect(tour).toHaveAttribute("data-tour-step", "earth");
 
   // b blanks the screen; any key or a click shows it again.

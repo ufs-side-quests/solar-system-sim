@@ -257,3 +257,37 @@ for (const [way, leave] of Object.entries(RACE_WAYS_OUT)) {
     );
   });
 }
+
+// The child's own Display choice during a shot outlasts it, as the child's
+// own playback rate does.
+test("Labels turned off during the planets race stay off after Stop", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const scene = await openApp(page, "reduce");
+  const racing = page.getByRole("button", {
+    name: "Planets racing",
+    exact: true,
+  });
+  await racing.click();
+  await expect(racing).toHaveAttribute("aria-pressed", "true");
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+
+  await page.getByRole("button", { name: "Display" }).click();
+  const display = page.getByRole("dialog", { name: "Display controls" });
+  await display.getByRole("tab", { name: "View" }).click();
+  const labels = display.getByLabel("Labels", { exact: true });
+  await expect(labels).toBeChecked();
+  await labels.uncheck();
+  await display.getByRole("button", { name: "Close" }).click();
+
+  await page
+    .locator(".cinematic-shot-caption")
+    .getByRole("button", { name: "Stop" })
+    .click();
+  await expect(racing).toHaveAttribute("aria-pressed", "false");
+  // The rest of the view from before the race comes back.
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  await page.getByRole("button", { name: "Display" }).click();
+  await expect(labels).not.toBeChecked();
+});

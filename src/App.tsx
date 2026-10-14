@@ -1175,6 +1175,8 @@ export function App() {
   const displayPanelWasOpenRef = useRef(false);
   const appShellRef = useRef<HTMLElement>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  // A tour hides the command bar, so its card has its own Full screen button.
+  const tourFullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
   orbitViewEnabledRef.current = orbitViewEnabled;
@@ -1235,7 +1237,11 @@ export function App() {
         return;
       }
       if (document.fullscreenElement === null) {
-        requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+        requestAnimationFrame(() =>
+          (
+            tourFullscreenButtonRef.current ?? fullscreenButtonRef.current
+          )?.focus(),
+        );
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1673,6 +1679,16 @@ export function App() {
     setTimeRateIndex(before.timeRateIndex);
     return before.timeRateIndex;
   }, []);
+
+  // The child's own view choice during a cool shot outlasts it, as the
+  // child's playback rate does: the view saved from before the shot takes it.
+  const keepViewChoiceAfterShot = (
+    choice: Partial<ViewSettingsBeforeShot>,
+  ): void => {
+    if (viewBeforeShotRef.current !== null) {
+      viewBeforeShotRef.current = { ...viewBeforeShotRef.current, ...choice };
+    }
+  };
 
   // The scene reads the displayed state, which follows a new frame one render
   // later, so a landed step's seek counts once that state is on screen.
@@ -2514,10 +2530,10 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    // The tour's saved rate is the one from before this shot, and a shot
-    // after a shot keeps the rate from before the first one.
-    const beforeTour = endTour();
-    const viewBefore = beforeTour ?? {
+    // No shot starts during a tour: a tour hides every shot button
+    // (.is-tour-story). A shot after a shot keeps the view and rate from
+    // before the first one.
+    viewBeforeShotRef.current ??= {
       viewMode,
       bodyVisibilityPercent,
       showLabels,
@@ -2526,19 +2542,7 @@ export function App() {
       showEclipticPlane,
       showPlanetTrails,
     };
-    viewBeforeShotRef.current ??= {
-      viewMode: viewBefore.viewMode,
-      bodyVisibilityPercent: viewBefore.bodyVisibilityPercent,
-      showLabels: viewBefore.showLabels,
-      showOrbitGuides: viewBefore.showOrbitGuides,
-      showTacticalOverlay: viewBefore.showTacticalOverlay,
-      showEclipticPlane: viewBefore.showEclipticPlane,
-      showPlanetTrails: viewBefore.showPlanetTrails,
-    };
-    playbackBeforeShotRef.current ??= {
-      direction: beforeTour?.direction ?? direction,
-      timeRateIndex: beforeTour?.timeRateIndex ?? timeRateIndex,
-    };
+    playbackBeforeShotRef.current ??= { direction, timeRateIndex };
     if (shot.loopEndTimeSeconds !== null) {
       restartSimulation();
     }
@@ -3830,6 +3834,14 @@ export function App() {
                 >
                   {tourMinimised ? "Restore" : "Minimise"}
                 </button>
+                <button
+                  ref={tourFullscreenButtonRef}
+                  type="button"
+                  className="tour-fullscreen-button"
+                  onClick={enterImmersiveMode}
+                >
+                  Full screen
+                </button>
                 <button type="button" onClick={exitTour}>
                   Exit
                 </button>
@@ -5085,23 +5097,45 @@ export function App() {
               </label>
               {(
                 [
-                  ["Orbit guides", showOrbitGuides, setShowOrbitGuides],
+                  [
+                    "Orbit guides",
+                    "showOrbitGuides",
+                    showOrbitGuides,
+                    setShowOrbitGuides,
+                  ],
                   [
                     "Tactical overlay",
+                    "showTacticalOverlay",
                     showTacticalOverlay,
                     setShowTacticalOverlay,
                   ],
-                  ["Ecliptic grid", showEclipticPlane, setShowEclipticPlane],
-                  ["Zodiac signs", showZodiac, setShowZodiac],
-                  ["Apollo landing sites", showApolloSites, setShowApolloSites],
+                  [
+                    "Ecliptic grid",
+                    "showEclipticPlane",
+                    showEclipticPlane,
+                    setShowEclipticPlane,
+                  ],
+                  ["Zodiac signs", null, showZodiac, setShowZodiac],
+                  [
+                    "Apollo landing sites",
+                    null,
+                    showApolloSites,
+                    setShowApolloSites,
+                  ],
                 ] as const
-              ).map(([label, checked, setter]) => (
+              ).map(([label, shotSetting, checked, setter]) => (
                 <label className="switch-control guide-only" key={label}>
                   <input
                     type="checkbox"
                     checked={checked}
                     disabled={viewMode === "schematic"}
-                    onChange={(event) => setter(event.currentTarget.checked)}
+                    onChange={(event) => {
+                      const value = event.currentTarget.checked;
+                      if (shotSetting !== null) {
+                        keepViewChoiceAfterShot({ [shotSetting]: value });
+                      }
+                      setter(value);
+                    }}
                   />
                   <span>{label}</span>
                 </label>
@@ -5121,9 +5155,11 @@ export function App() {
                   type="checkbox"
                   checked={showLabels}
                   disabled={viewMode === "schematic"}
-                  onChange={(event) =>
-                    setShowLabels(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showLabels: value });
+                    setShowLabels(value);
+                  }}
                 />
                 <span>Labels</span>
               </label>
@@ -5136,11 +5172,11 @@ export function App() {
                     max="100"
                     step="1"
                     value={bodyVisibilityPercent}
-                    onChange={(event) =>
-                      setBodyVisibilityPercent(
-                        Number(event.currentTarget.value),
-                      )
-                    }
+                    onChange={(event) => {
+                      const value = Number(event.currentTarget.value);
+                      keepViewChoiceAfterShot({ bodyVisibilityPercent: value });
+                      setBodyVisibilityPercent(value);
+                    }}
                   />
                   <output>
                     {bodyVisibilityPercent === 0
@@ -5214,9 +5250,11 @@ export function App() {
                 <input
                   type="checkbox"
                   checked={showPlanetTrails}
-                  onChange={(event) =>
-                    setShowPlanetTrails(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showPlanetTrails: value });
+                    setShowPlanetTrails(value);
+                  }}
                 />
                 <span>Planet trails</span>
               </label>

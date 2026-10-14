@@ -142,6 +142,31 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await expect(page.locator(".reality-navigation-map")).toBeHidden();
       await expect(page.locator(".global-simulation-clock")).toBeVisible();
       await tour.getByRole("button", { name: "Minimise" }).tap({ trial: true });
+      // The heading row holds Minimise, Full screen and Exit on one line.
+      await tour
+        .getByRole("button", { name: "Full screen" })
+        .tap({ trial: true });
+      const heading = tour.locator(".tour-progress-heading");
+      const headingButtons = heading.getByRole("button");
+      await expect(headingButtons).toHaveCount(3);
+      const headingBox = await heading.boundingBox();
+      if (headingBox === null) {
+        throw new Error("The tour heading has no box");
+      }
+      const firstButtonBox = await headingButtons.first().boundingBox();
+      if (firstButtonBox === null) {
+        throw new Error("The first tour heading button has no box");
+      }
+      for (const button of await headingButtons.all()) {
+        const box = await button.boundingBox();
+        if (box === null) {
+          throw new Error("A tour heading button has no box");
+        }
+        expect(box.x + box.width).toBeLessThanOrEqual(
+          headingBox.x + headingBox.width,
+        );
+        expect(Math.abs(box.y - firstButtonBox.y)).toBeLessThan(1);
+      }
       await tour.getByRole("button", { name: "Next" }).tap();
       await page.screenshot({
         path: testInfo.outputPath(`scale-tour-${size}.png`),
