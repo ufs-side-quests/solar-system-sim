@@ -66,6 +66,11 @@ export type EclipseStoryStep = Readonly<{
   cameraDistanceAu: number | "observer-separation";
   observerCameraStyle?: "surface-facing" | "limb" | "shadow-axis";
   cameraZoom: number;
+  // The shot frames more than its target body, such as the Earth-Moon
+  // system or the heliosphere, so the open sky beside a card keeps the whole
+  // frame height on screen. Absent for a shot of its target body alone,
+  // whose size the scene measures.
+  subjectFillsFrame?: true;
   timeRateSecondsPerSecond: number;
   timeRateLabel: string;
   timeUtc: string;
@@ -117,6 +122,7 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     orientation: "perspective",
     cameraDistanceAu: 0.009,
     cameraZoom: 1.5,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 3_600,
     timeRateLabel: "1 hour per second · the Moon crosses the alignment",
     timeUtc: "2026-08-12T15:45:53.800Z",
@@ -230,6 +236,7 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     orientation: "perspective",
     cameraDistanceAu: 0.009,
     cameraZoom: 1.5,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 60,
     timeRateLabel: "1 minute per second · the shadow moves across Earth",
     timeUtc: "2026-08-12T17:45:53.800Z",

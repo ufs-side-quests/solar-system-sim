@@ -10,6 +10,11 @@ export type CinematicShot = Readonly<{
   orientation: Exclude<CameraOrientationPreset, "custom">;
   cameraDistanceAu?: number;
   cameraZoom: number;
+  // The shot frames more than its target body, such as the Earth-Moon
+  // system or the heliosphere, so the open sky beside a card keeps the whole
+  // frame height on screen. Absent for a shot of its target body alone,
+  // whose size the scene measures.
+  subjectFillsFrame?: true;
   timeRateSecondsPerSecond: number;
   // A looping shot restarts the simulation from the snapshot epoch (time
   // zero) and restarts it again, with clear trails, when time passes this;
@@ -30,6 +35,7 @@ export const PLANETS_RACING_SHOT: CinematicShot = {
   orientation: "overhead",
   cameraDistanceAu: 6,
   cameraZoom: 1,
+  subjectFillsFrame: true,
   timeRateSecondsPerSecond: 30 * 86_400,
   // Stay inside the ±1 year validated ephemeris window after the epoch.
   loopEndTimeSeconds: 360 * 86_400,

@@ -13,6 +13,11 @@ export type ScaleTourStep = Readonly<{
   transitionOverviewAnchorBodyId: string;
   transitionOverviewDistanceAu: number;
   cameraZoom: number;
+  // The shot frames more than its target body, such as the Earth-Moon
+  // system or the heliosphere, so the open sky beside a card keeps the whole
+  // frame height on screen. Absent for a shot of its target body alone,
+  // whose size the scene measures.
+  subjectFillsFrame?: true;
   timeRateSecondsPerSecond: number;
   timeRateLabel: string;
   viewMode: "reality" | "orrery";
@@ -81,6 +86,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewAnchorBodyId: "earth",
     transitionOverviewDistanceAu: 0.012,
     cameraZoom: 1,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 86_400,
     timeRateLabel: "1 day per second · the Moon advances in orbit",
     viewMode: "reality",
@@ -176,6 +182,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewAnchorBodyId: "sun",
     transitionOverviewDistanceAu: 12,
     cameraZoom: 1,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 3_600,
     timeRateLabel: "1 hour per second · rapid giant-planet rotation",
     viewMode: "reality",
@@ -436,6 +443,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewAnchorBodyId: "sun",
     transitionOverviewDistanceAu: 240,
     cameraZoom: 1,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 2_592_000,
     timeRateLabel: "30 days per second · planetary orbits sweep smoothly",
     viewMode: "reality",
@@ -470,6 +478,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewAnchorBodyId: "sun",
     transitionOverviewDistanceAu: 240,
     cameraZoom: 1,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 2_592_000,
     timeRateLabel:
       "30 days per second · the planets continue moving at the centre",
@@ -505,6 +514,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewAnchorBodyId: "sun",
     transitionOverviewDistanceAu: 240,
     cameraZoom: 1,
+    subjectFillsFrame: true,
     timeRateSecondsPerSecond: 2_592_000,
     timeRateLabel:
       "30 days per second · the Solar System remains live but vanishingly small",
