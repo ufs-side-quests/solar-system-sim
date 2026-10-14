@@ -15,7 +15,11 @@ import { useInterfaceAudio } from "./audio/use-interface-audio";
 import { matchesPhoneLayout, usePhoneLayout } from "./phone-layout";
 import {
   discoveryMessage,
+  discoveryProgress,
   type EasterEggId,
+  hiddenSurpriseRows,
+  HIDDEN_SURPRISES_GROUP,
+  hiddenSurprisesHeading,
   hintsAtUnfoundEasterEgg,
   isEasterEggId,
   loadFoundEasterEggs,
@@ -57,6 +61,7 @@ import {
   operationalSpacecraftSnapshot,
 } from "./physics/operational-spacecraft";
 import { PARENT_BODY_ID } from "./scene/body-facts";
+import { bodyDisplayName } from "./scene/body-display-name";
 import {
   BODY_COMPOSITION_BY_ID,
   EARTH_MEAN_RADIUS_M,
@@ -364,6 +369,8 @@ type FocusOption = Readonly<{
   searchText: string;
   disabled: boolean;
 }>;
+// The Focus list shows easter eggs only in the hidden surprises group, whose
+// heading carries the live count.
 const FOCUS_OPTIONS: readonly FocusOption[] = [
   {
     id: "",
@@ -421,7 +428,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: spacecraft.id,
     key: spacecraft.id,
     label: spacecraft.name,
-    group: "Spacecraft",
+    group: isEasterEggId(spacecraft.id) ? HIDDEN_SURPRISES_GROUP : "Spacecraft",
     searchText: `${spacecraft.name} ${spacecraft.id} ${spacecraft.id === "roadster" ? "Tesla Starman Falcon Heavy car" : "telescope"} spacecraft`,
     disabled: false,
   })),
@@ -429,7 +436,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: JOVIAN_MONOLITH_BODY_ID,
     key: JOVIAN_MONOLITH_BODY_ID,
     label: JOVIAN_MONOLITH_NAME,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText:
       "Jovian Monolith TMA-2 2001 2010 Space Odyssey Jupiter Io L1 fictional",
     disabled: false,
@@ -438,7 +445,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: DISCOVERY_ONE_BODY_ID,
     key: DISCOVERY_ONE_BODY_ID,
     label: DISCOVERY_ONE_NAME,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText:
       "Discovery One 2001 2010 Space Odyssey Io Jupiter spacecraft fictional",
     disabled: false,
@@ -447,7 +454,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: orbiter.id,
     key: orbiter.id,
     label: orbiter.name,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText: `${orbiter.name} Star Wars ${orbiter.parentBodyId} fictional battle station`,
     disabled: false,
   })),
@@ -455,7 +462,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: object.id,
     key: object.id,
     label: object.name,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText: `${object.name} Star Trek DS9 Defiant Callisto Jupiter fictional station spacecraft`,
     disabled: false,
   })),
@@ -464,9 +471,56 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
 const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
   (option) => option.id !== "" && !option.disabled,
 );
-const FOCUS_BROWSE_OPTIONS = FOCUS_OPTIONS.filter(
-  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+const EGG_FOCUS_OPTION_BY_ID = new Map(
+  FOCUS_OPTIONS.filter((option) => isEasterEggId(option.id)).map((option) => [
+    option.id,
+    option,
+  ]),
 );
+
+const FOCUS_OPTION_BY_ID = new Map(
+  FOCUS_OPTIONS.map((option) => [option.id, option]),
+);
+
+function focusOption(bodyId: string): FocusOption {
+  const option = FOCUS_OPTION_BY_ID.get(bodyId);
+  if (option === undefined) {
+    throw new Error(`Focus option ${bodyId} is unavailable`);
+  }
+  return option;
+}
+
+/** An unfound egg stays out of browsing, search and Next object. */
+function isHiddenUntilFound(
+  option: FocusOption,
+  found: ReadonlySet<EasterEggId>,
+): boolean {
+  return isEasterEggId(option.id) && !found.has(option.id);
+}
+
+/** Found eggs by name, unfound eggs as clue rows that fly to the clue body. */
+function hiddenSurpriseFocusOptions(
+  found: ReadonlySet<EasterEggId>,
+): FocusOption[] {
+  const group = hiddenSurprisesHeading(found);
+  return hiddenSurpriseRows(found).map((row) => {
+    if (row.kind === "clue") {
+      return {
+        id: row.bodyId,
+        key: `clue:${row.eggId}`,
+        label: row.label,
+        group,
+        searchText: "",
+        disabled: false,
+      };
+    }
+    const option = EGG_FOCUS_OPTION_BY_ID.get(row.eggId);
+    if (option === undefined) {
+      throw new Error(`Easter egg ${row.eggId} has no focus option`);
+    }
+    return option;
+  });
+}
 
 function orbitParametersForBody(
   state: SimulationState | undefined,
@@ -510,32 +564,62 @@ function orbitParametersForBody(
   };
 }
 
+// The hidden surprises group is built per render from the found eggs.
 const FOCUS_GROUPS = Array.from(
   new Set(FOCUS_OPTIONS.map((option) => option.group)),
-).map((label) => ({
-  label,
-  options: FOCUS_OPTIONS.filter((option) => option.group === label),
-}));
+)
+  .filter((label) => label !== HIDDEN_SURPRISES_GROUP)
+  .map((label) => ({
+    label,
+    options: FOCUS_OPTIONS.filter((option) => option.group === label),
+  }));
+// Every option except the eggs, in the order the list shows them, so the
+// highlighted row and Enter pick the row on screen.
+const NON_EGG_OPTIONS = FOCUS_GROUPS.flatMap((group) => group.options);
+const FOCUS_BROWSE_OPTIONS = NON_EGG_OPTIONS.filter(
+  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+);
 
 const FocusSelect = memo(function FocusSelect({
   value,
+  foundEasterEggIds,
   onSelect,
 }: Readonly<{
   value: string;
+  foundEasterEggIds: ReadonlySet<EasterEggId>;
   onSelect(bodyId: string): void;
 }>) {
-  const selectedOption = FOCUS_OPTIONS.find((option) => option.id === value);
-  if (selectedOption === undefined) {
-    throw new Error(`Focus option ${value} is unavailable`);
-  }
-  const [filteredOptions, setFilteredOptions] = useState<FocusOption[]>([
-    ...FOCUS_BROWSE_OPTIONS,
-  ]);
+  const selectedOption = focusOption(value);
+  const hiddenSurpriseOptions = useMemo(
+    () => hiddenSurpriseFocusOptions(foundEasterEggIds),
+    [foundEasterEggIds],
+  );
+  const browseOptions = useMemo(
+    () => [...FOCUS_BROWSE_OPTIONS, ...hiddenSurpriseOptions],
+    [hiddenSurpriseOptions],
+  );
+  // Clue rows have no search text, so search lists found eggs only.
+  const searchOptions = useMemo(
+    () => [...NON_EGG_OPTIONS, ...hiddenSurpriseOptions],
+    [hiddenSurpriseOptions],
+  );
+  const groups = [
+    ...FOCUS_GROUPS,
+    {
+      label: hiddenSurprisesHeading(foundEasterEggIds),
+      options: hiddenSurpriseOptions,
+    },
+  ];
+  const [filteredOptions, setFilteredOptions] =
+    useState<FocusOption[]>(browseOptions);
   const [catalogueSearchActive, setCatalogueSearchActive] = useState(false);
   const showBrowseOptions = (): void => {
     setCatalogueSearchActive(false);
-    setFilteredOptions([...FOCUS_BROWSE_OPTIONS]);
+    setFilteredOptions(browseOptions);
   };
+  // Typing an egg's full name and pressing Enter still selects it (a parent's
+  // way in), and counts as finding it. Partial search never lists an unfound
+  // egg.
   const selectTypedOption = (candidate: string): boolean => {
     const normalizedCandidate = candidate.trim().toLocaleLowerCase();
     const option = FOCUS_OPTIONS.find(
@@ -559,7 +643,8 @@ const FocusSelect = memo(function FocusSelect({
   } = useCombobox<FocusOption>({
     items: filteredOptions,
     selectedItem: selectedOption,
-    itemToString: (item) => item?.label ?? "",
+    // A clue row names the body it flies to, as that body's own row does.
+    itemToString: (item) => (item === null ? "" : focusOption(item.id).label),
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
@@ -567,8 +652,8 @@ const FocusSelect = memo(function FocusSelect({
       setCatalogueSearchActive(normalizedInput.length > 0);
       setFilteredOptions(
         normalizedInput.length === 0
-          ? [...FOCUS_BROWSE_OPTIONS]
-          : FOCUS_OPTIONS.filter((option) =>
+          ? browseOptions
+          : searchOptions.filter((option) =>
               option.searchText.toLocaleLowerCase().includes(normalizedInput),
             ),
       );
@@ -625,7 +710,7 @@ const FocusSelect = memo(function FocusSelect({
         className="focus-popover focus-listbox"
         hidden={!isOpen}
       >
-        {FOCUS_GROUPS.map((group) => {
+        {groups.map((group) => {
           const visibleOptions = group.options.filter((option) =>
             filteredOptions.includes(option),
           );
@@ -1707,8 +1792,20 @@ export function App() {
     const currentIndex = NAVIGABLE_FOCUS_OPTIONS.findIndex(
       (option) => option.id === selectedBodyId,
     );
-    const nextIndex = (currentIndex + 1) % NAVIGABLE_FOCUS_OPTIONS.length;
-    setSelectedBodyId(NAVIGABLE_FOCUS_OPTIONS[nextIndex]?.id ?? "sun");
+    // Walk on from the current object, skipping eggs the child has not found.
+    for (let step = 1; step <= NAVIGABLE_FOCUS_OPTIONS.length; step += 1) {
+      const option =
+        NAVIGABLE_FOCUS_OPTIONS[
+          (currentIndex + step) % NAVIGABLE_FOCUS_OPTIONS.length
+        ];
+      if (
+        option !== undefined &&
+        !isHiddenUntilFound(option, foundEasterEggIds)
+      ) {
+        setSelectedBodyId(option.id);
+        return;
+      }
+    }
   };
 
   const navigateHome = (): void => {
@@ -2092,7 +2189,10 @@ export function App() {
     if (
       activeShotLoopEndTimeSeconds === null ||
       activeShotTimeSeconds === undefined ||
-      activeShotTimeSeconds < activeShotLoopEndTimeSeconds
+      // REBOUND finishes on the requested time with a last step of
+      // (end - t), which can land a rounding error short of the loop end
+      // where playback holds, so the restart allows one simulated second.
+      activeShotTimeSeconds < activeShotLoopEndTimeSeconds - 1
     ) {
       return;
     }
@@ -2553,7 +2653,7 @@ export function App() {
         };
       }
       return {
-        name: knownSatellite?.name ?? bodyId,
+        name: bodyDisplayName(bodyId),
         surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
         distanceRows:
@@ -2662,13 +2762,7 @@ export function App() {
     setObjectVisibility((current) => ({ ...current, [category]: visible }));
   };
 
-  const focusedDefinition = majorBodySnapshot.bodies.find(
-    (body) => body.id === focusBodyId,
-  );
   const focusedKnownSatellite = knownSatelliteById.get(focusBodyId);
-  const focusedVoyager = isVoyagerBodyId(focusBodyId)
-    ? voyagerById.get(focusBodyId)
-    : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
     (focusBodyId === JOVIAN_MONOLITH_BODY_ID
@@ -2686,11 +2780,9 @@ export function App() {
     focusedKnownSatellite?.parentId ??
     PARENT_BODY_ID[focusBodyId];
   const focusedParentName =
-    majorBodySnapshot.bodies.find((body) => body.id === focusedParentId)
-      ?.name ??
-    (focusedParentId === DEEP_SPACE_NINE_BODY_ID
-      ? DEEP_SPACE_NINE_NAME
-      : undefined);
+    focusedParentId === undefined
+      ? undefined
+      : bodyDisplayName(focusedParentId);
   const outsideValidatedWindow =
     Math.abs(state?.timeSeconds ?? 0) > VALIDATED_WINDOW_SECONDS;
 
@@ -2784,6 +2876,7 @@ export function App() {
         </nav>
         <FocusSelect
           value={focusBodyId}
+          foundEasterEggIds={foundEasterEggIds}
           onSelect={(bodyId) => {
             setSurfaceObserverEnabled(false);
             navigateToFocus(bodyId);
@@ -2861,26 +2954,7 @@ export function App() {
           {focusBodyId === "" ? null : (
             <>
               <span aria-hidden="true">/</span>
-              <strong>
-                {focusedDefinition?.name ??
-                  focusedKnownSatellite?.name ??
-                  focusedVoyager?.name ??
-                  (focusBodyId === JOVIAN_MONOLITH_BODY_ID
-                    ? JOVIAN_MONOLITH_NAME
-                    : undefined) ??
-                  (focusBodyId === DISCOVERY_ONE_BODY_ID
-                    ? DISCOVERY_ONE_NAME
-                    : undefined) ??
-                  (isFictionalOrbiterId(focusBodyId)
-                    ? fictionalOrbiterById.get(focusBodyId)?.name
-                    : undefined) ??
-                  (isDeepSpaceNineObjectId(focusBodyId)
-                    ? focusBodyId === DEEP_SPACE_NINE_BODY_ID
-                      ? DEEP_SPACE_NINE_NAME
-                      : USS_DEFIANT_NAME
-                    : undefined) ??
-                  focusBodyId}
-              </strong>
+              <strong>{bodyDisplayName(focusBodyId)}</strong>
             </>
           )}
         </nav>
@@ -2963,6 +3037,7 @@ export function App() {
               showEclipticPlane={showEclipticPlane}
               showZodiac={showZodiac}
               showLabels={showLabels}
+              announceFlights={activeTourStep === undefined}
               showApolloSites={showApolloSites}
               spacecraftLabelBodyIds={
                 activeTourStep === undefined
@@ -3109,9 +3184,14 @@ export function App() {
         </p>
 
         <p className="discovery-toast" role="status">
-          {discoveredEasterEggId === null
-            ? null
-            : discoveryMessage(discoveredEasterEggId)}
+          {discoveredEasterEggId === null ? null : (
+            <>
+              {discoveryMessage(discoveredEasterEggId)}
+              <span className="discovery-toast-progress">
+                {discoveryProgress(foundEasterEggIds)}
+              </span>
+            </>
+          )}
         </p>
 
         {surfaceObservation === undefined || tourKind === "eclipse" ? null : (
@@ -3904,7 +3984,10 @@ export function App() {
                   />
                 </label>
               )}
-              <output className="exposure-readout" aria-live="polite">
+              {/* An output is a live status region by default. Readouts that
+                  follow the scene every frame (exposure, magnification, orbit,
+                  clock) are silent; readouts of the child's own slider speak. */}
+              <output className="exposure-readout" aria-live="off">
                 {exposureStatus.mode === "auto" ? "Auto" : "Manual"}{" "}
                 {exposureStatus.ev >= 0 ? "+" : ""}
                 {exposureStatus.ev.toFixed(2)} EV · {"×"}
@@ -4344,7 +4427,7 @@ export function App() {
                       <span>°</span>
                     </span>
                   </label>
-                  <output className="orbit-flight-readout">
+                  <output className="orbit-flight-readout" aria-live="off">
                     {orbitReadout?.kind === "hover"
                       ? `Station keeping ${orbitReadout.accelerationMps2.toFixed(4)} m/s²`
                       : orbitReadout?.kind === "orbit"
@@ -4403,7 +4486,7 @@ export function App() {
                     )
                   }
                 />
-                <output>
+                <output aria-live="off">
                   {viewMagnification < 0.001
                     ? viewMagnification.toExponential(2)
                     : viewMagnification < 0.1
@@ -4667,7 +4750,7 @@ export function App() {
 
         <section className="timeline-dock" aria-label="Time controls">
           <div className="time-readout">
-            <output data-time-seconds={state?.timeSeconds ?? 0}>
+            <output data-time-seconds={state?.timeSeconds ?? 0} aria-live="off">
               TDB {formatSimulationOffset(state?.timeSeconds ?? 0)}
             </output>
             <span

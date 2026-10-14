@@ -62,7 +62,9 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const labelFontSize = await earthLabel.evaluate((element) =>
     Number.parseFloat(window.getComputedStyle(element).fontSize),
   );
-  expect(labelFontSize).toBeLessThan(10);
+  // Readable for a child, yet still a small annotation over the planet.
+  expect(labelFontSize).toBeGreaterThanOrEqual(11);
+  expect(labelFontSize).toBeLessThan(12);
   await expect(scene).toHaveAttribute("data-orbit-guide-count", "0");
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "false");
   await expect(scene).toHaveAttribute("data-planet-trails-visible", "false");
