@@ -2191,7 +2191,7 @@ h1 {
 .selected-body-detail {
   left: 0.85rem;
   bottom: 6.6rem;
-  width: min(28rem, calc(100% - 1.7rem));
+  width: min(30rem, calc(100% - 1.7rem));
   max-height: calc(100% - 8.4rem);
   overflow-y: auto;
   border-radius: 1rem;
@@ -2359,7 +2359,22 @@ h1 {
   padding: 0 0.9rem 0.9rem;
 }
 
-.selected-body-metrics > span {
+.selected-body-more-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+}
+
+.selected-body-more summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 0.67rem;
+  cursor: pointer;
+}
+
+.selected-body-metrics > span,
+.selected-body-more-grid > span {
   min-width: 0;
   display: grid;
   gap: 0.18rem;
@@ -2369,7 +2384,9 @@ h1 {
 }
 
 .selected-body-surface,
+.selected-body-speed,
 .selected-body-composition,
+.selected-body-more,
 .apollo-mission-detail {
   grid-column: 1 / -1;
 }
@@ -3077,7 +3094,8 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .selected-body-metrics {
+  .selected-body-metrics,
+  .selected-body-more-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

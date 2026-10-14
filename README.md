@@ -23,6 +23,8 @@ The three-dimensional funnel is an energy-landscape visualization, not a claim t
 The camera uses standard orbit controls: left drag orbits, right drag pans, and wheel or pinch dollies toward or away from the current target.
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
+The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from the live osculating two-body period (vis-viva), one sidereal spin, and speed compared with a named, rounded 900 km/h jet airliner reference.
+Exact diameter, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, and a guided scale tour.

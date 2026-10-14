@@ -87,3 +87,32 @@ export function osculatingOrbitPositionsM(
     return add(parent.positionM, relativePosition);
   });
 }
+
+/**
+ * Osculating two-body period from the live state, by vis-viva:
+ * a = 1 / (2/r - v²/μ), T = 2π √(a³/μ), μ = GM_parent + GM_body.
+ * Returns undefined for an unbound (parabolic or hyperbolic) state.
+ */
+export function osculatingOrbitalPeriodSeconds(
+  body: BodyState,
+  parent: BodyState,
+): number | undefined {
+  const mu =
+    body.gravitationalParameterM3S2 + parent.gravitationalParameterM3S2;
+  const radius = magnitude(subtract(body.positionM, parent.positionM));
+  const speed = magnitude(subtract(body.velocityMps, parent.velocityMps));
+  if (
+    !Number.isFinite(mu) ||
+    mu <= 0 ||
+    !Number.isFinite(radius) ||
+    radius <= 0 ||
+    !Number.isFinite(speed)
+  ) {
+    throw new Error("Osculating orbit state is physically invalid");
+  }
+  const inverseSemiMajorAxis = 2 / radius - (speed * speed) / mu;
+  if (inverseSemiMajorAxis <= 0) {
+    return undefined;
+  }
+  return 2 * Math.PI * Math.sqrt(1 / inverseSemiMajorAxis ** 3 / mu);
+}

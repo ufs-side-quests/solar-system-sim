@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { BodyState } from "../physics/contracts";
-import { osculatingOrbitPositionsM } from "./osculating-orbit";
+import { majorBodySystem } from "../physics/solar-system";
+import {
+  osculatingOrbitalPeriodSeconds,
+  osculatingOrbitPositionsM,
+} from "./osculating-orbit";
 
 const parent: BodyState = {
   id: "sun",
@@ -54,5 +58,45 @@ describe("osculating orbit", () => {
 
     expect(Math.min(...radii)).toBeCloseTo(2, 10);
     expect(Math.max(...radii)).toBeCloseTo(6, 10);
+  });
+});
+
+describe("osculating orbital period", () => {
+  const DAY_SECONDS = 86_400;
+  const epochState = (id: string): BodyState => {
+    const body = majorBodySystem.bodies.find(
+      (candidate) => candidate.id === id,
+    );
+    if (body === undefined) {
+      throw new Error(`Snapshot body ${id} is missing`);
+    }
+    return body;
+  };
+
+  it.each([
+    ["earth", "sun", 365.256],
+    ["mars", "sun", 686.98],
+    ["io", "jupiter", 1.769],
+  ])(
+    "derives the %s period about %s from the snapshot epoch state",
+    (bodyId, parentId, expectedDays) => {
+      const periodSeconds = osculatingOrbitalPeriodSeconds(
+        epochState(bodyId),
+        epochState(parentId),
+      );
+      expect(periodSeconds).toBeDefined();
+      const days = (periodSeconds ?? Number.NaN) / DAY_SECONDS;
+      expect(Math.abs(days / expectedDays - 1)).toBeLessThan(0.01);
+    },
+  );
+
+  it("returns undefined for an unbound state", () => {
+    const escaping: BodyState = {
+      id: "escaping",
+      gravitationalParameterM3S2: 0,
+      positionM: [4, 0, 0],
+      velocityMps: [0, Math.sqrt(2 / 4) * 1.01, 0],
+    };
+    expect(osculatingOrbitalPeriodSeconds(escaping, parent)).toBeUndefined();
   });
 });

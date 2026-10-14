@@ -1,3 +1,5 @@
+import type { nasaTextureSnapshot } from "./visual-assets";
+
 export type BodyCompositionFact = {
   readonly summary: string;
   readonly authority: string;
@@ -249,4 +251,96 @@ export function formatMassKg(massKg: number | undefined): string {
   return `${coefficient.toLocaleString("en-GB", {
     maximumSignificantDigits: 5,
   })} × 10${superscript(exponent)} kg`;
+}
+
+type SurfaceClassification =
+  | (typeof nasaTextureSnapshot.assets)[number]["classification"]
+  | (typeof nasaTextureSnapshot.materialPresentations)[number]["classification"];
+
+export const PLAIN_SURFACE_SOURCE: Readonly<
+  Record<SurfaceClassification, string>
+> = {
+  "observational-composite": "Real space pictures",
+  "measured-topography": "Real height measurements",
+  visualization: "NASA artwork",
+  "authority-derived-material": "Made from real measurements",
+  "observation-constrained-atmosphere": "Colour from real photos",
+};
+
+const SECONDS_PER_HOUR = 3_600;
+const HOURS_PER_DAY = 24;
+const DAYS_PER_YEAR = 365.25;
+
+/** Typical jet airliner cruise speed, a rounded reference value. */
+export const JET_AIRLINER_SPEED_KMH = 900;
+
+function rounded(value: number, fractionDigits: number): string {
+  return value.toLocaleString("en-GB", {
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function roundedRatio(ratio: number): string {
+  return rounded(ratio, ratio >= 10 ? 0 : 1);
+}
+
+export function formatWidthComparedToEarth(
+  meanRadiusM: number,
+  earthMeanRadiusM: number,
+): string {
+  const ratio = meanRadiusM / earthMeanRadiusM;
+  if (ratio >= 1.1) {
+    return `As wide as ${roundedRatio(ratio)} Earths`;
+  }
+  if (ratio > 0.9) {
+    return "About as wide as Earth";
+  }
+  return `Earth is about ${roundedRatio(1 / ratio)} times wider`;
+}
+
+function counted(value: number, fractionDigits: number, unit: string): string {
+  const text = rounded(value, fractionDigits);
+  return `${text} ${text === "1" ? unit : `${unit}s`}`;
+}
+
+function formatDurationHours(hours: number, longestInHours: number): string {
+  if (hours < longestInHours) {
+    return `about ${counted(hours, 1, "hour")}`;
+  }
+  const days = hours / HOURS_PER_DAY;
+  if (days < 2 * DAYS_PER_YEAR) {
+    const dayText = `about ${counted(days, days < 10 ? 1 : 0, "Earth day")}`;
+    return days < 300
+      ? dayText
+      : `${dayText} (${counted(days / DAYS_PER_YEAR, 1, "year")})`;
+  }
+  const years = days / DAYS_PER_YEAR;
+  return `about ${counted(years, years < 100 ? 1 : 0, "year")}`;
+}
+
+/** Orbits shorter than one Earth day read in hours, longer ones in days or years. */
+export function formatOrbitalPeriod(periodSeconds: number): string {
+  return formatDurationHours(periodSeconds / SECONDS_PER_HOUR, HOURS_PER_DAY);
+}
+
+/** Spins up to 30 hours read in hours, so the Earth and Mars days stay comparable. */
+export function formatSpinPeriod(siderealRotationHours: number): string {
+  return formatDurationHours(siderealRotationHours, 30);
+}
+
+export function formatSpeedWithJetComparison(speedKmS: number): string {
+  const speed = `${speedKmS.toLocaleString("en-GB", {
+    maximumSignificantDigits: 3,
+  })} km/s`;
+  const jet = `a jet airliner (${String(JET_AIRLINER_SPEED_KMH)} km/h)`;
+  const ratio = (speedKmS * SECONDS_PER_HOUR) / JET_AIRLINER_SPEED_KMH;
+  if (ratio >= 1.5) {
+    return `${speed}, about ${ratio.toLocaleString("en-GB", {
+      maximumSignificantDigits: 2,
+    })} times faster than ${jet}`;
+  }
+  if (ratio > 0.67) {
+    return `${speed}, about as fast as ${jet}`;
+  }
+  return `${speed}, slower than ${jet}`;
 }

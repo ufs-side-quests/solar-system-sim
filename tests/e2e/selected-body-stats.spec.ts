@@ -73,3 +73,42 @@ test("selected body stats identify their source and velocity reference", async (
     animations: "disabled",
   });
 });
+
+test("selected body card answers how big and how long a year is", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+
+  await selectFocus(focus, "Mars");
+  await expect(scene).toHaveAttribute("data-focus-body", "mars");
+  await expect(card.getByText("Size", { exact: true })).toBeVisible();
+  await expect(
+    card.getByText("One trip around the Sun", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    card.locator("span", {
+      has: page.getByText("One trip around the Sun", { exact: true }),
+    }),
+  ).toContainText(/about 68[67] Earth days/u);
+  await expect(card).toContainText(
+    /times faster than a jet airliner \(900 km\/h\)/u,
+  );
+
+  await selectFocus(focus, "Jupiter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(card.getByText("As wide as 11 Earths")).toBeVisible();
+  await expect(card.getByText("Rotation angle", { exact: true })).toBeHidden();
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(card.getByText("Rotation angle", { exact: true })).toBeVisible();
+  await expect(card.getByText("observational-composite")).toBeVisible();
+});
