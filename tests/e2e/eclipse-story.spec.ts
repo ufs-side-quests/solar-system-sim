@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import sharp from "sharp";
 
 const STORY_SCENES = [
@@ -389,4 +389,163 @@ test("jumps to each story time while the story plays at an unchanged rate", asyn
     firstContactSeconds,
     { polling: "raf", timeout: 3_000 },
   );
+});
+
+test("a free-look drag in a surface step keeps the story playing", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute(
+    "data-tour-step",
+    "london-before-contact",
+  );
+  await expect(scene).toHaveAttribute("data-surface-observer-body", "earth", {
+    timeout: 30_000,
+  });
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
+
+  const canvasBox = await page.locator("canvas.major-body-layer").boundingBox();
+  if (canvasBox === null) throw new Error("Scene canvas has no bounding box");
+  const startX = canvasBox.x + canvasBox.width / 2;
+  const startY = canvasBox.y + canvasBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 180, startY - 70, { steps: 8 });
+  await page.mouse.up();
+
+  // Free look turns the observer's head; it is not a camera drag.
+  await expect(scene).toHaveAttribute("data-surface-free-look", "true");
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
+  await expect(scene).not.toHaveAttribute("data-camera-orientation", "custom");
+});
+
+async function openShadowView(page: Page): Promise<string[]> {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  for (let next = 0; next < 5; next += 1) {
+    await story.getByRole("button", { name: "Next" }).click();
+  }
+  await expect(story).toHaveAttribute("data-tour-step", "shadow-from-moon");
+  await expect(
+    page.getByRole("img", { name: /Physics-driven Solar System/u }),
+  ).toHaveAttribute("data-eclipse-shadow-visible", "true", {
+    timeout: 30_000,
+  });
+  return pageErrors;
+}
+
+test("the shadow view plays to its end with the shadow on Earth", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const pageErrors = await openShadowView(page);
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  // Count the drawn frames of this step where the shadow is off Earth.
+  await page.evaluate(() => {
+    const seen = { offEarthFrames: 0, frames: 0 };
+    (window as unknown as { shadowSeen: typeof seen }).shadowSeen = seen;
+    const sample = (): void => {
+      const step =
+        document.querySelector<HTMLElement>("aside.scale-tour")?.dataset
+          .tourStep;
+      if (step !== "shadow-from-moon") return;
+      seen.frames += 1;
+      if (
+        document.querySelector<HTMLElement>("[data-eclipse-shadow-visible]")
+          ?.dataset.eclipseShadowVisible !== "true"
+      ) {
+        seen.offEarthFrames += 1;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await story.getByRole("button", { name: "Resume story" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "spain-totality", {
+    timeout: 60_000,
+  });
+  const seen = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          shadowSeen: { offEarthFrames: number; frames: number };
+        }
+      ).shadowSeen,
+  );
+  expect(seen.frames).toBeGreaterThan(30);
+  expect(seen.offEarthFrames).toBe(0);
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("the shadow view says when the Moon's dark shadow is off Earth", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const pageErrors = await openShadowView(page);
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const offEarth = page.getByText("The Moon's dark shadow is not on Earth now");
+  await expect(offEarth).toBeHidden();
+  await expect(page.locator(".eclipse-shadow-locator")).toBeVisible();
+
+  // The story hides the time controls, so press Step forward from the page:
+  // 30 steps at the step's 2 minutes each move the clock one hour, past
+  // about 18:32 UTC, when the shadow's axis leaves Earth.
+  await page.evaluate(() => {
+    const stepForward = [
+      ...document.querySelectorAll<HTMLButtonElement>(".time-actions button"),
+    ].find((button) => button.textContent === "Step forward");
+    if (stepForward === undefined) {
+      throw new Error("Step forward is unavailable");
+    }
+    for (let step = 0; step < 30; step += 1) stepForward.click();
+  });
+  await expect(offEarth).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("time.global-simulation-clock")).toHaveText(
+    /12 Aug 2026 · 18:(39|40)/u,
+  );
+  await expect(scene).toHaveAttribute("data-eclipse-shadow-visible", "false");
+  await expect(page.locator(".eclipse-shadow-locator")).toBeHidden();
+  await expect(story).toHaveAttribute("data-tour-step", "shadow-from-moon");
+  await expect(scene).toHaveAttribute(
+    "data-camera-observer-style",
+    "shadow-axis",
+  );
+  // The camera holds over the spot where the shadow left.
+  const earthX = Number(await scene.getAttribute("data-earth-screen-x"));
+  await page.waitForTimeout(1_000);
+  expect(Number(await scene.getAttribute("data-earth-screen-x"))).toBe(earthX);
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
 });

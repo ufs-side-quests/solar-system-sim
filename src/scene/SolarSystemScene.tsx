@@ -55,6 +55,7 @@ import {
 } from "../tour/easter-eggs";
 import { bodyDisplayName } from "./body-display-name";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
+import { PHONE_LAYOUT_QUERY } from "../phone-layout";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
   ISS_BODY_ID,
@@ -96,7 +97,7 @@ import type {
   GravityWellMode,
   GravityWellScale,
 } from "./gravity-potential";
-import type { SimulationFrame } from "./interpolation";
+import type { SimulationFrame, TrailStep } from "./interpolation";
 import { placeBodyLabel, type LabelRectangle } from "./label-placement";
 import {
   bodyOrientationAngles,
@@ -666,7 +667,7 @@ type SolarSystemSceneProps = Readonly<{
   // The newest solver frame and the states its trails still have to draw;
   // the frame loop reads them on every animation frame, not React.
   frameRef: RefObject<SimulationFrame | undefined>;
-  trailStatesRef: RefObject<SimulationState[]>;
+  trailStatesRef: RefObject<TrailStep[]>;
   displayedStateRef: RefObject<SimulationState | undefined>;
   bodyVisibility: number;
   focusBodyId: string | null;
@@ -1251,23 +1252,22 @@ export function SolarSystemScene({
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
     let interruptCameraTransition: () => void = () => undefined;
-    // A press that begins on the canvas during a camera flight counts as a tap
-    // until it moves past TAP_SLOP_PX: children touch the screen while they
-    // wait, and a tap must not strand them mid-flight. A drag past it, a
-    // second finger, or the wheel still hands the camera to the child at once.
+    // A press that begins on the canvas counts as a tap until it moves past
+    // TAP_SLOP_PX: children touch the screen while they watch, and a tap must
+    // not strand them mid-flight, pause a tour, or end orbit view. A drag past
+    // it, a second finger, or the wheel still hands the camera to the child.
     const canvasPresses = new Map<number, { x: number; y: number }>();
-    let flightTapPending = false;
+    let tapPending = false;
     const handleCanvasPressDown = (event: PointerEvent): void => {
       if (event.target !== renderer.domElement) return;
       canvasPresses.set(event.pointerId, {
         x: event.clientX,
         y: event.clientY,
       });
-      flightTapPending =
-        canvasPresses.size === 1 && activeCameraTransition !== undefined;
+      tapPending = canvasPresses.size === 1;
     };
     const handleCanvasPressMove = (event: PointerEvent): void => {
-      if (!flightTapPending) return;
+      if (!tapPending) return;
       const press = canvasPresses.get(event.pointerId);
       if (press === undefined) return;
       if (
@@ -1275,16 +1275,18 @@ export function SolarSystemScene({
         TAP_SLOP_PX
       ) {
         // OrbitControls never sees the jitter, so it adds no rotation or
-        // damping that would fight the flight.
+        // damping that would fight a flight or move a settled view.
         event.stopPropagation();
         return;
       }
-      flightTapPending = false;
-      handleControlStart();
+      tapPending = false;
+      // Surface view disables the controls: its drag is free look, which
+      // turns the observer's head and keeps a story playing.
+      if (controls.enabled) handleControlStart();
     };
     const handleCanvasPressEnd = (event: PointerEvent): void => {
       canvasPresses.delete(event.pointerId);
-      if (canvasPresses.size === 0) flightTapPending = false;
+      if (canvasPresses.size === 0) tapPending = false;
     };
     // Capture on the container runs before the canvas listeners and before
     // OrbitControls' document listeners, so a dropped move reaches neither.
@@ -1293,12 +1295,16 @@ export function SolarSystemScene({
     container.addEventListener("pointerup", handleCanvasPressEnd, true);
     container.addEventListener("pointercancel", handleCanvasPressEnd, true);
     const handleControlStart = (): void => {
-      if (flightTapPending) return;
+      if (tapPending) return;
       interruptCameraTransition();
       if (orbitViewEnabledRef.current) {
         orbitViewEnabledRef.current = false;
         onOrbitViewChangeRef.current(false);
       }
+      // A drag past the tap slop starts in a pointermove, which React renders
+      // later than a press: the frame loop must stop applying the old preset
+      // at once, or it pulls the camera back before the new props arrive.
+      orientationPresetRef.current = "custom";
       onOrientationChange("custom");
       container.dataset["cameraOrientation"] = "custom";
     };
@@ -1601,6 +1607,13 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.textContent = "Umbra";
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
+    const eclipseShadowLeftEarth = document.createElement("p");
+    eclipseShadowLeftEarth.className = "eclipse-shadow-status";
+    eclipseShadowLeftEarth.setAttribute("role", "status");
+    eclipseShadowLeftEarth.textContent =
+      "The Moon's dark shadow is not on Earth now";
+    eclipseShadowLeftEarth.hidden = true;
+    labelLayer.append(eclipseShadowLeftEarth);
 
     // An easter egg near the focused or selected body shows its label as a
     // hidden surprise, unless that body hides it from the camera. Tour steps
@@ -3257,9 +3270,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
     deepSunLabel.textContent = "Sun · Solar System origin";
     deepSunLabel.hidden = true;
     container.append(deepSunLabel);
-    const navigationMap = document.createElement("div");
+    // A disclosure: open on larger screens, a "Mini map" chip on a phone. A
+    // resize or a turn into or out of the phone layout sets it again.
+    const navigationMap = document.createElement("details");
     navigationMap.className = "reality-navigation-map";
     navigationMap.setAttribute("aria-label", "Solar System navigation map");
+    const phoneLayoutQuery = window.matchMedia(PHONE_LAYOUT_QUERY);
+    const syncNavigationMapOpen = (): void => {
+      navigationMap.open = !phoneLayoutQuery.matches;
+    };
+    syncNavigationMapOpen();
+    phoneLayoutQuery.addEventListener("change", syncNavigationMapOpen);
+    const navigationMapSummary = document.createElement("summary");
+    navigationMapSummary.textContent = "Mini map";
     const navigationMapHeader = document.createElement("div");
     navigationMapHeader.className = "reality-navigation-map__header";
     const navigationMapTitle = document.createElement("strong");
@@ -3392,6 +3415,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     navigationMapHelp.textContent =
       "Select an object; select it again or press Travel to fly there.";
     navigationMap.append(
+      navigationMapSummary,
       navigationMapHeader,
       navigationMapCanvas,
       navigationTooltip,
@@ -4382,7 +4406,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         : position.sub(scenePosition(originState.positionM));
     };
 
-    const updateTrail = (exactState: SimulationState): void => {
+    const updateTrail = (
+      exactState: SimulationState,
+      jumped: boolean,
+    ): void => {
       const requestedReferenceFrame = referenceFrameRef.current;
       if (requestedReferenceFrame !== activeReferenceFrame) {
         activeReferenceFrame = requestedReferenceFrame;
@@ -4408,15 +4435,35 @@ float saturnRingTransmission(vec3 surfacePosition) {
         lastMoonTrailTime === undefined
           ? 0
           : Math.sign(exactState.timeSeconds - lastMoonTrailTime);
-      if (
+      const reversed =
         trailDirection !== 0 &&
         lastTrailDirection !== 0 &&
-        trailDirection !== lastTrailDirection
-      ) {
-        clearTrails();
-      }
-      if (trailDirection !== 0) {
-        lastTrailDirection = trailDirection;
+        trailDirection !== lastTrailDirection;
+      if (reversed && jumped) {
+        // A jump back along the trail, such as Pause holding the clock at
+        // the state on screen behind the frame the trail reached, keeps the
+        // trail up to the new time.
+        const dropPointsBeyond = (points: { timeSeconds: number }[]): void => {
+          while (
+            Math.sign(
+              (points.at(-1)?.timeSeconds ?? exactState.timeSeconds) -
+                exactState.timeSeconds,
+            ) === lastTrailDirection
+          ) {
+            points.pop();
+          }
+        };
+        dropPointsBeyond(moonTrailPoints);
+        for (const trail of planetTrails.values()) {
+          dropPointsBeyond(trail.points);
+        }
+      } else {
+        if (reversed) {
+          clearTrails();
+        }
+        if (trailDirection !== 0) {
+          lastTrailDirection = trailDirection;
+        }
       }
       const moonState = bodyStateById(exactState, "moon");
       if (moonState === undefined) {
@@ -4536,6 +4583,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       };
     };
 
+    // The last footprint relative to Earth, where the shadow camera holds
+    // while the shadow axis misses Earth.
+    let heldShadowFootprintOffsetAu: Vector3 | undefined;
     const eclipseShadowFootprintPosition = (
       current: SimulationState,
     ): Vector3 => {
@@ -4564,14 +4614,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const earthRadiusAu =
         eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
       if (alongAxisAu <= 0 || axisOffsetAu >= earthRadiusAu) {
-        throw new Error("The live lunar shadow axis does not intersect Earth");
+        // Before and after the eclipse the axis misses Earth: a true state,
+        // not a fault. The camera holds over the spot where the shadow left;
+        // with no such spot yet, over the point nearest the axis.
+        return earthPosition
+          .clone()
+          .add(
+            heldShadowFootprintOffsetAu ??
+              closestAxisPoint
+                .clone()
+                .sub(earthPosition)
+                .setLength(earthRadiusAu),
+          );
       }
       const surfaceOffsetAu = Math.sqrt(
         earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
       );
-      return closestAxisPoint.sub(
+      const footprint = closestAxisPoint.sub(
         shadowDirection.clone().multiplyScalar(surfaceOffsetAu),
       );
+      heldShadowFootprintOffsetAu = footprint.clone().sub(earthPosition);
+      return footprint;
     };
 
     const observerTargetPosition = (
@@ -5234,6 +5297,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         smoothedSpeedMps: 0,
       };
       lastCameraTransitionSequence = sequence;
+      // On a phone the open map covers the facts card; a flight closes it.
+      if (phoneLayoutQuery.matches) {
+        navigationMap.open = false;
+      }
       camera.position.copy(startPosition);
       controls.target.copy(startTarget);
       camera.up.copy(startUp);
@@ -5509,6 +5576,33 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // and force another style recalculation.
       const viewportWidth = container.clientWidth;
       const viewportHeight = container.clientHeight;
+      // Guides stay out from under the bottom panels, which float over the
+      // scene and draw above the guide labels: the time controls and the
+      // short facts card. Beside a panel the sky stays open down to the
+      // bottom edge. A panel never takes more than the lower half of the
+      // scene. Measured here with the size, before this frame writes.
+      const sceneBox =
+        wayfinderModeRef.current === "off"
+          ? undefined
+          : container.getBoundingClientRect();
+      const guideObstacles =
+        sceneBox === undefined
+          ? []
+          : [
+              ...(container.parentElement?.querySelectorAll(
+                ".timeline-dock, .selected-body-detail.is-collapsed",
+              ) ?? []),
+            ]
+              .map((panel) => panel.getBoundingClientRect())
+              .filter((box) => box.height > 0)
+              .map((box) => ({
+                left: box.left - sceneBox.left,
+                right: box.right - sceneBox.left,
+                top: Math.min(
+                  viewportHeight,
+                  Math.max(viewportHeight / 2, box.top - sceneBox.top),
+                ),
+              }));
       const frameRenderStartedAtMs = performance.now();
       const frameIntervalMs = Math.max(
         0.001,
@@ -5589,8 +5683,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
               ? 0.84
               : 0.78;
         orbitGuideSourceState = requestedFrame.end;
-        for (const trailState of trailStatesRef.current.splice(0)) {
-          updateTrail(trailState);
+        for (const trailStep of trailStatesRef.current.splice(0)) {
+          updateTrail(trailStep.state, trailStep.jumped);
         }
       }
       const current = displayedStateRef.current;
@@ -5737,6 +5831,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
               trailFadeRef.current,
               clearTrailsTokenRef.current,
               resetViewTokenRef.current,
+              // An eclipse step's shadow camera and umbra start when its
+              // clock lands, which can leave the time unchanged.
+              observerCameraStyleRef.current,
+              eclipseShadowVisibleRef.current,
               sourcedModelsLoadedCount,
             ].join("|");
       if (current !== undefined && sceneMutationKey !== lastSceneMutationKey) {
@@ -6106,6 +6204,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               outwardNormal,
             );
             eclipseShadowGroup.visible = true;
+            setHidden(eclipseShadowLeftEarth, true);
             setData(container, "eclipseShadowVisible", "true");
             setData(
               container,
@@ -6125,6 +6224,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           } else {
             eclipseShadowGroup.visible = false;
             setHidden(eclipseShadowLocator, true);
+            setHidden(eclipseShadowLeftEarth, false);
             setData(container, "eclipseShadowVisible", "false");
             delete container.dataset["eclipseShadowLatitudeDeg"];
             delete container.dataset["eclipseShadowLongitudeDeg"];
@@ -6132,6 +6232,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         } else {
           eclipseShadowGroup.visible = false;
           setHidden(eclipseShadowLocator, true);
+          setHidden(eclipseShadowLeftEarth, true);
           setData(container, "eclipseShadowVisible", "false");
           delete container.dataset["eclipseShadowLatitudeDeg"];
           delete container.dataset["eclipseShadowLongitudeDeg"];
@@ -7940,10 +8041,25 @@ float saturnRingTransmission(vec3 surfacePosition) {
         ) {
           hideAllWayfinders();
         } else {
+          const guideHeight = Math.min(
+            viewportHeight,
+            ...guideObstacles.map((obstacle) => obstacle.top),
+          );
+          // The lowest y a guide may use across [left, right] of the scene.
+          const guideFloor = (left: number, right: number): number =>
+            Math.min(
+              viewportHeight,
+              ...guideObstacles
+                .filter(
+                  (obstacle) =>
+                    right >= obstacle.left && left <= obstacle.right,
+                )
+                .map((obstacle) => obstacle.top),
+            );
           const viewportMargin = Math.min(
             110,
             viewportWidth / 3,
-            viewportHeight / 3,
+            guideHeight / 3,
           );
           const sunPosition = scenePosition(wayfinderSunState.positionM);
           const focusPosition =
@@ -7996,8 +8112,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
               viewportWidth - viewportMargin,
               Math.max(viewportMargin, focusScreen.x),
             ),
+            // Always above the top of every bottom panel, so a ray that ends
+            // under one can be cut short at that height.
             y: Math.min(
-              viewportHeight - viewportMargin,
+              guideHeight - viewportMargin,
               Math.max(viewportMargin, focusScreen.y),
             ),
           };
@@ -8046,7 +8164,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               pointInsideViewport(
                 rawTargetScreen,
                 viewportWidth,
-                viewportHeight,
+                guideFloor(rawTargetScreen.x, rawTargetScreen.x),
                 viewportMargin,
               );
             let location: "behind" | "off-screen" | "on-screen" = "on-screen";
@@ -8072,6 +8190,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 viewportHeight,
                 viewportMargin,
               );
+              if (
+                guideFloor(endpoint.x, endpoint.x) - viewportMargin <
+                endpoint.y
+              ) {
+                endpoint = rayToViewportEdge(
+                  guideOrigin,
+                  direction,
+                  viewportWidth,
+                  guideHeight,
+                  viewportMargin,
+                );
+              }
             }
             const hasLine = originBodyId !== targetBodyId;
             visual.line.style.display = hasLine ? "" : "none";
@@ -8118,7 +8248,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
             const labelY = Math.min(
-              viewportHeight - 30,
+              guideFloor(labelX, labelX + labelWidth) - 30,
               Math.max(30, endpoint.y + laneOffset),
             );
             const previousLabelX = Number(visual.label.dataset["positionX"]);
@@ -9509,6 +9639,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         "change",
         handleNavigationDestinationChange,
       );
+      phoneLayoutQuery.removeEventListener("change", syncNavigationMapOpen);
       navigationTravelButton.removeEventListener(
         "click",
         travelToNavigationDestination,

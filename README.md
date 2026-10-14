@@ -54,7 +54,9 @@ Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecl
 In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
 The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
-While a cool shot is active, the clock runs, and no discovery message shows, a caption names it and says what to watch; a tour, a new focus, a view-mode change, or running or stepping the clock backward ends the shot.
+While a cool shot is active, the clock runs, and no discovery message shows, a caption names it and says what to watch; a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
+A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
+When a shot ends, the playback rate and direction from before the shot come back, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
 Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
@@ -74,6 +76,7 @@ Every guided scene keeps body radii physical; the tour never inflates moons or p
 Focusing an object now uses a true 1× fit instead of silently applying additional optical magnification.
 The View angle panel provides seven direct buttons for 3D, above, side, sunlit, parent, path, and orbital-plane views.
 Each button explains the resulting camera position, while free drag changes the current view to Custom.
+A press on the scene counts as a tap until it moves more than 8 px, so a tap never takes the camera, pauses a tour, or stops a camera journey.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
@@ -87,6 +90,8 @@ The explorer starts at one simulated hour per real second so surface rotation re
 Playback rate is independent of solver keyframe size: continuous playback integrates one simulated day or less per REBOUND endpoint and uses velocity-constrained Hermite interpolation only between completed states.
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
+Pause or Run backward stops the planets at the state on screen before the next paint, and a new direction or rate takes the solver back to that time, so endpoints computed ahead of a slow screen never carry the planets on.
+The trails keep their points up to that time.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
 At full boost every planet, dwarf planet and moon has a readable radius of 0.02 AU times the square root of its radius in Earth radii.
 The Sun has a fixed readable radius of 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.
@@ -258,6 +263,7 @@ The initial Reality overview uses physical scale, so labels identify bodies whos
 Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
+That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
 The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
@@ -268,7 +274,7 @@ The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet,
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Focus.
-Home keeps the clock in its current play state; it pauses only when it ends an active tour.
+Home keeps the clock in its current play state; when it ends an active tour, the clock runs, as after Exit.
 Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.
@@ -280,16 +286,27 @@ Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemi
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
 Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
-The camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
+On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
+On a phone a tour shows only the clock and the tour card, which sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
+On a phone the selected-body card opens short, with the name, Expand, and a size line such as "As wide as 11 Earths · Compare" that opens Compare sizes; every flight makes it short again.
+On a phone the navigation plot folds into a "Mini map" button, and every flight folds it again; a window that grows out of the phone layout opens it.
+Outside a tour, the camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
 Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
 While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
 The Scale tour clock waits at the time the step began, because Scale steps set no time; the Eclipse story clock waits at the step's time.
+A Scale tour that starts with the clock outside the validated ±1 year window first restarts the simulation from the epoch.
+A step's time on screen starts only when its clock has landed and its camera has settled, so a long seek or flight never shortens the step.
+While an Eclipse story step moves the clock, the card says "Moving the clock to 12 Aug 2026…" and hides the live eclipse readouts until the clock lands.
+The shadow step plays 17:40 to 18:28 UTC, inside the time the shadow's axis meets Earth (about 16:59 to 18:32 UTC by astronomy-engine), and a unit test checks that window.
+If the clock leaves that time, the view says "The Moon's dark shadow is not on Earth now" and the camera stays over the spot where the shadow left.
+A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Fly home, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
-Exit, Fly home, and Escape also reset the view of the current object at 1x and run the clock, even if it was paused before the tour, so a child never comes back to a frozen screen.
+Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit, Fly home, and Escape also reset the view of the current object at 1x.
+A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
 When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
 When focus was inside the tour card, it moves to Fly home.
 A Scale tour started from an ending replays from the clock time when the first tour began, or from the epoch when that time lies outside the validated window.

@@ -64,6 +64,13 @@ export type SimulationFrame = Readonly<{
   trailStates?: readonly SimulationState[];
 }>;
 
+// A state for the trails to draw, and whether the clock jumped to it (a seek
+// or a hold) instead of running to it.
+export type TrailStep = Readonly<{
+  state: SimulationState;
+  jumped: boolean;
+}>;
+
 export function interpolateSimulationFrame(
   frame: SimulationFrame,
   fraction: number,

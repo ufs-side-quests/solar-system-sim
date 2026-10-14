@@ -100,6 +100,12 @@ test("keeps the facts card clear of the navigation map's controls", async ({
         },
       )
       .toBeGreaterThanOrEqual(0);
+    if (viewport.width <= 650) {
+      // On a phone the map folds into its Mini map chip; Travel is one tap
+      // away.
+      await expect(navigationMap).toHaveJSProperty("open", false);
+      await navigationMap.getByText("Mini map", { exact: true }).click();
+    }
     await travel.click({ trial: true });
   }
 });
