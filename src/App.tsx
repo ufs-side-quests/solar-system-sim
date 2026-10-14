@@ -1131,12 +1131,15 @@ export function App() {
           let nextStates = await client.api.integrateSeries(targetTimes);
           solverTime = targetTimes.at(-1) ?? solverTime;
 
-          const initialRequestChanged =
-            !isManual &&
-            (!playingRef.current ||
-              directionRef.current !== requestedDirection ||
-              timeRateIndexRef.current !== requestedRateIndex);
-          if (initialRequestChanged) {
+          // A pending direct seek (story step, ISS or spacecraft focus) ends
+          // the current batch too, so it applies whatever the playback rate.
+          const playbackRequestChanged = (): boolean =>
+            directSeekTimeSecondsRef.current !== undefined ||
+            (!isManual &&
+              (!playingRef.current ||
+                directionRef.current !== requestedDirection ||
+                timeRateIndexRef.current !== requestedRateIndex));
+          if (playbackRequestChanged()) {
             await client.api.integrateTo(previousState.timeSeconds);
             solverTime = previousState.timeSeconds;
             resetMeasuredRate(previousState.timeSeconds);
@@ -1166,11 +1169,7 @@ export function App() {
             const pendingTrailStates: SimulationState[] = [];
 
             for (const [stateIndex, rawNextState] of nextStates.entries()) {
-              requestChanged =
-                !isManual &&
-                (!playingRef.current ||
-                  directionRef.current !== requestedDirection ||
-                  timeRateIndexRef.current !== requestedRateIndex);
+              requestChanged = playbackRequestChanged();
               if (requestChanged) {
                 break;
               }
