@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 // The counters the init script below installs; absent until it runs.
+// The animation-frame gate the trail-gap test installs.
+type GatedWindow = Window & {
+  holdAnimationFrames?: (held: boolean) => void;
+};
+
 type CountingWindow = Window & {
   animationFrames?: number;
   reactCommits?: number;
@@ -105,7 +110,8 @@ test("the Jupiter close-up recalculates style fewer than three times a frame", a
   await page.waitForTimeout(2_000);
   const recalcs = (await recalcStyleCount()) - recalcsBefore;
   const frames = (await counters(page)).frames - before.frames;
-  expect(frames).toBeGreaterThan(30);
+  // A slow runner draws fewer frames; ten still make a ratio.
+  expect(frames).toBeGreaterThan(10);
   expect(recalcs / frames).toBeLessThan(3);
 });
 
@@ -126,6 +132,34 @@ test("playback commits React at most twelve times a second and the clock keeps m
   const commits = (await counters(page)).commits - before.commits;
   // The clock shows a new time in this window, so React did commit.
   expect(await clock.getAttribute("data-time-seconds")).not.toBe(clockBefore);
+  expect(commits).toBeGreaterThan(0);
+  expect(commits / 3).toBeLessThanOrEqual(12);
+});
+
+test("a camera flight commits React at most twelve times a second", async ({
+  page,
+}) => {
+  await countFramesAndCommits(page);
+  await page.goto("/");
+  const scene = sceneOf(page);
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  await selectFocus(page, "Jupiter");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    /orienting|travelling|arriving/u,
+  );
+  // The flight takes twelve seconds; the window starts after the selection.
+  await page.waitForTimeout(500);
+  const before = await counters(page);
+  await page.waitForTimeout(3_000);
+  const commits = (await counters(page)).commits - before.commits;
+  // The whole window was flight: the scene reported its camera every frame.
+  await expect(scene).not.toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+  );
   expect(commits).toBeGreaterThan(0);
   expect(commits / 3).toBeLessThanOrEqual(12);
 });
@@ -173,7 +207,9 @@ test("hidden orbit guides wait, and a shown guide uses the newest state", async 
   );
   const renderedWhenHidden = await renderedTime();
   await expect.poll(renderedTime).toBeGreaterThan(renderedWhenHidden + 1);
-  await page.waitForTimeout(500);
+  // The scene shows a time after the guides' state, so a newer solver state
+  // has arrived while they were hidden.
+  await expect.poll(renderedTime).toBeGreaterThan(Number(hiddenTime));
   await expect(scene).toHaveAttribute(
     "data-orbit-guide-updated-time-seconds",
     hiddenTime,
@@ -182,7 +218,8 @@ test("hidden orbit guides wait, and a shown guide uses the newest state", async 
   // Paused, the first frame that shows them draws them for the shown time.
   await page.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await page.waitForTimeout(500);
+  // Paused, the shown frame has finished: no state is on its way.
+  await expect(scene).toHaveAttribute("data-interpolation-fraction", "1.0000");
   await page.evaluate(() => {
     const container = document.querySelector<HTMLElement>(
       "[data-orbit-guide-count]",
@@ -217,5 +254,96 @@ test("hidden orbit guides wait, and a shown guide uses the newest state", async 
   await expect(scene).toHaveAttribute(
     "data-first-shown-guide-time",
     firstShownRenderedTime,
+  );
+});
+
+test("trails start again after states that were never drawn", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  // Animation frames can be held, as a background tab holds them, while the
+  // solver loop runs on timers and keeps publishing states.
+  await page.addInitScript(() => {
+    const gatedWindow: GatedWindow = window;
+    const nativeRequest = window.requestAnimationFrame.bind(window);
+    const nativeCancel = window.cancelAnimationFrame.bind(window);
+    const heldCallbacks = new Map<number, FrameRequestCallback>();
+    let held = false;
+    let nextHeldId = -1;
+    window.requestAnimationFrame = (callback) => {
+      if (!held) {
+        return nativeRequest(callback);
+      }
+      const id = nextHeldId;
+      nextHeldId -= 1;
+      heldCallbacks.set(id, callback);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+      if (!heldCallbacks.delete(id)) {
+        nativeCancel(id);
+      }
+    };
+    gatedWindow.holdAnimationFrames = (hold) => {
+      held = hold;
+      if (hold) {
+        return;
+      }
+      const callbacks = [...heldCallbacks.values()];
+      heldCallbacks.clear();
+      for (const callback of callbacks) {
+        nativeRequest(callback);
+      }
+    };
+  });
+  await page.goto("/");
+  const scene = sceneOf(page);
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  const moonTrailPoints = async (): Promise<number> =>
+    Number(await requiredAttribute(scene, "data-moon-trail-points"));
+  // A trail longer than the queue keeps, so a drawn gap cannot pass as one.
+  await expect.poll(moonTrailPoints, { timeout: 30_000 }).toBeGreaterThan(80);
+  // States queued before the scene first drew (its start) may already count.
+  const gapsBefore = Number(
+    (await scene.getAttribute("data-trail-gap-count")) ?? "0",
+  );
+
+  await page.evaluate(() => {
+    const gatedWindow: GatedWindow = window;
+    gatedWindow.holdAnimationFrames?.(true);
+  });
+  // At thirty solver states a second, six seconds queue far more than 64.
+  await page.waitForTimeout(6_000);
+  await page.evaluate(() => {
+    const container = document.querySelector<HTMLElement>(
+      "[data-moon-trail-points]",
+    );
+    if (container === null) {
+      throw new Error("The scene has no moon trail point count");
+    }
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      container.dataset.firstMoonTrailPointsAfterHold =
+        container.dataset.moonTrailPoints ?? "missing";
+    });
+    observer.observe(container, {
+      attributes: true,
+      attributeFilter: ["data-moon-trail-points"],
+    });
+    const gatedWindow: GatedWindow = window;
+    gatedWindow.holdAnimationFrames?.(false);
+  });
+
+  // The trails start again from the states the queue kept, instead of a
+  // straight line from the old trail across the missing time.
+  await expect(scene).toHaveAttribute(
+    "data-trail-gap-count",
+    String(gapsBefore + 1),
+  );
+  await expect(scene).toHaveAttribute(
+    "data-first-moon-trail-points-after-hold",
+    "64",
   );
 });

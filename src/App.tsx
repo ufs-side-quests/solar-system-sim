@@ -101,9 +101,14 @@ import type {
   GravityWellMode,
   GravityWellScale,
 } from "./scene/gravity-potential";
-import { type SimulationFrame, type TrailStep } from "./scene/interpolation";
+import {
+  enqueueTrailSteps,
+  type SimulationFrame,
+  type TrailQueue,
+} from "./scene/interpolation";
 import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
 import type { ExposureMode } from "./scene/physical-lighting";
+import type { ExposureStatus } from "./scene/SolarSystemScene";
 import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
@@ -922,11 +927,12 @@ function formatAngularDiameter(degrees: number): string {
   return `${(arcminutes * 60).toLocaleString(undefined, { maximumFractionDigits: 2 })}″`;
 }
 
-// React shows the clock and the facts at most this often; the scene reads
-// every solver frame and displayed state from refs on each animation frame.
+// React shows the clock, the facts, the magnification and the exposure at
+// most this often; the scene reads every solver frame and displayed state
+// from refs on each animation frame, and reports its camera on each one.
 const REACT_PRESENTATION_INTERVAL_MS = 100;
-// Trail states wait here until the scene draws them. While the scene is not
-// mounted (the schematic map) nobody drains them, so only the newest are kept.
+// Trail states wait until the scene draws them. While nobody drains them (a
+// background tab, or the schematic map) only the newest are kept.
 const MAXIMUM_PENDING_TRAIL_STATES = 64;
 
 type PresentedSimulation = Readonly<{
@@ -934,25 +940,42 @@ type PresentedSimulation = Readonly<{
   state: SimulationState | undefined;
   // Achieved simulated seconds per second, measured by the playback loop.
   effectiveRate: number;
+  // The scene camera's magnification and exposure.
+  viewMagnification: number;
+  exposureStatus: ExposureStatus;
 }>;
 
 function useSimulationFrames(): Readonly<{
   presented: PresentedSimulation;
   frameRef: RefObject<SimulationFrame | undefined>;
   stateRef: RefObject<SimulationState | undefined>;
-  trailStatesRef: RefObject<TrailStep[]>;
+  trailQueueRef: RefObject<TrailQueue>;
   publishFrame: (frame: SimulationFrame) => void;
   reportEffectiveRate: (rate: number) => void;
+  reportViewMagnification: (
+    magnification: number,
+    presentNow?: boolean,
+  ) => void;
+  reportExposureStatus: (status: ExposureStatus) => void;
 }> {
+  const initialExposureStatus: ExposureStatus = {
+    ev: 0,
+    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
+    mode: "auto",
+  };
   const [presented, setPresented] = useState<PresentedSimulation>({
     frame: undefined,
     state: undefined,
     effectiveRate: 0,
+    viewMagnification: DEFAULT_CAMERA_ZOOM,
+    exposureStatus: initialExposureStatus,
   });
   const frameRef = useRef<SimulationFrame | undefined>(undefined);
   const effectiveRateRef = useRef(0);
+  const viewMagnificationRef = useRef(DEFAULT_CAMERA_ZOOM);
+  const exposureStatusRef = useRef(initialExposureStatus);
   const stateRef = useRef<SimulationState | undefined>(undefined);
-  const trailStatesRef = useRef<TrailStep[]>([]);
+  const trailQueueRef = useRef<TrailQueue>({ steps: [], dropped: false });
   const animationFrameRef = useRef(0);
   const presentTimerRef = useRef<number | undefined>(undefined);
   const lastPresentedAtRef = useRef(Number.NEGATIVE_INFINITY);
@@ -964,6 +987,8 @@ function useSimulationFrames(): Readonly<{
       frame: frameRef.current,
       state: stateRef.current,
       effectiveRate: effectiveRateRef.current,
+      viewMagnification: viewMagnificationRef.current,
+      exposureStatus: exposureStatusRef.current,
     });
   }, []);
   // The latest state always reaches React, at most one interval late.
@@ -994,17 +1019,14 @@ function useSimulationFrames(): Readonly<{
       frameRef.current = frame;
       cancelAnimationFrame(animationFrameRef.current);
       if (frame.end.timeSeconds !== previousFrame?.end.timeSeconds) {
-        const trailStates = trailStatesRef.current;
         const jumped = frame.transitionDurationMs <= 0;
-        trailStates.push(
-          ...(frame.trailStates ?? [frame.end]).map((state) => ({
+        enqueueTrailSteps(
+          trailQueueRef.current,
+          (frame.trailStates ?? [frame.end]).map((state) => ({
             state,
             jumped,
           })),
-        );
-        trailStates.splice(
-          0,
-          Math.max(0, trailStates.length - MAXIMUM_PENDING_TRAIL_STATES),
+          MAXIMUM_PENDING_TRAIL_STATES,
         );
       }
       if (
@@ -1038,13 +1060,34 @@ function useSimulationFrames(): Readonly<{
     },
     [schedulePresent],
   );
+  // A child's own request shows at once: the slider it moves reads it back.
+  const reportViewMagnification = useCallback(
+    (magnification: number, presentNow = false): void => {
+      viewMagnificationRef.current = magnification;
+      if (presentNow) {
+        present();
+      } else {
+        schedulePresent();
+      }
+    },
+    [present, schedulePresent],
+  );
+  const reportExposureStatus = useCallback(
+    (status: ExposureStatus): void => {
+      exposureStatusRef.current = status;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
   return {
     presented,
     frameRef,
     stateRef,
-    trailStatesRef,
+    trailQueueRef,
     publishFrame,
     reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
   };
 }
 
@@ -1053,12 +1096,20 @@ const DISCOVERY_TOAST_DURATION_MS = 6_000;
 export function App() {
   const audio = useInterfaceAudio();
   const {
-    presented: { frame, state, effectiveRate },
+    presented: {
+      frame,
+      state,
+      effectiveRate,
+      viewMagnification,
+      exposureStatus,
+    },
     frameRef,
     stateRef: displayedStateRef,
-    trailStatesRef,
+    trailQueueRef,
     publishFrame,
     reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
   } = useSimulationFrames();
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
@@ -1118,8 +1169,6 @@ export function App() {
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
-  const [viewMagnification, setViewMagnification] =
-    useState(DEFAULT_CAMERA_ZOOM);
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -1181,11 +1230,6 @@ export function App() {
     useState<VisualQuality>("photographic");
   const [exposureMode, setExposureMode] = useState<ExposureMode>("auto");
   const [manualExposureEv, setManualExposureEv] = useState(0);
-  const [exposureStatus, setExposureStatus] = useState({
-    ev: 0,
-    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
-    mode: "auto" as ExposureMode,
-  });
   const [immersiveMode, setImmersiveMode] = useState(false);
   const phoneLayout = usePhoneLayout();
   // On a phone the card opens short (name, size, Expand) so the sky stays in
@@ -2513,7 +2557,7 @@ export function App() {
     }
     tourCameraMovedRef.current = true;
     setCameraZoom(requested);
-    setViewMagnification(requested);
+    reportViewMagnification(requested, true);
   };
 
   const selectedTimeRate = TIME_RATES[timeRateIndex];
@@ -3332,7 +3376,7 @@ export function App() {
           <Suspense fallback={<p className="loading">Loading view...</p>}>
             <SolarSystemScene
               frameRef={frameRef}
-              trailStatesRef={trailStatesRef}
+              trailQueueRef={trailQueueRef}
               displayedStateRef={displayedStateRef}
               bodyVisibility={
                 viewMode === "reality" ? 0 : bodyVisibilityPercent / 100
@@ -3416,11 +3460,11 @@ export function App() {
               onOrientationChange={handleSceneOrientationChange}
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
-              onViewZoomChange={setViewMagnification}
+              onViewZoomChange={reportViewMagnification}
               onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
-              onExposureStatusChange={setExposureStatus}
+              onExposureStatusChange={reportExposureStatus}
             />
           </Suspense>
         )}

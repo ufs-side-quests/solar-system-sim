@@ -71,6 +71,25 @@ export type TrailStep = Readonly<{
   jumped: boolean;
 }>;
 
+// Trail steps wait here, oldest first, until the scene draws them. A queue
+// that had to drop steps nobody drew in time (a background tab, or the
+// schematic map) says so, and the trails start again: a line straight across
+// the missing time would show a path the planets never took.
+export type TrailQueue = { steps: TrailStep[]; dropped: boolean };
+
+export function enqueueTrailSteps(
+  queue: TrailQueue,
+  steps: readonly TrailStep[],
+  capacity: number,
+): void {
+  queue.steps.push(...steps);
+  const excess = queue.steps.length - capacity;
+  if (excess > 0) {
+    queue.steps.splice(0, excess);
+    queue.dropped = true;
+  }
+}
+
 export function interpolateSimulationFrame(
   frame: SimulationFrame,
   fraction: number,
