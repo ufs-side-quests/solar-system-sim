@@ -242,6 +242,18 @@ const SEMANTIC_ZOOM_LABELS: Readonly<Record<SemanticZoomLevel, string>> = {
   "moon-system": "Moon system",
   surface: "Surface detail",
 };
+// How many times wider the real Sun is than a body, from the sourced radii.
+function sunWidthRatio(bodyId: string): number {
+  const sun = majorBodySnapshot.bodies.find((body) => body.id === "sun");
+  const body = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (sun === undefined || body === undefined) {
+    throw new Error(`Sourced radius is missing for the Sun or ${bodyId}`);
+  }
+  return Math.round(sun.meanRadiusM / body.meanRadiusM);
+}
+
 const VIEW_MODE_OPTIONS = [
   {
     mode: "reality",
@@ -252,8 +264,7 @@ const VIEW_MODE_OPTIONS = [
   {
     mode: "orrery",
     label: "Orrery",
-    description:
-      "Physical positions with enlarged bodies and markers so the system remains readable.",
+    description: `Physical positions with enlarged bodies and markers so the system remains readable. Sizes are squeezed so small worlds stay visible. The real Sun is about ${String(sunWidthRatio("jupiter"))} times wider than Jupiter and ${String(sunWidthRatio("earth"))} times wider than Earth.`,
   },
   {
     mode: "schematic",

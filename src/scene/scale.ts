@@ -1,5 +1,6 @@
 import type { MajorBodyDefinition } from "../physics/solar-system";
 import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
+import { PARENT_BODY_ID } from "./body-facts";
 
 export const MINIMUM_RESOLVABLE_BODY_DIAMETER_CSS_PIXELS = 1;
 
@@ -44,35 +45,178 @@ export function displayedRadiusAu(
   );
 }
 
-export type DisplayNeighbour = {
-  readonly distanceAu: number;
-  // A natural body drawn with a radius, or undefined for a catalogue moon that
-  // is drawn as a point.
-  readonly body: MajorBodyDefinition | undefined;
-};
-
-// The factor, at most 1, on a body's readable radius that keeps it and each
-// neighbour within NEIGHBOUR_SEPARATION_FILL of their separation. Only natural
-// bodies are neighbours: spacecraft and fictional objects never limit a size.
-export function neighbourClearanceScale(
-  body: MajorBodyDefinition,
-  neighbours: readonly DisplayNeighbour[],
+// The largest factor on two readable radii that keeps the pair within
+// NEIGHBOUR_SEPARATION_FILL of their separation. A catalogue moon drawn as a
+// point has a readable radius of 0.
+export function pairClearanceScale(
+  ownEnhancedAu: number,
+  otherEnhancedAu: number,
+  distanceAu: number,
 ): number {
-  const ownRadiusAu = enhancedRadiusAu(body);
-  let scale = 1;
-  for (const neighbour of neighbours) {
-    if (!Number.isFinite(neighbour.distanceAu) || neighbour.distanceAu <= 0) {
-      throw new Error("Neighbour distance must be positive and finite");
-    }
-    const neighbourRadiusAu =
-      neighbour.body === undefined ? 0 : enhancedRadiusAu(neighbour.body);
-    scale = Math.min(
-      scale,
-      (NEIGHBOUR_SEPARATION_FILL * neighbour.distanceAu) /
-        (ownRadiusAu + neighbourRadiusAu),
-    );
+  if (!Number.isFinite(distanceAu) || distanceAu <= 0) {
+    throw new Error("Neighbour distance must be positive and finite");
   }
-  return scale;
+  return (
+    (NEIGHBOUR_SEPARATION_FILL * distanceAu) / (ownEnhancedAu + otherEnhancedAu)
+  );
+}
+
+export type OrreryPosition = Readonly<{ x: number; y: number; z: number }>;
+
+export type OrreryCatalogueMoon = Readonly<{ id: string; parentId: string }>;
+
+export type OrreryLayout = Readonly<{
+  // One factor, at most 1, on every readable radius. A shared factor keeps the
+  // true size order of everything drawn.
+  clearanceScale: number;
+  radiusAuById: ReadonlyMap<string, number>;
+  // Moons outside the focused system that would crowd an enlarged body, for
+  // example the Moon inside an enlarged Earth. They are not drawn.
+  hiddenIds: ReadonlySet<string>;
+}>;
+
+function distanceAu(a: OrreryPosition, b: OrreryPosition): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+function requiredPosition(
+  positions: ReadonlyMap<string, OrreryPosition>,
+  bodyId: string,
+): OrreryPosition {
+  const position = positions.get(bodyId);
+  if (position === undefined) {
+    throw new Error(`Scene position is missing body ${bodyId}`);
+  }
+  return position;
+}
+
+// Natural bodies form systems: the Sun, and each planet or dwarf planet with
+// its moons. The scale rule takes the Sun, every planet and dwarf planet, and
+// every moon of the open (focused) system; their pairs fill at most
+// NEIGHBOUR_SEPARATION_FILL of their separation. All bodies share the smallest
+// pair factor. A moon of any other system is hidden when it and an enlarged
+// body would fill more than that fraction. Spacecraft and fictional objects
+// never take part.
+export function orreryLayout(
+  bodies: readonly MajorBodyDefinition[],
+  catalogueMoons: readonly OrreryCatalogueMoon[],
+  positions: ReadonlyMap<string, OrreryPosition>,
+  openSystemId: string | undefined,
+  visibilityBoost: number,
+): OrreryLayout {
+  if (
+    openSystemId !== undefined &&
+    !bodies.some(
+      (body) =>
+        body.id === openSystemId &&
+        (body.type === "planet" || body.type === "dwarf-planet"),
+    )
+  ) {
+    throw new Error(`Open system ${openSystemId} is not a planet system`);
+  }
+  const isInOpenSystem = (body: MajorBodyDefinition): boolean => {
+    if (body.type !== "moon") {
+      return true;
+    }
+    const parentId = PARENT_BODY_ID[body.id];
+    if (parentId === undefined) {
+      throw new Error(`Moon ${body.id} has no parent body`);
+    }
+    return parentId === openSystemId;
+  };
+  const sized = bodies.filter(isInOpenSystem).map((body) => ({
+    enhancedAu: enhancedRadiusAu(body),
+    position: requiredPosition(positions, body.id),
+  }));
+  // A catalogue moon of another system cannot limit the scale, and one without
+  // a state is not drawn.
+  const openCatalogueMoonPositions: OrreryPosition[] = [];
+  for (const moon of catalogueMoons) {
+    const position = positions.get(moon.id);
+    if (moon.parentId === openSystemId && position !== undefined) {
+      openCatalogueMoonPositions.push(position);
+    }
+  }
+  let clearanceScale = 1;
+  for (const entry of sized) {
+    for (const other of sized) {
+      if (other !== entry) {
+        clearanceScale = Math.min(
+          clearanceScale,
+          pairClearanceScale(
+            entry.enhancedAu,
+            other.enhancedAu,
+            distanceAu(entry.position, other.position),
+          ),
+        );
+      }
+    }
+    for (const moonPosition of openCatalogueMoonPositions) {
+      clearanceScale = Math.min(
+        clearanceScale,
+        pairClearanceScale(
+          entry.enhancedAu,
+          0,
+          distanceAu(entry.position, moonPosition),
+        ),
+      );
+    }
+  }
+
+  const drawn = bodies.map((body) => {
+    const radiusAu = nonOverlappingDisplayedRadiusAu(
+      body,
+      visibilityBoost,
+      clearanceScale,
+    );
+    return {
+      body,
+      position: requiredPosition(positions, body.id),
+      radiusAu,
+      enlarged: radiusAu > body.meanRadiusM / ASTRONOMICAL_UNIT_M,
+    };
+  });
+  // True radii never need hiding. A pair with an enlarged body may fill at
+  // most NEIGHBOUR_SEPARATION_FILL of its separation, which also leaves room
+  // for the equatorial bulge of the giant planets.
+  const crowdsAnotherBody = (
+    id: string,
+    position: OrreryPosition,
+    radiusAu: number,
+    enlarged: boolean,
+  ): boolean =>
+    drawn.some((other) => {
+      const reachAu = (radiusAu + other.radiusAu) / NEIGHBOUR_SEPARATION_FILL;
+      // Most pairs are far apart on one axis, which skips the square root.
+      return (
+        other.body.id !== id &&
+        (enlarged || other.enlarged) &&
+        Math.abs(position.x - other.position.x) < reachAu &&
+        distanceAu(position, other.position) < reachAu
+      );
+    });
+  const radiusAuById = new Map<string, number>();
+  const hiddenIds = new Set<string>();
+  for (const { body, position, radiusAu, enlarged } of drawn) {
+    radiusAuById.set(body.id, radiusAu);
+    if (
+      !isInOpenSystem(body) &&
+      crowdsAnotherBody(body.id, position, radiusAu, enlarged)
+    ) {
+      hiddenIds.add(body.id);
+    }
+  }
+  for (const moon of catalogueMoons) {
+    const position = positions.get(moon.id);
+    if (
+      moon.parentId !== openSystemId &&
+      position !== undefined &&
+      crowdsAnotherBody(moon.id, position, 0, false)
+    ) {
+      hiddenIds.add(moon.id);
+    }
+  }
+  return { clearanceScale, radiusAuById, hiddenIds };
 }
 
 export function nonOverlappingDisplayedRadiusAu(
