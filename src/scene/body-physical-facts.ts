@@ -457,6 +457,31 @@ export function formatWidthComparedToEarth(
   return `Earth is about ${roundedRatio(1 / ratio)} times wider`;
 }
 
+/** Earth's sourced mean radius, the yardstick for every "compared with Earth" line. */
+export const EARTH_MEAN_RADIUS_M = (() => {
+  const earth = majorBodySnapshot.bodies.find((body) => body.id === "earth");
+  if (earth === undefined) {
+    throw new Error("Major-body snapshot is missing Earth");
+  }
+  return earth.meanRadiusM;
+})();
+
+/** The mean diameter in whole kilometres, for example "12,742 km". */
+export function formatDiameterKm(meanRadiusM: number): string {
+  return `${rounded((meanRadiusM * 2) / 1_000, 0)} km`;
+}
+
+/** The selected-body "Size" line: Earth gives its width, others compare with it. */
+export function formatBodySize(
+  bodyId: string,
+  meanRadiusM: number,
+  earthMeanRadiusM: number,
+): string {
+  return bodyId === "earth"
+    ? `Our home: ${formatDiameterKm(meanRadiusM)} wide`
+    : formatWidthComparedToEarth(meanRadiusM, earthMeanRadiusM);
+}
+
 function counted(value: number, fractionDigits: number, unit: string): string {
   const text = rounded(value, fractionDigits);
   return `${text} ${text === "1" ? unit : `${unit}s`}`;

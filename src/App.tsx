@@ -58,12 +58,13 @@ import {
 import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
+  EARTH_MEAN_RADIUS_M,
   formatMassKg,
   formatLiveOrbitalPeriod,
   formatSourcedOrbitalPeriod,
   formatSpeedWithJetComparison,
   formatSpinPeriod,
-  formatWidthComparedToEarth,
+  formatBodySize,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
 } from "./scene/body-physical-facts";
@@ -142,6 +143,7 @@ import {
 import { fictionalModelAssetByBodyId } from "./scene/fictional-model-assets";
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
+import { isInSizeLineup, SizeLineup } from "./scene/SizeLineup";
 import {
   surfaceObserverBodies,
   surfaceObserverFrame,
@@ -705,14 +707,6 @@ function formatSimulationOffset(seconds: number): string {
   return `${sign}${(absoluteSeconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
 }
 
-const EARTH_MEAN_RADIUS_M = (() => {
-  const earth = majorBodySnapshot.bodies.find((body) => body.id === "earth");
-  if (earth === undefined) {
-    throw new Error("Major-body snapshot is missing Earth");
-  }
-  return earth.meanRadiusM;
-})();
-
 /** "the Sun" reads as a name; every other parent keeps its own name. */
 function parentPhrase(parent: MajorBodyDefinition): string {
   return parent.id === "sun" ? "the Sun" : parent.name;
@@ -804,6 +798,7 @@ export function App() {
   const [bodyVisibilityPercent, setBodyVisibilityPercent] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>("reality");
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [sizeLineupOpen, setSizeLineupOpen] = useState(false);
   const [displayPanelTab, setDisplayPanelTab] =
     useState<DisplayPanelTab>("view");
   const [focusBodyId, setFocusBodyId] = useState("");
@@ -2307,13 +2302,11 @@ export function App() {
     const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
     return {
       name: definition.name,
-      size:
-        definition.id === "earth"
-          ? `Our home: ${diameterKm.toLocaleString("en-GB", { maximumFractionDigits: 0 })} km wide`
-          : formatWidthComparedToEarth(
-              definition.meanRadiusM,
-              EARTH_MEAN_RADIUS_M,
-            ),
+      size: formatBodySize(
+        definition.id,
+        definition.meanRadiusM,
+        EARTH_MEAN_RADIUS_M,
+      ),
       orbitLabel:
         parentDefinition === undefined
           ? undefined
@@ -3089,6 +3082,17 @@ export function App() {
           </aside>
         )}
 
+        {sizeLineupOpen ? (
+          <SizeLineup
+            selectedBodyId={selectedBodyId}
+            onSelectBody={(bodyId) => {
+              setSurfaceObserverEnabled(false);
+              navigateToFocus(bodyId);
+            }}
+            onClose={() => setSizeLineupOpen(false)}
+          />
+        ) : null}
+
         {selectedBodyDetail === undefined ||
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
@@ -3209,6 +3213,16 @@ export function App() {
                   <span>
                     <small>Size</small>
                     {selectedBodyDetail.size}
+                    {isInSizeLineup(selectedBodyId) ? (
+                      <button
+                        type="button"
+                        className="compare-sizes-button"
+                        aria-haspopup="dialog"
+                        onClick={() => setSizeLineupOpen(true)}
+                      >
+                        Compare sizes
+                      </button>
+                    ) : null}
                   </span>
                 )}
                 {selectedBodyDetail.orbitLabel === undefined ||
