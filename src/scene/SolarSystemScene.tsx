@@ -4264,7 +4264,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       } else {
         camera.setViewOffset(width, height, -lensShiftPx, 0, width, height);
       }
-      container.dataset["lensShiftPx"] = lensShiftPx.toFixed(1);
+      setData(container, "lensShiftPx", lensShiftPx.toFixed(1));
     };
     const resize = (width: number, height: number): void => {
       // The render loop fails when this is not a positive size.
@@ -5635,19 +5635,17 @@ float saturnRingTransmission(vec3 surfacePosition) {
       frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
       // Surface view keeps its deliberate framing. A drag holds the shift
       // still, so the sky does not slide under the child's finger.
-      if (canvasPresses.size === 0) {
-        const lensWidth = container.clientWidth;
-        const lensHeight = container.clientHeight;
+      if (canvasPresses.size === 0 && viewportWidth > 0 && viewportHeight > 0) {
         const nextLensShiftPx = easeLensShiftPx(
           lensShiftPx,
           surfaceObserverRef.current === null
-            ? lensShiftTargetPx(leftPanelInsetPxRef.current, lensWidth)
+            ? lensShiftTargetPx(leftPanelInsetPxRef.current, viewportWidth)
             : 0,
           frameIntervalMs,
         );
-        if (nextLensShiftPx !== lensShiftPx && lensWidth > 0 && lensHeight > 0) {
+        if (nextLensShiftPx !== lensShiftPx) {
           lensShiftPx = nextLensShiftPx;
-          applyLensShift(lensWidth, lensHeight);
+          applyLensShift(viewportWidth, viewportHeight);
         }
       }
       const activeVisualQuality = visualQualityRef.current;
