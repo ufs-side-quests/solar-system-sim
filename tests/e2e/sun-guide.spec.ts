@@ -69,7 +69,9 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     name: /Physics-driven Solar System/u,
   });
   const focus = page.getByRole("combobox", { name: "Focus" });
-  const sunLabel = page.getByRole("button", { name: "Focus Sun" });
+  const sunLabel = page
+    .getByRole("button", { name: "Sun", exact: true })
+    .and(page.locator(".sun-guide-label"));
   const sunLine = page.locator(".sun-guide-line");
 
   await expect(scene).toHaveAttribute("data-sun-guide-visible", "true", {
@@ -204,7 +206,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
   await sunLabel.click();
   await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
   await expect(scene).toHaveAttribute("data-selected-body", "sun");
-  await sunLabel.dblclick();
+  await sunLabel.click();
   await expect(scene).toHaveAttribute("data-focus-body", "sun");
   await waitForCameraJourney(scene, sequenceBeforeSun);
   await expect(scene).toHaveAttribute("data-sun-guide-line-visible", "false");
@@ -240,7 +242,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     "data-selected-body",
     firstPlanetId ?? "",
   );
-  await firstPlanetLabel.dblclick();
+  await firstPlanetLabel.click();
   await expect(scene).toHaveAttribute("data-focus-body", firstPlanetId ?? "");
   await waitForCameraJourney(scene, sequenceBeforePlanet);
 });

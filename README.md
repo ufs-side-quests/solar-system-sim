@@ -34,7 +34,7 @@ The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, ove
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, and a guided scale tour.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
-Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a map double-click uses the same orient, coast, and decelerate camera journey as every other focus change.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -221,8 +221,9 @@ The initial Reality overview uses physical scale, so labels identify bodies whos
 Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
-Click any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
-Use the explicit Focus action or double-click the rendered object or label to travel to it and fit its default view.
+Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
+The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
+Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.

@@ -67,7 +67,7 @@ test("hints at hidden objects near Callisto and celebrates the first find", asyn
   await focusCallisto(page, scene);
 
   const unknownLabel = page
-    .getByRole("button", { name: "Focus ? Hidden surprise" })
+    .getByRole("button", { name: "? Hidden surprise", exact: true })
     .filter({ visible: true })
     .first();
   // The Death Star laps Callisto in about 3 hours, so a few steps bring at
@@ -133,7 +133,7 @@ test("hints at hidden objects near Callisto and celebrates the first find", asyn
   await page.reload();
   await focusCallisto(page, await pauseScene(page));
   await expect(egg).toHaveText(realName);
-  await expect(egg).toHaveAttribute("aria-label", `Focus ${realName}`);
+  await expect(egg).toHaveAccessibleName(realName);
   expect(pageErrors).toEqual([]);
 });
 

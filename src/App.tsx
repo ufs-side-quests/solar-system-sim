@@ -1582,7 +1582,7 @@ export function App() {
     setControlPanelOpen(false);
   };
 
-  const focusApolloLandingSite = (siteId: string): void => {
+  const focusApolloLandingSite = useCallback((siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
       throw new Error(`Apollo landing site ${siteId} is unavailable`);
     }
@@ -1604,7 +1604,20 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-  };
+  }, []);
+
+  // A second press on a selected label flies there; for an Apollo site that
+  // is the card's "Show on Moon".
+  const handleSceneFocusBody = useCallback(
+    (bodyId: string): void => {
+      if (isApolloLandingSiteId(bodyId)) {
+        focusApolloLandingSite(bodyId);
+        return;
+      }
+      navigateToFocus(bodyId);
+    },
+    [focusApolloLandingSite, navigateToFocus],
+  );
 
   const enterApolloLandingSiteObserver = (siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
@@ -2710,7 +2723,7 @@ export function App() {
               eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
               foundEasterEggIds={foundEasterEggIds}
               onSelectBody={handleSceneBodySelection}
-              onFocusBody={navigateToFocus}
+              onFocusBody={handleSceneFocusBody}
               onOrientationChange={handleSceneOrientationChange}
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
@@ -2780,6 +2793,16 @@ export function App() {
             </button>
           </div>
         </nav>
+
+        <p className="visually-hidden" aria-live="polite">
+          {selectedBodyDetail === undefined ||
+          activeTourStep !== undefined ||
+          surfaceObserverEnabled ||
+          selectedBodyId === focusBodyId ||
+          selectedBodyId === apolloInspectionSiteId
+            ? null
+            : `${selectedBodyDetail.name} selected. Select again to fly there.`}
+        </p>
 
         <p className="discovery-toast" role="status">
           {discoveredEasterEggId === null

@@ -197,7 +197,10 @@ test("renders and focuses the fictional Jovian monolith at true scale", async ({
     "true",
   );
   await expect(
-    page.getByRole("button", { name: "Focus Jovian Monolith (fictional)" }),
+    page.getByRole("button", {
+      name: "Jovian Monolith (fictional)",
+      exact: true,
+    }),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("jovian-monolith.png"),

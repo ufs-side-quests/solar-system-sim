@@ -328,6 +328,9 @@ const LABEL_HALF_HEIGHT_PX = 9;
 // A press on the canvas that moves no farther than this is a tap: it selects
 // the body under it, and during a camera flight it keeps the flight.
 const TAP_SLOP_PX = 8;
+// Every body label names its body; this hint describes the selected one.
+const LABEL_TITLE = "Select to see facts, select again to fly there";
+const FLY_HINT_ID = "body-label-fly-hint";
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
@@ -854,6 +857,39 @@ export function SolarSystemScene({
     const labelLayer = document.createElement("div");
     labelLayer.className = "body-label-layer";
     container.append(labelLayer);
+    const flyHint = document.createElement("span");
+    flyHint.id = FLY_HINT_ID;
+    flyHint.hidden = true;
+    flyHint.textContent = "Select again to fly there.";
+    labelLayer.append(flyHint);
+    // An Apollo site is "flown to" once the Moon shows it; any other body once
+    // it is the camera focus.
+    const isFlownTo = (bodyId: string): boolean =>
+      isApolloLandingSiteId(bodyId)
+        ? apolloInspectionSiteIdRef.current === bodyId
+        : focusBodyIdRef.current === bodyId;
+    // One gesture for every label and canvas pick, so a tap, a click and the
+    // Enter key all work alike: the first press selects the body and shows its
+    // facts; a press on the selected body flies there.
+    const pickBody = (bodyId: string): void => {
+      if (selectedBodyIdRef.current === bodyId && !isFlownTo(bodyId)) {
+        onFocusBody(bodyId);
+        return;
+      }
+      onSelectBody(bodyId);
+    };
+    const showLabelSelection = (label: HTMLElement, bodyId: string): void => {
+      const selected = selectedBodyIdRef.current === bodyId;
+      const flownTo = isFlownTo(bodyId);
+      label.classList.toggle("is-selected", selected);
+      label.classList.toggle("is-focused", flownTo);
+      label.setAttribute("aria-pressed", String(selected));
+      if (selected && !flownTo) {
+        label.setAttribute("aria-describedby", FLY_HINT_ID);
+      } else {
+        label.removeAttribute("aria-describedby");
+      }
+    };
     const cameraJourney = document.createElement("div");
     cameraJourney.className = "camera-journey";
     cameraJourney.setAttribute("aria-live", "polite");
@@ -878,13 +914,7 @@ export function SolarSystemScene({
     focusedKnownMoonLabel.addEventListener("click", () => {
       const bodyId = focusedKnownMoonLabel.dataset["bodyId"];
       if (bodyId !== undefined) {
-        onSelectBody(bodyId);
-      }
-    });
-    focusedKnownMoonLabel.addEventListener("dblclick", () => {
-      const bodyId = focusedKnownMoonLabel.dataset["bodyId"];
-      if (bodyId !== undefined) {
-        onFocusBody(bodyId);
+        pickBody(bodyId);
       }
     });
     labelLayer.append(focusedKnownMoonLabel);
@@ -893,10 +923,8 @@ export function SolarSystemScene({
     issLabel.className = "body-label";
     issLabel.textContent = "International Space Station";
     issLabel.dataset["bodyId"] = ISS_BODY_ID;
-    issLabel.setAttribute("aria-label", "Focus International Space Station");
-    issLabel.title = "Click to select; double-click to focus";
-    issLabel.addEventListener("click", () => onSelectBody(ISS_BODY_ID));
-    issLabel.addEventListener("dblclick", () => onFocusBody(ISS_BODY_ID));
+    issLabel.title = LABEL_TITLE;
+    issLabel.addEventListener("click", () => pickBody(ISS_BODY_ID));
     issLabel.hidden = true;
     labelLayer.append(issLabel);
     const issMarker = document.createElement("span");
@@ -911,10 +939,8 @@ export function SolarSystemScene({
       label.className = "body-label";
       label.textContent = probe.name;
       label.dataset["bodyId"] = probe.id;
-      label.setAttribute("aria-label", `Focus ${probe.name}`);
-      label.title = "Click to select; double-click to focus";
-      label.addEventListener("click", () => onSelectBody(probe.id));
-      label.addEventListener("dblclick", () => onFocusBody(probe.id));
+      label.title = LABEL_TITLE;
+      label.addEventListener("click", () => pickBody(probe.id));
       label.hidden = true;
       labelLayer.append(label);
       voyagerLabels.set(probe.id, label);
@@ -932,10 +958,8 @@ export function SolarSystemScene({
       label.className = "body-label";
       label.textContent = spacecraft.name;
       label.dataset["bodyId"] = spacecraft.id;
-      label.setAttribute("aria-label", `Focus ${spacecraft.name}`);
-      label.title = "Click to select; double-click to focus";
-      label.addEventListener("click", () => onSelectBody(spacecraft.id));
-      label.addEventListener("dblclick", () => onFocusBody(spacecraft.id));
+      label.title = LABEL_TITLE;
+      label.addEventListener("click", () => pickBody(spacecraft.id));
       label.hidden = true;
       labelLayer.append(label);
       operationalSpacecraftLabels.set(spacecraft.id, label);
@@ -954,10 +978,10 @@ export function SolarSystemScene({
       label.dataset["bodyId"] = site.id;
       label.setAttribute(
         "aria-label",
-        `Select ${site.mission} landing site at ${site.siteName}`,
+        `${site.mission} landing site at ${site.siteName}`,
       );
-      label.title = `${site.siteName} · click for mission details`;
-      label.addEventListener("click", () => onSelectBody(site.id));
+      label.title = `${site.siteName} · select for mission details, select again to show it on the Moon`;
+      label.addEventListener("click", () => pickBody(site.id));
       label.hidden = true;
       labelLayer.append(label);
       apolloSiteLabels.set(site.id, label);
@@ -1089,10 +1113,8 @@ export function SolarSystemScene({
     const sunGuideLabel = document.createElement("button");
     sunGuideLabel.type = "button";
     sunGuideLabel.className = "wayfinder-label sun-guide-label";
-    sunGuideLabel.setAttribute("aria-label", "Focus Sun");
-    sunGuideLabel.title = "Click to select; double-click to focus";
-    sunGuideLabel.addEventListener("click", () => onSelectBody("sun"));
-    sunGuideLabel.addEventListener("dblclick", () => onFocusBody("sun"));
+    sunGuideLabel.title = LABEL_TITLE;
+    sunGuideLabel.addEventListener("click", () => pickBody("sun"));
     sunGuideLabel.hidden = true;
     container.append(sunGuideLabel);
     const planetWayfinderVisuals = Array.from({ length: 2 }, (_, index) => {
@@ -1123,8 +1145,7 @@ export function SolarSystemScene({
         }
         return targetBodyId;
       };
-      label.addEventListener("click", () => onSelectBody(labelBodyId()));
-      label.addEventListener("dblclick", () => onFocusBody(labelBodyId()));
+      label.addEventListener("click", () => pickBody(labelBodyId()));
       label.hidden = true;
       container.append(label);
       return { line, endpoint, label };
@@ -1529,7 +1550,6 @@ reflectedLight.directSpecular *= solarTransmission;`,
       const text = found ? name : HIDDEN_SURPRISE_LABEL;
       if (label.textContent !== text) {
         label.textContent = text;
-        label.setAttribute("aria-label", `Focus ${text}`);
         label.classList.toggle("is-hidden-surprise", !found);
       }
     };
@@ -1558,13 +1578,9 @@ reflectedLight.directSpecular *= solarTransmission;`,
     monolithLabel.className = "body-label";
     monolithLabel.textContent = JOVIAN_MONOLITH_NAME;
     monolithLabel.dataset["bodyId"] = JOVIAN_MONOLITH_BODY_ID;
-    monolithLabel.setAttribute("aria-label", `Focus ${JOVIAN_MONOLITH_NAME}`);
-    monolithLabel.title = "Click to select; double-click to focus";
+    monolithLabel.title = LABEL_TITLE;
     monolithLabel.addEventListener("click", () =>
-      onSelectBody(JOVIAN_MONOLITH_BODY_ID),
-    );
-    monolithLabel.addEventListener("dblclick", () =>
-      onFocusBody(JOVIAN_MONOLITH_BODY_ID),
+      pickBody(JOVIAN_MONOLITH_BODY_ID),
     );
     monolithLabel.hidden = true;
     labelLayer.append(monolithLabel);
@@ -1593,13 +1609,9 @@ reflectedLight.directSpecular *= solarTransmission;`,
     discoveryOneLabel.className = "body-label fictional-object-label";
     discoveryOneLabel.textContent = DISCOVERY_ONE_NAME;
     discoveryOneLabel.dataset["bodyId"] = DISCOVERY_ONE_BODY_ID;
-    discoveryOneLabel.setAttribute("aria-label", `Focus ${DISCOVERY_ONE_NAME}`);
-    discoveryOneLabel.title = "Click to select; double-click to focus";
+    discoveryOneLabel.title = LABEL_TITLE;
     discoveryOneLabel.addEventListener("click", () =>
-      onSelectBody(DISCOVERY_ONE_BODY_ID),
-    );
-    discoveryOneLabel.addEventListener("dblclick", () =>
-      onFocusBody(DISCOVERY_ONE_BODY_ID),
+      pickBody(DISCOVERY_ONE_BODY_ID),
     );
     discoveryOneLabel.hidden = true;
     labelLayer.append(discoveryOneLabel);
@@ -1660,10 +1672,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.className = "body-label fictional-object-label";
       label.textContent = orbiter.name;
       label.dataset["bodyId"] = orbiter.id;
-      label.setAttribute("aria-label", `Focus ${orbiter.name}`);
-      label.title = "Click to select; double-click to focus";
-      label.addEventListener("click", () => onSelectBody(orbiter.id));
-      label.addEventListener("dblclick", () => onFocusBody(orbiter.id));
+      label.title = LABEL_TITLE;
+      label.addEventListener("click", () => pickBody(orbiter.id));
       label.hidden = true;
       labelLayer.append(label);
       fictionalOrbiterLabels.set(orbiter.id, label);
@@ -1693,10 +1703,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.className = "body-label fictional-object-label";
       label.textContent = object.name;
       label.dataset["bodyId"] = object.id;
-      label.setAttribute("aria-label", `Focus ${object.name}`);
-      label.title = "Click to select; double-click to focus";
-      label.addEventListener("click", () => onSelectBody(object.id));
-      label.addEventListener("dblclick", () => onFocusBody(object.id));
+      label.title = LABEL_TITLE;
+      label.addEventListener("click", () => pickBody(object.id));
       label.hidden = true;
       labelLayer.append(label);
       deepSpaceNineLabels.set(object.id, label);
@@ -2315,10 +2323,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.className = "body-label";
       label.textContent = body.name;
       label.dataset["bodyId"] = body.id;
-      label.setAttribute("aria-label", `Focus ${body.name}`);
-      label.title = "Click to select; double-click to focus";
-      label.addEventListener("click", () => onSelectBody(body.id));
-      label.addEventListener("dblclick", () => onFocusBody(body.id));
+      label.title = LABEL_TITLE;
+      label.addEventListener("click", () => pickBody(body.id));
       label.dataset["surfaceAssetState"] =
         body.type === "star"
           ? "procedural"
@@ -3334,7 +3340,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const hit = navigationHitAtPointer(event);
       if (hit === undefined) return;
       navigationDestinationSelect.value = hit.bodyId;
-      onSelectBody(hit.bodyId);
+      pickBody(hit.bodyId);
     };
     const travelToNavigationDestination = (): void => {
       const bodyId = navigationDestinationSelect.value;
@@ -3342,12 +3348,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
         throw new Error(`Navigation destination ${bodyId} is unavailable`);
       }
       onFocusBody(bodyId);
-    };
-    const handleNavigationDoubleClick = (event: MouseEvent): void => {
-      const hit = navigationHitAtPointer(event);
-      if (hit === undefined) return;
-      navigationDestinationSelect.value = hit.bodyId;
-      onFocusBody(hit.bodyId);
     };
     const handleNavigationDestinationChange = (): void => {
       const bodyId = navigationDestinationSelect.value;
@@ -3362,10 +3362,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
     );
     navigationMapCanvas.addEventListener("pointerleave", hideNavigationTooltip);
     navigationMapCanvas.addEventListener("click", handleNavigationClick);
-    navigationMapCanvas.addEventListener(
-      "dblclick",
-      handleNavigationDoubleClick,
-    );
     navigationDestinationSelect.addEventListener(
       "change",
       handleNavigationDestinationChange,
@@ -3674,7 +3670,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (!selectionPointerMoved) {
           const bodyId = bodyIdAtPointer(event);
           if (bodyId !== undefined) {
-            onSelectBody(bodyId);
+            pickBody(bodyId);
           }
         }
         selectionPointerId = undefined;
@@ -3705,15 +3701,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
     };
 
-    const handleDoubleClick = (event: MouseEvent): void => {
+    // A double-click on a body is two picks; on the ground it resets the look.
+    const handleDoubleClick = (): void => {
       if (surfaceObserverRef.current !== null) {
         surfaceFreeLook = false;
         container.dataset["surfaceFreeLook"] = "false";
-        return;
-      }
-      const bodyId = bodyIdAtPointer(event);
-      if (bodyId !== undefined) {
-        onFocusBody(bodyId);
       }
     };
     const handlePointerLeave = (): void => {
@@ -7631,23 +7623,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
               : "";
             const locationLabel = location === "behind" ? " behind view" : "";
             visual.label.textContent = `${targetDefinition.name}${locationLabel}${distanceLabel}`;
-            visual.label.setAttribute(
-              "aria-label",
-              `Focus ${targetDefinition.name}`,
-            );
-            visual.label.title = "Click to select; double-click to focus";
+            visual.label.setAttribute("aria-label", targetDefinition.name);
+            visual.label.title = LABEL_TITLE;
             const previousTargetBodyId = visual.label.dataset["targetBodyId"];
             const previousLocation = visual.label.dataset["location"];
             visual.label.dataset["targetBodyId"] = targetBodyId;
             visual.label.dataset["distanceAu"] = distanceAu.toFixed(8);
             visual.label.dataset["location"] = location;
-            const targetIsSelected = targetBodyId === selectedBodyIdRef.current;
-            visual.label.classList.toggle("is-selected", targetIsSelected);
-            visual.label.classList.toggle(
-              "is-focused",
-              targetBodyId === focusBodyIdRef.current,
-            );
-            visual.label.setAttribute("aria-pressed", String(targetIsSelected));
+            showLabelSelection(visual.label, targetBodyId);
             visual.label.hidden = false;
             const labelWidth = visual.label.getBoundingClientRect().width;
             if (labelWidth <= 0) {
@@ -8076,19 +8059,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         }
         label.hidden = !labelVisible;
         label.classList.toggle("is-bracket", viewModeRef.current === "orrery");
-        label.classList.toggle(
-          "is-selected",
-          body.id === selectedBodyIdRef.current,
-        );
-        label.classList.toggle(
-          "is-focused",
-          body.id === focusBodyIdRef.current,
-        );
+        showLabelSelection(label, body.id);
         label.classList.toggle("is-camera-target", isCameraTarget);
-        label.setAttribute(
-          "aria-pressed",
-          String(body.id === selectedBodyIdRef.current),
-        );
         const leaderX = projectedLabelX - labelX;
         const leaderY = projectedLabelY - labelY;
         const leaderLength = Math.hypot(leaderX, leaderY);
@@ -8165,18 +8137,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           JOVIAN_MONOLITH_NAME,
         );
         monolithLabel.hidden = !labelVisible;
-        monolithLabel.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID,
-        );
-        monolithLabel.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID,
-        );
-        monolithLabel.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID),
-        );
+        showLabelSelection(monolithLabel, JOVIAN_MONOLITH_BODY_ID);
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
         monolithLabel.dataset["screenX"] = screenX.toFixed(3);
@@ -8245,18 +8206,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           DISCOVERY_ONE_NAME,
         );
         discoveryOneLabel.hidden = !labelVisible;
-        discoveryOneLabel.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID,
-        );
-        discoveryOneLabel.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID,
-        );
-        discoveryOneLabel.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID),
-        );
+        showLabelSelection(discoveryOneLabel, DISCOVERY_ONE_BODY_ID);
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
         if (labelVisible) {
@@ -8339,18 +8289,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             easterEggHintVisible(orbiter.id, position));
         nameEasterEggLabel(label, orbiter.id, orbiter.name);
         label.hidden = !labelVisible;
-        label.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === orbiter.id,
-        );
-        label.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === orbiter.id,
-        );
-        label.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === orbiter.id),
-        );
+        showLabelSelection(label, orbiter.id);
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
         const datasetPrefix = orbiter.id.replaceAll("-", "");
@@ -8427,18 +8366,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             easterEggHintVisible(object.id, position));
         nameEasterEggLabel(label, object.id, object.name);
         label.hidden = !labelVisible;
-        label.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === object.id,
-        );
-        label.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === object.id,
-        );
-        label.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === object.id),
-        );
+        showLabelSelection(label, object.id);
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
         if (labelVisible) {
@@ -8504,18 +8432,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           "is-selected",
           selectedBodyIdRef.current === ISS_BODY_ID,
         );
-        issLabel.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === ISS_BODY_ID),
-        );
-        issLabel.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === ISS_BODY_ID,
-        );
-        issLabel.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === ISS_BODY_ID,
-        );
+        showLabelSelection(issLabel, ISS_BODY_ID);
         const screenX = ((projected.x + 1) * container.clientWidth) / 2;
         const screenY = ((-projected.y + 1) * container.clientHeight) / 2;
         if (!issLabel.hidden) {
@@ -8598,18 +8515,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(probe.id));
         label.hidden = !labelVisible;
-        label.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === probe.id,
-        );
-        label.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === probe.id),
-        );
-        label.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === probe.id,
-        );
+        showLabelSelection(label, probe.id);
         const markerVisible =
           viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
         marker.hidden = !markerVisible;
@@ -8694,18 +8600,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           nameEasterEggLabel(label, ROADSTER_BODY_ID, spacecraft.name);
         }
         label.hidden = !labelVisible;
-        label.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === spacecraft.id,
-        );
-        label.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === spacecraft.id),
-        );
-        label.classList.toggle(
-          "is-focused",
-          focusBodyIdRef.current === spacecraft.id,
-        );
+        showLabelSelection(label, spacecraft.id);
         const markerVisible =
           viewModeRef.current === "orrery" && layerVisible && inCameraFrustum;
         marker.hidden = !markerVisible;
@@ -8781,14 +8676,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           ) > 0;
         const visible = inCameraFrustum && facingCamera;
         label.hidden = !visible;
-        label.classList.toggle(
-          "is-selected",
-          selectedBodyIdRef.current === site.id,
-        );
-        label.setAttribute(
-          "aria-pressed",
-          String(selectedBodyIdRef.current === site.id),
-        );
+        showLabelSelection(label, site.id);
         if (visible) {
           label.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
           visibleLabelCount += 1;
@@ -8832,23 +8720,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (visible) {
           focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
           focusedKnownMoonLabel.dataset["bodyId"] = focusedKnownSatellite.id;
-          focusedKnownMoonLabel.setAttribute(
-            "aria-label",
-            `Focus ${focusedKnownSatellite.name}`,
-          );
-          focusedKnownMoonLabel.title =
-            "Click to select; double-click to focus";
-          const focusedMoonIsSelected =
-            selectedBodyIdRef.current === focusedKnownSatellite.id;
-          focusedKnownMoonLabel.setAttribute(
-            "aria-pressed",
-            String(focusedMoonIsSelected),
-          );
-          focusedKnownMoonLabel.classList.toggle(
-            "is-selected",
-            focusedMoonIsSelected,
-          );
-          focusedKnownMoonLabel.classList.add("is-focused");
+          focusedKnownMoonLabel.title = LABEL_TITLE;
+          showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
           focusedKnownMoonLabel.style.transform = `translate(${String(((projected.x + 1) * container.clientWidth) / 2)}px, ${String(((-projected.y + 1) * container.clientHeight) / 2)}px)`;
           visibleLabelCount += 1;
         }
@@ -9021,10 +8894,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
         hideNavigationTooltip,
       );
       navigationMapCanvas.removeEventListener("click", handleNavigationClick);
-      navigationMapCanvas.removeEventListener(
-        "dblclick",
-        handleNavigationDoubleClick,
-      );
       navigationDestinationSelect.removeEventListener(
         "change",
         handleNavigationDestinationChange,
