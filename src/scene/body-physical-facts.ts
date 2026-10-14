@@ -1,3 +1,7 @@
+import {
+  ASTRONOMICAL_UNIT_M,
+  SPEED_OF_LIGHT_MPS,
+} from "../physics/solar-system";
 import { majorBodySnapshot } from "../physics/solar-system-data";
 import { PARENT_BODY_ID } from "./body-facts";
 import {
@@ -545,4 +549,118 @@ export function formatSpeedWithJetComparison(speedKmS: number): string {
     return `${speed}, about as fast as ${jet}`;
   }
   return `${speed}, slower than ${jet}`;
+}
+
+function requirePositiveDistance(valueM: number, name: string): void {
+  if (!Number.isFinite(valueM) || valueM <= 0) {
+    throw new Error(`${name} must be finite and positive`);
+  }
+}
+
+/** A distance to two significant figures in plain words, for example "about 780 million km". */
+export function formatPlainDistance(distanceM: number): string {
+  requirePositiveDistance(distanceM, "Distance");
+  const km = Number((distanceM / 1_000).toPrecision(2));
+  if (km >= 1e9) {
+    return `about ${rounded(km / 1e9, 1)} billion km`;
+  }
+  if (km >= 1e6) {
+    return `about ${rounded(km / 1e6, km < 1e7 ? 1 : 0)} million km`;
+  }
+  return `about ${rounded(km, km < 10 ? 1 : 0)} km`;
+}
+
+/**
+ * The selected-body "From the Sun" line. Other bodies compare with 1 AU,
+ * Earth's average distance, not Earth's live distance, which wobbles.
+ */
+export function formatSunDistance(bodyId: string, distanceM: number): string {
+  const plain = formatPlainDistance(distanceM);
+  if (bodyId === "earth") {
+    return plain;
+  }
+  const ratio = distanceM / ASTRONOMICAL_UNIT_M;
+  if (ratio >= 1.1) {
+    return `about ${roundedRatio(ratio)} times as far as Earth (${plain})`;
+  }
+  if (ratio > 0.9) {
+    return `about as far as Earth (${plain})`;
+  }
+  return `${plain}. Earth is about ${roundedRatio(1 / ratio)} times as far.`;
+}
+
+/**
+ * How long sunlight takes to travel the given distance: whole minutes under
+ * an hour, "1 hour 20 minutes" to the nearest 5 minutes up to 90 minutes,
+ * then whole hours.
+ */
+export function formatSunlightTravelTime(distanceM: number): string {
+  requirePositiveDistance(distanceM, "Distance");
+  const minutes = distanceM / SPEED_OF_LIGHT_MPS / 60;
+  return `takes ${sunlightTime(minutes)} to get here`;
+}
+
+function sunlightTime(minutes: number): string {
+  if (minutes < 1) {
+    return "less than a minute";
+  }
+  if (Math.round(minutes) < 60) {
+    return `about ${counted(minutes, 0, "minute")}`;
+  }
+  if (minutes < 90) {
+    const extraMinutes = Math.round(minutes / 5) * 5 - 60;
+    return extraMinutes === 0
+      ? "about 1 hour"
+      : `about 1 hour ${String(extraMinutes)} minutes`;
+  }
+  return `about ${counted(minutes / 60, 0, "hour")}`;
+}
+
+/**
+ * The surface-to-surface gap between a moon and its parent compared with the
+ * parent's width, for example "the gap is about 30 times as wide as Earth".
+ */
+export function formatGapInParentWidths(
+  distanceM: number,
+  parentName: string,
+  parentRadiusM: number,
+  moonRadiusM: number,
+): string {
+  requirePositiveDistance(distanceM, "Distance");
+  requirePositiveDistance(parentRadiusM, `${parentName} radius`);
+  requirePositiveDistance(moonRadiusM, "Moon radius");
+  const gapM = distanceM - parentRadiusM - moonRadiusM;
+  if (gapM <= 0) {
+    throw new Error(`The moon and ${parentName} overlap`);
+  }
+  const ratio = gapM / (2 * parentRadiusM);
+  if (ratio < 0.5) {
+    return `the gap is less than half as wide as ${parentName}`;
+  }
+  if (ratio < 0.95) {
+    return `the gap is almost as wide as ${parentName}`;
+  }
+  const text = roundedRatio(ratio);
+  return text === "1"
+    ? `the gap is about as wide as ${parentName}`
+    : `the gap is about ${text} times as wide as ${parentName}`;
+}
+
+/**
+ * The exact live distance for the "More detail" grid: whole kilometres, or
+ * to the metre under 100 km so a short patrol keeps its detail.
+ */
+export function formatExactDistanceKm(distanceM: number): string {
+  requirePositiveDistance(distanceM, "Distance");
+  const km = distanceM / 1_000;
+  return `${rounded(km, km < 100 ? 3 : 0)} km`;
+}
+
+/** The live distance in astronomical units to three decimal places. */
+export function formatDistanceAu(distanceM: number): string {
+  requirePositiveDistance(distanceM, "Distance");
+  return `${(distanceM / ASTRONOMICAL_UNIT_M).toLocaleString("en-GB", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  })} AU`;
 }

@@ -5,12 +5,18 @@ import {
   BODY_COMPOSITION_BY_ID,
   formatBodySize,
   formatDiameterKm,
+  formatDistanceAu,
+  formatExactDistanceKm,
+  formatGapInParentWidths,
   formatLiveOrbitalPeriod,
   formatMassKg,
   formatOrbitalPeriod,
+  formatPlainDistance,
   formatSourcedOrbitalPeriod,
   formatSpeedWithJetComparison,
   formatSpinPeriod,
+  formatSunDistance,
+  formatSunlightTravelTime,
   formatWidthComparedToEarth,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
@@ -189,5 +195,209 @@ describe("selected-body physical facts", () => {
     expect(formatLiveOrbitalPeriod(251.04 * 365.25 * DAY_SECONDS)).toBe(
       "251 years",
     );
+  });
+});
+
+const AU_M = 149_597_870_700;
+
+function sourcedRadiusM(bodyId: string): number {
+  const body = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (body === undefined) {
+    throw new Error(`Major-body snapshot is missing ${bodyId}`);
+  }
+  return body.meanRadiusM;
+}
+
+describe("child-first distances", () => {
+  it("compares a Sun distance with Earth's average distance", () => {
+    expect(formatSunDistance("neptune", 30.1 * AU_M)).toBe(
+      "about 30 times as far as Earth (about 4.5 billion km)",
+    );
+    expect(formatSunDistance("jupiter", 779_712_329_000)).toBe(
+      "about 5.2 times as far as Earth (about 780 million km)",
+    );
+    expect(formatSunDistance("mercury", 0.387 * AU_M)).toBe(
+      "about 58 million km. Earth is about 2.6 times as far.",
+    );
+    expect(formatSunDistance("venus", 0.723 * AU_M)).toBe(
+      "about 110 million km. Earth is about 1.4 times as far.",
+    );
+    expect(formatSunDistance("earth", 147_102_684_000)).toBe(
+      "about 150 million km",
+    );
+  });
+
+  it("rounds Sun distance ratios at their boundaries", () => {
+    expect(formatSunDistance("mars", 1.1 * AU_M)).toMatch(
+      /^about 1\.1 times as far as Earth/u,
+    );
+    // The Tesla Roadster card reaches this branch: its orbit runs from
+    // about 0.99 AU to about 1.66 AU.
+    expect(formatSunDistance("roadster", 0.99 * AU_M)).toBe(
+      "about as far as Earth (about 150 million km)",
+    );
+    expect(formatSunDistance("roadster", 1.09 * AU_M)).toMatch(
+      /^about as far as Earth/u,
+    );
+    expect(formatSunDistance("venus", 0.9 * AU_M)).toMatch(
+      /^about 130 million km\. Earth is about 1\.1 times as far\.$/u,
+    );
+    expect(formatSunDistance("saturn", 9.96 * AU_M)).toMatch(
+      /^about 10 times as far as Earth/u,
+    );
+    expect(formatSunDistance("pluto", 34.49 * AU_M)).toMatch(
+      /^about 34 times as far as Earth/u,
+    );
+  });
+
+  it("states plain distances to two significant figures", () => {
+    expect(formatPlainDistance(360_512_000)).toBe("about 360,000 km");
+    expect(formatPlainDistance(9_376_000)).toBe("about 9,400 km");
+    expect(formatPlainDistance(1_433_175_000)).toBe("about 1.4 million km");
+    expect(formatPlainDistance(1_500_000_000)).toBe("about 1.5 million km");
+    expect(formatPlainDistance(12_400_000_000)).toBe("about 12 million km");
+    expect(formatPlainDistance(24_990_000_000_000)).toBe("about 25 billion km");
+    expect(formatPlainDistance(999_999_000_000)).toBe("about 1 billion km");
+    // USS Defiant patrols 2.5 km from Deep Space Nine.
+    expect(formatPlainDistance(2_500)).toBe("about 2.5 km");
+    expect(formatPlainDistance(9_960)).toBe("about 10 km");
+  });
+
+  it("says how long sunlight takes to arrive", () => {
+    expect(formatSunlightTravelTime(AU_M)).toBe(
+      "takes about 8 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(30.1 * AU_M)).toBe(
+      "takes about 4 hours to get here",
+    );
+    expect(formatSunlightTravelTime(5.2 * AU_M)).toBe(
+      "takes about 43 minutes to get here",
+    );
+    const lightMinutes = (minutes: number): number =>
+      minutes * 60 * 299_792_458;
+    expect(formatSunlightTravelTime(lightMinutes(59.4))).toBe(
+      "takes about 59 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(59.6))).toBe(
+      "takes about 1 hour to get here",
+    );
+    expect(formatSunlightTravelTime(9.58 * AU_M)).toBe(
+      "takes about 1 hour 20 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(89.9))).toBe(
+      "takes about 1 hour 30 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(90))).toBe(
+      "takes about 2 hours to get here",
+    );
+    expect(formatSunlightTravelTime(lightMinutes(119))).toBe(
+      "takes about 2 hours to get here",
+    );
+    // Voyager 1, about 169 AU from the Sun in 2026.
+    expect(formatSunlightTravelTime(169 * AU_M)).toBe(
+      "takes about 23 hours to get here",
+    );
+    expect(formatSunlightTravelTime(60 * 299_792_458)).toBe(
+      "takes about 1 minute to get here",
+    );
+    expect(formatSunlightTravelTime(1_000)).toBe(
+      "takes less than a minute to get here",
+    );
+  });
+
+  it("counts parent widths in the gap between a moon and its parent", () => {
+    expect(
+      formatGapInParentWidths(
+        384_400_000,
+        "Earth",
+        sourcedRadiusM("earth"),
+        sourcedRadiusM("moon"),
+      ),
+    ).toBe("the gap is about 30 times as wide as Earth");
+    expect(
+      formatGapInParentWidths(
+        421_800_000,
+        "Jupiter",
+        sourcedRadiusM("jupiter"),
+        sourcedRadiusM("io"),
+      ),
+    ).toBe("the gap is about 2.5 times as wide as Jupiter");
+    expect(
+      formatGapInParentWidths(
+        23_460_000,
+        "Mars",
+        sourcedRadiusM("mars"),
+        sourcedRadiusM("deimos"),
+      ),
+    ).toBe("the gap is about 3 times as wide as Mars");
+    expect(
+      formatGapInParentWidths(
+        9_376_000,
+        "Mars",
+        sourcedRadiusM("mars"),
+        sourcedRadiusM("phobos"),
+      ),
+    ).toBe("the gap is almost as wide as Mars");
+    expect(
+      formatGapInParentWidths(
+        129_900_000,
+        "Uranus",
+        sourcedRadiusM("uranus"),
+        sourcedRadiusM("miranda"),
+      ),
+    ).toBe("the gap is about 2.1 times as wide as Uranus");
+  });
+
+  it("rounds parent widths at their boundaries", () => {
+    const gapForWidths = (widths: number): number => (2 * widths + 1) * 1 + 1;
+    expect(formatGapInParentWidths(gapForWidths(0.499), "Earth", 1, 1)).toBe(
+      "the gap is less than half as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(0.5), "Earth", 1, 1)).toBe(
+      "the gap is almost as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(0.949), "Earth", 1, 1)).toBe(
+      "the gap is almost as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(0.95), "Earth", 1, 1)).toBe(
+      "the gap is about as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(1.06), "Earth", 1, 1)).toBe(
+      "the gap is about 1.1 times as wide as Earth",
+    );
+    expect(formatGapInParentWidths(gapForWidths(9.96), "Earth", 1, 1)).toBe(
+      "the gap is about 10 times as wide as Earth",
+    );
+  });
+
+  it("formats the exact live values for More detail", () => {
+    expect(formatExactDistanceKm(779_739_602_760)).toBe("779,739,603 km");
+    expect(formatExactDistanceKm(2_497_400)).toBe("2,497 km");
+    expect(formatExactDistanceKm(99_999)).toBe("99.999 km");
+    expect(formatExactDistanceKm(2_500)).toBe("2.5 km");
+    expect(formatDistanceAu(5.21198 * AU_M)).toBe("5.212 AU");
+    expect(formatDistanceAu(AU_M)).toBe("1.000 AU");
+  });
+
+  it("rejects invalid distances", () => {
+    for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => formatPlainDistance(invalid)).toThrow(/Distance/u);
+      expect(() => formatSunDistance("mars", invalid)).toThrow(/Distance/u);
+      expect(() => formatSunlightTravelTime(invalid)).toThrow(/Distance/u);
+      expect(() => formatExactDistanceKm(invalid)).toThrow(/Distance/u);
+      expect(() => formatDistanceAu(invalid)).toThrow(/Distance/u);
+      expect(() => formatGapInParentWidths(invalid, "Earth", 1, 1)).toThrow(
+        /Distance/u,
+      );
+      expect(() => formatGapInParentWidths(10, "Earth", invalid, 1)).toThrow(
+        /Earth radius/u,
+      );
+      expect(() => formatGapInParentWidths(10, "Earth", 1, invalid)).toThrow(
+        /Moon radius/u,
+      );
+    }
+    expect(() => formatGapInParentWidths(2, "Earth", 1, 1)).toThrow(/overlap/u);
   });
 });
