@@ -132,7 +132,10 @@ import {
   JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./jovian-monolith";
-import { createDeathStarModel } from "./death-star-model";
+import {
+  createDeathStarModel,
+  DEATH_STAR_MODEL_VISUAL_SOURCE,
+} from "./death-star-model";
 import {
   FICTIONAL_ORBITERS,
   fictionalOrbiterById,
@@ -1624,25 +1627,28 @@ reflectedLight.directSpecular *= solarTransmission;`,
     const fictionalOrbiterGroups = new Map<string, Group>();
     const fictionalOrbiterLabels = new Map<string, HTMLButtonElement>();
     const fictionalOrbiterMarkers = new Map<string, HTMLSpanElement>();
-    for (const orbiter of FICTIONAL_ORBITERS) {
-      const group =
-        orbiter.id === "death-star-2"
-          ? new Group()
-          : createDeathStarModel(orbiter);
-      if (orbiter.id === "death-star-2") {
-        group.name = "Death Star II licensed model anchor";
-        group.userData["visualSource"] = "cc-by-sketchfab-pbr-glb";
+    // Bodies whose on-demand 3D model is in the scene. Until then an Orrery
+    // marker stays, so a focused object never shows only a label.
+    const loadedModelBodyIds = new Set<string>();
+    // Death Star I is built, and its textures requested, only when the frame
+    // loop first needs to draw it.
+    const ensureDeathStarModel = (): void => {
+      if (loadedModelBodyIds.has("death-star-1")) {
+        return;
       }
-      group.visible = false;
-      scene.add(group);
-      fictionalOrbiterGroups.set(orbiter.id, group);
-      const visualSource: unknown = group.userData["visualSource"];
-      if (typeof visualSource !== "string") {
-        throw new Error(`${orbiter.name} visual provenance is unavailable`);
+      const orbiter = fictionalOrbiterById.get("death-star-1");
+      const anchor = fictionalOrbiterGroups.get("death-star-1");
+      if (orbiter === undefined || anchor === undefined) {
+        throw new Error("Death Star I scene objects are unavailable");
       }
-      container.dataset[`${orbiter.id.replaceAll("-", "")}VisualModel`] =
-        visualSource;
-      group.traverse((object) => {
+      loadedModelBodyIds.add("death-star-1");
+      const model = createDeathStarModel(orbiter, (url) => {
+        onGpuError(
+          `Fictional model texture ${url} failed to load for ${orbiter.name}`,
+        );
+      });
+      anchor.add(model);
+      model.traverse((object) => {
         if (object.type === "Mesh") {
           const modelMesh = object as Mesh;
           additionalSelectableMeshes.push(modelMesh);
@@ -1664,6 +1670,20 @@ reflectedLight.directSpecular *= solarTransmission;`,
           }
         }
       });
+    };
+    for (const orbiter of FICTIONAL_ORBITERS) {
+      const group = new Group();
+      const visualSource =
+        orbiter.id === "death-star-2"
+          ? "cc-by-sketchfab-pbr-glb"
+          : DEATH_STAR_MODEL_VISUAL_SOURCE;
+      group.name = `${orbiter.name} model anchor`;
+      group.userData["visualSource"] = visualSource;
+      group.visible = false;
+      scene.add(group);
+      fictionalOrbiterGroups.set(orbiter.id, group);
+      container.dataset[`${orbiter.id.replaceAll("-", "")}VisualModel`] =
+        visualSource;
       const label = document.createElement("button");
       label.type = "button";
       label.className = "body-label fictional-object-label";
@@ -2176,15 +2196,6 @@ reflectedLight.directSpecular *= solarTransmission;`,
           roughness: body.type === "moon" ? 0.92 : 0.74,
           metalness: 0,
         });
-        if (body.id === "earth" && nasaEarthNightLightAsset !== undefined) {
-          surfaceMaterial.emissive.setHex(0xffd59a);
-          surfaceMaterial.emissiveMap = loadTexture(
-            nasaEarthNightLightAsset.file,
-            true,
-          );
-          surfaceMaterial.emissiveIntensity = 0.32;
-          container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
-        }
         configureSolarOcclusion(
           surfaceMaterial,
           body.id,
@@ -2323,6 +2334,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.type = "button";
       label.className = "body-label";
       label.textContent = body.name;
+      // The frame loop shows the label once a physics state places the body.
+      label.hidden = true;
       label.dataset["bodyId"] = body.id;
       label.setAttribute("aria-label", `Focus ${body.name}`);
       label.title = "Click to select; double-click to focus";
@@ -3079,6 +3092,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             }
           });
           group.add(model);
+          loadedModelBodyIds.add(asset.bodyId);
           container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
             "true";
           if (asset.bodyId === ROADSTER_BODY_ID) {
@@ -3113,15 +3127,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
       modelLoadPromises.set(asset.bodyId, loadPromise);
       return loadPromise;
     };
+    // A model is requested only once its body is focused, selected, or large
+    // enough on screen to draw, so the first load carries no model bytes.
     const ensureSourcedModel = (bodyId: string): void => {
+      if (bodyId === "death-star-1") {
+        ensureDeathStarModel();
+        return;
+      }
+      if (modelLoadPromises.has(bodyId)) {
+        return;
+      }
       const asset = sourcedModelAssetByBodyId.get(bodyId);
       if (asset !== undefined) {
         void loadSourcedModel(asset).catch(() => undefined);
       }
     };
-    for (const asset of spacecraftAssets) {
-      ensureSourcedModel(asset.bodyId);
-    }
     if (!sourcedModelGroups.has(ROADSTER_BODY_ID)) {
       throw new Error("Roadster sourced model group is unavailable");
     }
@@ -3841,6 +3861,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
       if (bodyId === "moon" && nasaMoonHeightAsset !== undefined) {
         surfaceMaterial.bumpMap = loadTexture(nasaMoonHeightAsset.file, false);
         surfaceMaterial.bumpScale = 0.018;
+      }
+      if (bodyId === "earth" && nasaEarthNightLightAsset !== undefined) {
+        surfaceMaterial.emissive.setHex(0xffd59a);
+        surfaceMaterial.emissiveMap = loadTexture(
+          nasaEarthNightLightAsset.file,
+          true,
+        );
+        surfaceMaterial.emissiveIntensity = 0.32;
+        container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
       }
       if (bodyId === "earth" && nasaEarthCloudAsset !== undefined) {
         const cloudMaterial = new MeshStandardMaterial({
@@ -7928,6 +7957,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (mesh === undefined || label === undefined) {
           continue;
         }
+        const marker = bodyMarkers.get(body.id);
+        if (current === undefined) {
+          // Before the first physics state every mesh still sits at the
+          // origin, so draw nothing and request no surface map until the
+          // bodies have their real places.
+          mesh.visible = false;
+          label.hidden = true;
+          label.dataset["bodyRendered"] = "false";
+          if (marker !== undefined) {
+            marker.hidden = true;
+          }
+          continue;
+        }
         const projected = mesh.position.clone().project(camera);
         const cameraDistance = camera.position.distanceTo(mesh.position);
         const radiusPixels =
@@ -8124,7 +8166,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
             ] = projectedLabelY.toFixed(3);
           }
         }
-        const marker = bodyMarkers.get(body.id);
         if (marker !== undefined) {
           const markerVisible =
             viewModeRef.current === "orrery" &&
@@ -8244,6 +8285,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(DISCOVERY_ONE_BODY_ID);
+        }
         discoveryOneGroup.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8280,7 +8324,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           viewModeRef.current === "orrery" &&
           layerVisible &&
           inCameraFrustum &&
-          !geometryVisible;
+          !(geometryVisible && loadedModelBodyIds.has(DISCOVERY_ONE_BODY_ID));
         discoveryOneMarker.hidden = !markerVisible;
         if (markerVisible) {
           discoveryOneMarker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
@@ -8342,6 +8386,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(orbiter.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8378,7 +8425,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           viewModeRef.current === "orrery" &&
           layerVisible &&
           inCameraFrustum &&
-          !geometryVisible;
+          !(geometryVisible && loadedModelBodyIds.has(orbiter.id));
         marker.hidden = !markerVisible;
         if (markerVisible) {
           marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
@@ -8430,6 +8477,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(object.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8462,7 +8512,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           viewModeRef.current === "orrery" &&
           layerVisible &&
           inCameraFrustum &&
-          !geometryVisible;
+          !(geometryVisible && loadedModelBodyIds.has(object.id));
         marker.hidden = !markerVisible;
         if (markerVisible) {
           marker.style.transform = `translate(${String(screenX)}px, ${String(screenY)}px)`;
@@ -8500,6 +8550,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft && ephemerisValid;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(ISS_BODY_ID);
+        }
         issGroup.visible = geometryVisible;
         issLabel.hidden = !(
           showLabelsRef.current &&
@@ -8511,7 +8564,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           viewModeRef.current === "orrery" &&
           layerVisible &&
           inCameraFrustum &&
-          radiusPixels < 3;
+          (radiusPixels < 3 || !loadedModelBodyIds.has(ISS_BODY_ID));
         issMarker.hidden = !markerVisible;
         issMarker.classList.toggle(
           "is-selected",
@@ -8602,6 +8655,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(probe.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&
@@ -8690,6 +8746,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const layerVisible = currentVisibility.spacecraft;
         const geometryVisible =
           layerVisible && isPhysicalBodyResolvable(radiusPixels);
+        if (geometryVisible) {
+          ensureSourcedModel(spacecraft.id);
+        }
         group.visible = geometryVisible;
         const labelVisible =
           showLabelsRef.current &&

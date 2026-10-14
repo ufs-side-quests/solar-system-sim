@@ -162,6 +162,38 @@ for (const [search, bodyId, geometryAttribute] of [
   });
 }
 
+test("reports a Death Star I texture that fails to load", async ({ page }) => {
+  test.setTimeout(120_000);
+  const hullTexture = "/textures/fictional/death-star-hull-v2.webp";
+  await page.route(`**${hullTexture}`, (route) =>
+    route.fulfill({ status: 404, body: "" }),
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Death Star I (fictional)");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "death-star-1");
+  await expect(scene).toHaveAttribute(
+    "data-deathstar1-geometry-visible",
+    "true",
+  );
+  await expect(page.locator(".gpu-status")).toHaveClass(/\berror\b/u, {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Display" }).click();
+  await expect(page.locator(".gpu-error-detail")).toHaveText(
+    `Fictional model texture ${hullTexture} failed to load for Death Star I (fictional)`,
+  );
+});
+
 for (const [search, bodyId, distanceText] of [
   ["Deep Space Nine (fictional)", "deep-space-nine", "Distance from Callisto"],
   ["USS Defiant (fictional)", "uss-defiant", "Distance from Deep Space Nine"],
