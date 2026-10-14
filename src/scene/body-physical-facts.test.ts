@@ -5,12 +5,18 @@ import {
   BODY_COMPOSITION_BY_ID,
   formatBodySize,
   formatDiameterKm,
+  formatDistanceAu,
+  formatExactDistanceKm,
+  formatGapInParentWidths,
   formatLiveOrbitalPeriod,
   formatMassKg,
   formatOrbitalPeriod,
+  formatPlainDistance,
   formatSourcedOrbitalPeriod,
   formatSpeedWithJetComparison,
   formatSpinPeriod,
+  formatSunDistance,
+  formatSunlightTravelTime,
   formatWidthComparedToEarth,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
@@ -189,5 +195,157 @@ describe("selected-body physical facts", () => {
     expect(formatLiveOrbitalPeriod(251.04 * 365.25 * DAY_SECONDS)).toBe(
       "251 years",
     );
+  });
+});
+
+const AU_M = 149_597_870_700;
+
+function sourcedRadiusM(bodyId: string): number {
+  const body = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (body === undefined) {
+    throw new Error(`Major-body snapshot is missing ${bodyId}`);
+  }
+  return body.meanRadiusM;
+}
+
+describe("child-first distances", () => {
+  it("compares a Sun distance with Earth's average distance", () => {
+    expect(formatSunDistance("neptune", 30.1 * AU_M)).toBe(
+      "about 30 times as far as Earth (about 4.5 billion km)",
+    );
+    expect(formatSunDistance("jupiter", 779_712_329_000)).toBe(
+      "about 5.2 times as far as Earth (about 780 million km)",
+    );
+    expect(formatSunDistance("mercury", 0.387 * AU_M)).toBe(
+      "Earth is about 2.6 times as far (about 58 million km)",
+    );
+    expect(formatSunDistance("earth", 147_102_684_000)).toBe(
+      "about 150 million km",
+    );
+  });
+
+  it("rounds Sun distance ratios at their boundaries", () => {
+    expect(formatSunDistance("mars", 1.1 * AU_M)).toMatch(
+      /^about 1\.1 times as far as Earth/u,
+    );
+    expect(formatSunDistance("roadster", 1.09 * AU_M)).toMatch(
+      /^about as far as Earth/u,
+    );
+    expect(formatSunDistance("venus", 0.9 * AU_M)).toMatch(
+      /^Earth is about 1\.1 times as far/u,
+    );
+    expect(formatSunDistance("saturn", 9.96 * AU_M)).toMatch(
+      /^about 10 times as far as Earth/u,
+    );
+    expect(formatSunDistance("pluto", 34.49 * AU_M)).toMatch(
+      /^about 34 times as far as Earth/u,
+    );
+  });
+
+  it("states plain distances to two significant figures", () => {
+    expect(formatPlainDistance(360_512_000)).toBe("about 360,000 km");
+    expect(formatPlainDistance(9_376_000)).toBe("about 9,400 km");
+    expect(formatPlainDistance(24_990_000_000_000)).toBe("about 25 billion km");
+    expect(formatPlainDistance(999_999_000_000)).toBe("about 1 billion km");
+  });
+
+  it("says how long sunlight takes to arrive", () => {
+    expect(formatSunlightTravelTime(AU_M)).toBe(
+      "takes about 8 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(30.1 * AU_M)).toBe(
+      "takes about 4 hours to get here",
+    );
+    expect(formatSunlightTravelTime(5.2 * AU_M)).toBe(
+      "takes about 43 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(119 * 60 * 299_792_458)).toBe(
+      "takes about 119 minutes to get here",
+    );
+    expect(formatSunlightTravelTime(120 * 60 * 299_792_458)).toBe(
+      "takes about 2 hours to get here",
+    );
+    expect(formatSunlightTravelTime(60 * 299_792_458)).toBe(
+      "takes about 1 minute to get here",
+    );
+    expect(formatSunlightTravelTime(1_000)).toBe(
+      "takes less than a minute to get here",
+    );
+  });
+
+  it("counts parent widths in the gap between a moon and its parent", () => {
+    expect(
+      formatGapInParentWidths(
+        384_400_000,
+        "Earth",
+        sourcedRadiusM("earth"),
+        sourcedRadiusM("moon"),
+      ),
+    ).toBe("about 30 Earths would fit in the gap");
+    expect(
+      formatGapInParentWidths(
+        421_800_000,
+        "Jupiter",
+        sourcedRadiusM("jupiter"),
+        sourcedRadiusM("io"),
+      ),
+    ).toBe("about 2.5 Jupiters would fit in the gap");
+    expect(
+      formatGapInParentWidths(
+        23_460_000,
+        "Mars",
+        sourcedRadiusM("mars"),
+        sourcedRadiusM("deimos"),
+      ),
+    ).toBe("about 3 Marses would fit in the gap");
+    expect(
+      formatGapInParentWidths(
+        9_376_000,
+        "Mars",
+        sourcedRadiusM("mars"),
+        sourcedRadiusM("phobos"),
+      ),
+    ).toBe("less than one Mars would fit in the gap");
+  });
+
+  it("rounds parent widths at their boundaries", () => {
+    const gapForWidths = (widths: number): number => (2 * widths + 1) * 1 + 1;
+    expect(formatGapInParentWidths(gapForWidths(0.949), "Earth", 1, 1)).toBe(
+      "less than one Earth would fit in the gap",
+    );
+    expect(formatGapInParentWidths(gapForWidths(0.95), "Earth", 1, 1)).toBe(
+      "about 1 Earth would fit in the gap",
+    );
+    expect(formatGapInParentWidths(gapForWidths(9.96), "Earth", 1, 1)).toBe(
+      "about 10 Earths would fit in the gap",
+    );
+  });
+
+  it("formats the exact live values for More detail", () => {
+    expect(formatExactDistanceKm(779_739_602_760)).toBe("779,739,603 km");
+    expect(formatDistanceAu(5.21198 * AU_M)).toBe("5.212 AU");
+    expect(formatDistanceAu(AU_M)).toBe("1.000 AU");
+  });
+
+  it("rejects invalid distances", () => {
+    for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => formatPlainDistance(invalid)).toThrow(/Distance/u);
+      expect(() => formatSunDistance("mars", invalid)).toThrow(/Distance/u);
+      expect(() => formatSunlightTravelTime(invalid)).toThrow(/Distance/u);
+      expect(() => formatExactDistanceKm(invalid)).toThrow(/Distance/u);
+      expect(() => formatDistanceAu(invalid)).toThrow(/Distance/u);
+      expect(() => formatGapInParentWidths(invalid, "Earth", 1, 1)).toThrow(
+        /Distance/u,
+      );
+      expect(() => formatGapInParentWidths(10, "Earth", invalid, 1)).toThrow(
+        /Earth radius/u,
+      );
+      expect(() => formatGapInParentWidths(10, "Earth", 1, invalid)).toThrow(
+        /Moon radius/u,
+      );
+    }
+    expect(() => formatGapInParentWidths(2, "Earth", 1, 1)).toThrow(/overlap/u);
   });
 });

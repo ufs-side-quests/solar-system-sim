@@ -54,6 +54,9 @@ test("selected body stats identify their source and velocity reference", async (
   await expect(
     page.getByText("Speed relative to Jupiter", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText("Distance from Jupiter", { exact: true }),
+  ).toBeVisible();
 
   await page.screenshot({
     path: testInfo.outputPath("selected-body-stats.png"),
@@ -211,4 +214,78 @@ test("selected body card states sourced year lengths and planet spin", async ({
     path: testInfo.outputPath("selected-body-sourced-years.png"),
     animations: "disabled",
   });
+});
+
+test("selected body card gives distances a child can feel", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const row = (label: string): Locator =>
+    card.locator("span", {
+      has: page.getByText(label, { exact: true }),
+    });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  await selectFocus(focus, "Neptune");
+  await expect(scene).toHaveAttribute("data-focus-body", "neptune");
+  await expect(row("From the Sun")).toHaveText(
+    /^From the Sunabout 30 times as far as Earth \(about 4\.[45] billion km\)$/u,
+  );
+  await expect(row("Sunlight")).toHaveText(
+    "Sunlighttakes about 4 hours to get here",
+  );
+  await expect(row("Distance from the Sun (live)")).toBeHidden();
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row("Distance from the Sun (live)")).toHaveText(
+    /^Distance from the Sun \(live\)4,[45]\d\d,\d{3},\d{3} km$/u,
+  );
+  await expect(row("Distance from the Sun in AU (live)")).toHaveText(
+    /^Distance from the Sun in AU \(live\)(?:29|30)\.\d{3} AU$/u,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("selected-body-distance-neptune.png"),
+    animations: "disabled",
+  });
+  await card.getByText("More detail", { exact: true }).click();
+
+  await selectFocus(focus, "Earth");
+  await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect(row("From the Sun")).toHaveText(
+    "From the Sunabout 150 million km",
+  );
+  await expect(row("Sunlight")).toHaveText(
+    "Sunlighttakes about 8 minutes to get here",
+  );
+
+  await selectFocus(focus, "Moon");
+  await expect(scene).toHaveAttribute("data-focus-body", "moon");
+  await expect(row("From Earth")).toHaveText(
+    /^From Earthabout (?:2[789]|3[01]) Earths would fit in the gap$/u,
+  );
+  await expect(row("Sunlight")).toHaveCount(0);
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row("Distance from Earth (live)")).toHaveText(
+    /^Distance from Earth \(live\)(?:3[5-9]\d|40\d),\d{3} km$/u,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("selected-body-distance-moon.png"),
+    animations: "disabled",
+  });
+  await card.getByText("More detail", { exact: true }).click();
+
+  await selectFocus(focus, "Io");
+  await expect(scene).toHaveAttribute("data-focus-body", "io");
+  await expect(row("From Jupiter")).toHaveText(
+    /^From Jupiterabout 2\.[45] Jupiters would fit in the gap$/u,
+  );
 });

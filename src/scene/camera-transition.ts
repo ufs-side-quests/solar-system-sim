@@ -1,3 +1,5 @@
+import { SPEED_OF_LIGHT_MPS } from "../physics/solar-system";
+
 export type DirectCameraTransitionPhase =
   "orienting" | "travelling" | "arriving" | "settled";
 
@@ -13,7 +15,6 @@ export type OrientationTransitionSample = Readonly<{
 
 const DIRECT_ORIENTATION_END = 0.34;
 const DIRECT_ARRIVAL_START = 0.68;
-const SPEED_OF_LIGHT_MPS = 299_792_458;
 
 function smootherStep(value: number): number {
   const clamped = Math.min(1, Math.max(0, value));

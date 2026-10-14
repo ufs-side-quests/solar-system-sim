@@ -65,6 +65,11 @@ import {
   formatSpeedWithJetComparison,
   formatSpinPeriod,
   formatBodySize,
+  formatDistanceAu,
+  formatExactDistanceKm,
+  formatGapInParentWidths,
+  formatSunDistance,
+  formatSunlightTravelTime,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
 } from "./scene/body-physical-facts";
@@ -710,6 +715,47 @@ function formatSimulationOffset(seconds: number): string {
 /** "the Sun" reads as a name; every other parent keeps its own name. */
 function parentPhrase(parent: MajorBodyDefinition): string {
   return parent.id === "sun" ? "the Sun" : parent.name;
+}
+
+/**
+ * The child-first distance rows of a major body, from the live distance to
+ * its parent: Sun orbiters compare with Earth and add the sunlight time,
+ * moons count parent widths in the gap. Exact values go to "More detail".
+ */
+function childDistanceRows(
+  body: MajorBodyDefinition,
+  parent: MajorBodyDefinition,
+  distanceM: number,
+): {
+  distanceLabel: string;
+  distance: string;
+  sunlight?: string;
+  exactDistanceLabel: string;
+  exactDistance: string;
+  distanceAu?: string;
+} {
+  const exactDistanceLabel = `Distance from ${parentPhrase(parent)} (live)`;
+  const exactDistance = formatExactDistanceKm(distanceM);
+  return parent.id === "sun"
+    ? {
+        distanceLabel: "From the Sun",
+        distance: formatSunDistance(body.id, distanceM),
+        sunlight: formatSunlightTravelTime(distanceM),
+        exactDistanceLabel,
+        exactDistance,
+        distanceAu: formatDistanceAu(distanceM),
+      }
+    : {
+        distanceLabel: `From ${parent.name}`,
+        distance: formatGapInParentWidths(
+          distanceM,
+          parent.name,
+          parent.meanRadiusM,
+          body.meanRadiusM,
+        ),
+        exactDistanceLabel,
+        exactDistance,
+      };
 }
 
 function normalizedDegrees(value: number): number {
@@ -2276,12 +2322,16 @@ export function App() {
         surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
         distance:
-          parentState === undefined
+          parentState === undefined || parentDefinition === undefined
             ? undefined
             : formatDistance(
                 bodyDistanceM(bodyState, parentState),
                 semanticZoom,
               ),
+        distanceLabel:
+          parentDefinition === undefined
+            ? undefined
+            : `Distance from ${parentPhrase(parentDefinition)}`,
         speed:
           parentState === undefined
             ? undefined
@@ -2300,6 +2350,14 @@ export function App() {
         ? undefined
         : osculatingOrbitalPeriodSeconds(bodyState, parentState);
     const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
+    const distanceRows =
+      parentState === undefined || parentDefinition === undefined
+        ? undefined
+        : childDistanceRows(
+            definition,
+            parentDefinition,
+            bodyDistanceM(bodyState, parentState),
+          );
     return {
       name: definition.name,
       size: formatBodySize(
@@ -2327,10 +2385,12 @@ export function App() {
         "Neutral - no installed authoritative surface asset",
       diameterKm,
       parentName: parentDefinition?.name,
-      distance:
-        parentState === undefined
-          ? undefined
-          : formatDistance(bodyDistanceM(bodyState, parentState), semanticZoom),
+      distanceLabel: distanceRows?.distanceLabel,
+      distance: distanceRows?.distance,
+      sunlight: distanceRows?.sunlight,
+      exactDistanceLabel: distanceRows?.exactDistanceLabel,
+      exactDistance: distanceRows?.exactDistance,
+      distanceAu: distanceRows?.distanceAu,
       speed:
         parentState === undefined
           ? undefined
@@ -3243,10 +3303,14 @@ export function App() {
                 )}
                 {selectedBodyDetail.distance === undefined ? null : (
                   <span>
-                    <small>
-                      {selectedBodyDetail.distanceLabel ?? "Distance"}
-                    </small>
+                    <small>{selectedBodyDetail.distanceLabel}</small>
                     {selectedBodyDetail.distance}
+                  </span>
+                )}
+                {selectedBodyDetail.sunlight === undefined ? null : (
+                  <span>
+                    <small>Sunlight</small>
+                    {selectedBodyDetail.sunlight}
                   </span>
                 )}
                 {selectedBodyDetail.altitudeKm === undefined ? null : (
@@ -3322,6 +3386,18 @@ export function App() {
                         )}{" "}
                         km
                       </span>
+                      {selectedBodyDetail.exactDistance === undefined ? null : (
+                        <span>
+                          <small>{selectedBodyDetail.exactDistanceLabel}</small>
+                          {selectedBodyDetail.exactDistance}
+                        </span>
+                      )}
+                      {selectedBodyDetail.distanceAu === undefined ? null : (
+                        <span title="1 AU is Earth's average distance from the Sun: 149,597,870.7 km">
+                          <small>Distance from the Sun in AU (live)</small>
+                          {selectedBodyDetail.distanceAu}
+                        </span>
+                      )}
                       {selectedBodyDetail.liveOrbitalPeriod ===
                       undefined ? null : (
                         <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
