@@ -24,6 +24,8 @@ The camera uses standard orbit controls: left drag orbits, right drag pans, and 
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
 The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from a sourced sidereal orbital period (NASA NSSDC fact sheets for planets, Pluto and the Moon; JPL SSD satellite mean elements for moons), one sidereal spin with "spins backwards" or "spins on its side" for planets, and speed compared with a named, rounded 900 km/h jet airliner reference.
+"Compare sizes" (on the card and in the camera dock) opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
+Each circle wears the NASA surface map the 3D globe uses (Uranus its sourced plain colour, the Sun a neutral fill), and tapping a body selects it as the Focus box does.
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.

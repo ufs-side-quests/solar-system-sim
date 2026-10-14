@@ -457,6 +457,22 @@ export function formatWidthComparedToEarth(
   return `Earth is about ${roundedRatio(1 / ratio)} times wider`;
 }
 
+/** The mean diameter in whole kilometres, for example "12,742 km". */
+export function formatDiameterKm(meanRadiusM: number): string {
+  return `${rounded((meanRadiusM * 2) / 1_000, 0)} km`;
+}
+
+/** The selected-body "Size" line: Earth gives its width, others compare with it. */
+export function formatBodySize(
+  bodyId: string,
+  meanRadiusM: number,
+  earthMeanRadiusM: number,
+): string {
+  return bodyId === "earth"
+    ? `Our home: ${formatDiameterKm(meanRadiusM)} wide`
+    : formatWidthComparedToEarth(meanRadiusM, earthMeanRadiusM);
+}
+
 function counted(value: number, fractionDigits: number, unit: string): string {
   const text = rounded(value, fractionDigits);
   return `${text} ${text === "1" ? unit : `${unit}s`}`;

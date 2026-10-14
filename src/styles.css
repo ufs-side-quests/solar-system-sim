@@ -2419,6 +2419,7 @@ h1 {
 .selected-body-more-grid > span {
   min-width: 0;
   display: grid;
+  align-content: start;
   gap: 0.18rem;
   color: #e7eef5;
   font-size: 0.74rem;
@@ -3129,11 +3130,12 @@ h1 {
     display: none;
   }
 
+  /* The card keeps its top below the camera dock (5.8rem + 2.9rem tall). */
   .selected-body-detail {
     left: 0.55rem;
     bottom: 10.6rem;
     width: calc(100% - 1.1rem);
-    max-height: calc(100% - 14.7rem);
+    max-height: calc(100% - 19.8rem);
   }
 
   .surface-observer-hud {
@@ -3209,4 +3211,129 @@ h1 {
   .tour-progress span.is-playing {
     animation: none;
   }
+}
+
+.compare-sizes-button {
+  justify-self: start;
+  min-height: 2.75rem;
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.74rem;
+}
+
+/* One scale for every circle: --lineup-largest is Jupiter's drawn diameter
+   and each circle's --lineup-radius is its fraction of Jupiter's. */
+.size-lineup {
+  --lineup-largest: clamp(6.5rem, 14vw, 12rem);
+
+  position: absolute;
+  z-index: 40;
+  top: 50%;
+  left: 50%;
+  width: min(62rem, calc(100% - 1.1rem));
+  max-height: calc(100% - 1.1rem);
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 1rem;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px) saturate(125%);
+  transform: translate(-50%, -50%);
+}
+
+.size-lineup .panel-heading strong {
+  font-size: 1.05rem;
+}
+
+.size-lineup-caption,
+.size-lineup-comparison {
+  margin: 0;
+  padding: 0 0.9rem 0.7rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.size-lineup-caption {
+  color: var(--accent-strong);
+}
+
+.size-lineup-comparison strong {
+  display: block;
+  color: var(--accent-strong);
+}
+
+.size-lineup-note {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.size-lineup-row {
+  display: flex;
+  align-items: stretch;
+  padding-right: 0.9rem;
+}
+
+.size-lineup-bodies {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.4rem 0.2rem;
+}
+
+.size-lineup-sun,
+.size-lineup-body {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding: 0.35rem 0.3rem;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.8rem;
+}
+
+.size-lineup-sun {
+  position: relative;
+  flex: 0 0 3.5rem;
+  overflow: hidden;
+  border-radius: 0 0.65rem 0.65rem 0;
+}
+
+.size-lineup-sun span {
+  position: relative;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.4rem;
+  background: var(--surface-strong);
+}
+
+.size-lineup [aria-current="true"] {
+  border-color: var(--accent);
+  background: rgb(127 199 255 / 14%);
+}
+
+.size-lineup [aria-current="true"] span {
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+
+.size-lineup-disc,
+.size-lineup-sun-disc {
+  flex: none;
+  width: calc(var(--lineup-largest) * var(--lineup-radius));
+  height: calc(var(--lineup-largest) * var(--lineup-radius));
+}
+
+/* Only the Sun's right edge shows: the disc ends 1.5rem before the column does. */
+.size-lineup-sun-disc {
+  position: absolute;
+  top: 50%;
+  right: 1.5rem;
+  transform: translateY(-50%);
 }

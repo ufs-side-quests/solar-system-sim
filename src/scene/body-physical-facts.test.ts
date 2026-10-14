@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { majorBodySnapshot } from "../physics/solar-system-data";
 import {
   BODY_COMPOSITION_BY_ID,
+  formatBodySize,
+  formatDiameterKm,
   formatLiveOrbitalPeriod,
   formatMassKg,
   formatOrbitalPeriod,
@@ -63,6 +65,13 @@ describe("selected-body physical facts", () => {
     expect(formatWidthComparedToEarth(radiusM("moon"), earthRadiusM)).toBe(
       "Earth is about 3.7 times wider",
     );
+    expect(formatBodySize("earth", earthRadiusM, earthRadiusM)).toBe(
+      "Our home: 12,742 km wide",
+    );
+    expect(formatBodySize("jupiter", radiusM("jupiter"), earthRadiusM)).toBe(
+      "As wide as 11 Earths",
+    );
+    expect(formatDiameterKm(radiusM("jupiter"))).toBe("139,822 km");
   });
 
   it("states orbit and spin periods in units a child can compare", () => {
