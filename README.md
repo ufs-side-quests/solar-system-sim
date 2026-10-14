@@ -75,7 +75,7 @@ Objects without installed radii, including catalogue-only moons and the asteroid
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
-Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines rather than hiding the body or inflating it into a false large sphere.
+Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
 Body and wayfinder labels are borderless transparent annotations at 0.7rem or larger; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
 A label focused from the keyboard shows a 2 px accent ring on a dark chip, which keeps the ring readable over the Sun's disc; the navigation map shows the same ring.
 The time controls support paused, stepped, and continuous forward or backward integration from one second per real second through one simulated year per real second.
@@ -247,6 +247,8 @@ Tap, click, or press Enter on any rendered body, body label, or wayfinder label 
 The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
 The on-screen journey text with its viewpoint speed is hidden from screen readers; a separate polite live region says only "Flying to Mars" when a flight starts and "Arrived at Mars" when it ends.
+A drag that takes the camera clears that message, and a tour flight says nothing because the tour's own narration speaks.
+Readouts that follow the scene every frame (exposure, magnification, orbit flight and the clock) are silent outputs; a readout of a slider the child moves still speaks.
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.

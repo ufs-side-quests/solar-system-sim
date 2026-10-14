@@ -2947,6 +2947,7 @@ export function App() {
               showEclipticPlane={showEclipticPlane}
               showZodiac={showZodiac}
               showLabels={showLabels}
+              announceFlights={activeTourStep === undefined}
               showApolloSites={showApolloSites}
               spacecraftLabelBodyIds={
                 activeTourStep === undefined
@@ -3881,7 +3882,10 @@ export function App() {
                   />
                 </label>
               )}
-              <output className="exposure-readout" aria-live="polite">
+              {/* An output is a live status region by default. Readouts that
+                  follow the scene every frame (exposure, magnification, orbit,
+                  clock) are silent; readouts of the child's own slider speak. */}
+              <output className="exposure-readout" aria-live="off">
                 {exposureStatus.mode === "auto" ? "Auto" : "Manual"}{" "}
                 {exposureStatus.ev >= 0 ? "+" : ""}
                 {exposureStatus.ev.toFixed(2)} EV · {"×"}
@@ -4321,7 +4325,7 @@ export function App() {
                       <span>°</span>
                     </span>
                   </label>
-                  <output className="orbit-flight-readout">
+                  <output className="orbit-flight-readout" aria-live="off">
                     {orbitReadout?.kind === "hover"
                       ? `Station keeping ${orbitReadout.accelerationMps2.toFixed(4)} m/s²`
                       : orbitReadout?.kind === "orbit"
@@ -4380,7 +4384,7 @@ export function App() {
                     )
                   }
                 />
-                <output>
+                <output aria-live="off">
                   {viewMagnification < 0.001
                     ? viewMagnification.toExponential(2)
                     : viewMagnification < 0.1
@@ -4644,7 +4648,7 @@ export function App() {
 
         <section className="timeline-dock" aria-label="Time controls">
           <div className="time-readout">
-            <output data-time-seconds={state?.timeSeconds ?? 0}>
+            <output data-time-seconds={state?.timeSeconds ?? 0} aria-live="off">
               TDB {formatSimulationOffset(state?.timeSeconds ?? 0)}
             </output>
             <span

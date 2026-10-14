@@ -853,7 +853,6 @@ h1 {
 
 .body-label.is-bracket {
   color: var(--accent-strong);
-  background: transparent;
 }
 
 .body-label.is-hidden-surprise {
@@ -881,8 +880,10 @@ h1 {
   font-weight: 560;
 }
 
+/* The leader line is decoration: a click on it reaches the label under it. */
 .body-label.has-leader::before {
   position: absolute;
+  pointer-events: none;
   top: 50%;
   left: 0;
   width: var(--leader-length);

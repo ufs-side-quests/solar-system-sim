@@ -94,6 +94,7 @@ import type {
   GravityWellScale,
 } from "./gravity-potential";
 import type { SimulationFrame } from "./interpolation";
+import { placeBodyLabel, type LabelRectangle } from "./label-placement";
 import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
@@ -331,11 +332,6 @@ const PLANET_TRAIL_BODY_IDS = [
   "neptune",
 ] as const;
 const LABEL_MINIMUM_RADIUS_PIXELS = 0.5;
-// The overlap boxes scale with the label font size, which comes from the CSS.
-// A name's width is about 0.6 em a letter; the box is 2 em tall.
-const LABEL_CHARACTER_WIDTH_EM = 0.6;
-const LABEL_HORIZONTAL_CHROME_PX = 14;
-const LABEL_HALF_HEIGHT_EM = 1;
 // A press on the canvas that moves no farther than this is a tap: it selects
 // the body under it, and during a camera flight it keeps the flight.
 const TAP_SLOP_PX = 8;
@@ -622,6 +618,8 @@ type SolarSystemSceneProps = Readonly<{
   showEclipticPlane: boolean;
   showZodiac: boolean;
   showLabels: boolean;
+  // A tour speaks for itself, so a flight is announced only outside tours.
+  announceFlights: boolean;
   showApolloSites: boolean;
   spacecraftLabelBodyIds: readonly string[] | undefined;
   resetViewToken: number;
@@ -693,6 +691,7 @@ export function SolarSystemScene({
   showEclipticPlane,
   showZodiac,
   showLabels,
+  announceFlights,
   showApolloSites,
   spacecraftLabelBodyIds,
   resetViewToken,
@@ -753,6 +752,7 @@ export function SolarSystemScene({
   const showEclipticPlaneRef = useRef(showEclipticPlane);
   const showZodiacRef = useRef(showZodiac);
   const showLabelsRef = useRef(showLabels);
+  const announceFlightsRef = useRef(announceFlights);
   const showApolloSitesRef = useRef(showApolloSites);
   const spacecraftLabelBodyIdsRef = useRef(spacecraftLabelBodyIds);
   const resetViewTokenRef = useRef(resetViewToken);
@@ -805,6 +805,7 @@ export function SolarSystemScene({
   showEclipticPlaneRef.current = showEclipticPlane;
   showZodiacRef.current = showZodiac;
   showLabelsRef.current = showLabels;
+  announceFlightsRef.current = announceFlights;
   showApolloSitesRef.current = showApolloSites;
   spacecraftLabelBodyIdsRef.current = spacecraftLabelBodyIds;
   resetViewTokenRef.current = resetViewToken;
@@ -4134,12 +4135,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastSmallBodyGpuUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSunGuideUpdateAt = Number.NEGATIVE_INFINITY;
     // Body labels keep clear of the Sun and planet guide labels.
-    let wayfinderLabelRectangles: Readonly<{
-      left: number;
-      right: number;
-      top: number;
-      bottom: number;
-    }>[] = [];
+    let wayfinderLabelRectangles: LabelRectangle[] = [];
     let lastNavigationMapUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSmallBodiesVisible: boolean | undefined;
     let lastSceneMutationKey = "";
@@ -4155,12 +4151,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
 
     let labelFontPx = Number.NaN;
     const resize = (width: number, height: number): void => {
+      // The render loop fails when this is not a positive size.
+      labelFontPx = Number.parseFloat(getComputedStyle(issLabel).fontSize);
       if (width <= 0 || height <= 0) {
         return;
-      }
-      labelFontPx = Number.parseFloat(getComputedStyle(issLabel).fontSize);
-      if (!(labelFontPx > 0)) {
-        throw new Error("Body label font size is unavailable");
       }
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -5058,7 +5052,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
             : "position-only";
       activeCameraTransition = undefined;
       cameraJourney.hidden = true;
-      cameraJourneyAnnouncer.textContent = `Arrived at ${transition.destinationName}`;
+      if (announceFlightsRef.current) {
+        cameraJourneyAnnouncer.textContent = `Arrived at ${transition.destinationName}`;
+      }
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionRemainingDistanceAu"] = "0.000000";
@@ -5078,6 +5074,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       activeCameraTransition = undefined;
       controls.enabled = true;
       cameraJourney.hidden = true;
+      cameraJourneyAnnouncer.textContent = "";
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterrupted"] = String(sequence);
@@ -5199,7 +5196,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       cameraJourney.title =
         "Viewpoint speed is camera displacement per real second, not a physical spacecraft velocity";
       cameraJourney.textContent = `Turning toward ${activeCameraTransition.destinationName}`;
-      cameraJourneyAnnouncer.textContent = `Flying to ${activeCameraTransition.destinationName}`;
+      if (announceFlightsRef.current) {
+        cameraJourneyAnnouncer.textContent = `Flying to ${activeCameraTransition.destinationName}`;
+      }
       return true;
     };
 
@@ -8004,8 +8003,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
       let visibleLabelCount = 0;
       let visibleOrreryMarkerCount = 0;
-      const occupiedLabelRectangles = [...wayfinderLabelRectangles];
-      const labelHalfHeightPx = LABEL_HALF_HEIGHT_EM * labelFontPx;
+      // labelFontPx sizes the label boxes: without it every overlap test passes.
+      if (!(labelFontPx > 0)) {
+        throw new Error("Body label font size is unavailable");
+      }
+      const bodyLabelRectangles: LabelRectangle[] = [];
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
         const label = bodyLabels.get(body.id);
@@ -8087,76 +8089,23 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const projectedLabelX = ((projected.x + 1) * container.clientWidth) / 2;
         const projectedLabelY =
           ((-projected.y + 1) * container.clientHeight) / 2;
-        const labelWidth =
-          body.name.length * LABEL_CHARACTER_WIDTH_EM * labelFontPx +
-          LABEL_HORIZONTAL_CHROME_PX;
-        const candidateOffsets = isCameraTarget
-          ? [
-              [18, 24],
-              [18, -24],
-              [-labelWidth - 18, 24],
-              [-labelWidth - 18, -24],
-            ]
-          : isOverviewPlanet
-            ? [
-                [0, 0],
-                [0, -22],
-                [0, 22],
-                [52, -11],
-                [52, 11],
-                [-labelWidth - 22, -11],
-                [-labelWidth - 22, 11],
-                [52, -33],
-                [52, 33],
-                [-labelWidth - 22, -33],
-                [-labelWidth - 22, 33],
-              ]
-            : [[0, 0]];
-        const placement = candidateOffsets
-          .map(([offsetX, offsetY]) => {
-            const x = Math.min(
-              container.clientWidth - labelWidth - 12,
-              Math.max(12, projectedLabelX + (offsetX ?? 0)),
-            );
-            const y = Math.min(
-              container.clientHeight - 18,
-              Math.max(18, projectedLabelY + (offsetY ?? 0)),
-            );
-            return {
-              x,
-              y,
-              rectangle: {
-                left: x,
-                right: x + labelWidth,
-                top: y - labelHalfHeightPx,
-                bottom: y + labelHalfHeightPx,
-              },
-            };
-          })
-          .find(({ rectangle }) =>
-            occupiedLabelRectangles.every(
-              (occupied) =>
-                rectangle.left >= occupied.right ||
-                rectangle.right <= occupied.left ||
-                rectangle.top >= occupied.bottom ||
-                rectangle.bottom <= occupied.top,
-            ),
-          );
-        const labelX = placement?.x ?? projectedLabelX;
-        const labelY = placement?.y ?? projectedLabelY;
-        const candidateRectangle = placement?.rectangle ?? {
-          left: labelX,
-          right: labelX + labelWidth,
-          top: labelY - labelHalfHeightPx,
-          bottom: labelY + labelHalfHeightPx,
-        };
-        const overlapsExistingLabel = occupiedLabelRectangles.some(
-          (rectangle) =>
-            candidateRectangle.left < rectangle.right &&
-            candidateRectangle.right > rectangle.left &&
-            candidateRectangle.top < rectangle.bottom &&
-            candidateRectangle.bottom > rectangle.top,
-        );
+        const placement = placeBodyLabel({
+          name: body.name,
+          role: isCameraTarget
+            ? "camera-target"
+            : isOverviewPlanet
+              ? "overview-planet"
+              : "other",
+          projectedX: projectedLabelX,
+          projectedY: projectedLabelY,
+          fontPx: labelFontPx,
+          viewportWidth: container.clientWidth,
+          viewportHeight: container.clientHeight,
+          guideRectangles: wayfinderLabelRectangles,
+          bodyRectangles: bodyLabelRectangles,
+        });
+        const labelX = placement.x;
+        const labelY = placement.y;
         let labelVisible =
           showLabelsRef.current &&
           (bodyLayerVisible || isCameraTarget) &&
@@ -8170,7 +8119,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           labelVisible = false;
         }
         if (
-          overlapsExistingLabel &&
+          placement.overlapsBodyLabel &&
           !isOverviewPlanet &&
           body.id !== focusBodyIdRef.current &&
           !isCameraTarget
@@ -8199,7 +8148,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         if (labelVisible) {
           visibleLabelCount += 1;
-          occupiedLabelRectangles.push(candidateRectangle);
+          bodyLabelRectangles.push(placement.rectangle);
           label.style.transform = `translate(${String(labelX)}px, ${String(labelY)}px)`;
           if (body.id === "earth" || body.id === "moon") {
             container.dataset[
