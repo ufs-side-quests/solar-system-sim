@@ -3266,9 +3266,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       ...operationalSpacecraftSnapshot.spacecraft.map((spacecraft) => ({
         id: spacecraft.id,
         name: spacecraft.name,
-        group: isEasterEggId(spacecraft.id)
-          ? HIDDEN_SURPRISES_GROUP
-          : "Spacecraft",
+        // The Roadster is a real craft: a spacecraft dot once found.
+        group: "Spacecraft",
       })),
       ...voyagerSnapshot.probes.map((probe) => ({
         id: probe.id,
@@ -5134,6 +5133,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         if (bodyId === null || bodyId === undefined || bodyId === "") {
           return "the Solar System";
         }
+        // "Turning toward the International Space Station" reads as English.
+        if (bodyId === ISS_BODY_ID) return "the International Space Station";
         return bodyDisplayName(bodyId);
       };
       const transitionStartedAtMs = performance.now();
@@ -7449,6 +7450,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         navigationMap.dataset["plottedTargetCount"] = String(
           navigationMapHits.length,
         );
+        navigationMap.dataset["plottedBodies"] = navigationMapHits
+          .map((hit) => hit.bodyId)
+          .join(" ");
         navigationMap.dataset["observerBody"] = observerBodyId ?? "camera";
         navigationMap.dataset["viewBearingDeg"] = (
           (Math.atan2(directionX, -directionY) * 180) / Math.PI +

@@ -94,7 +94,7 @@ describe("easter egg hints", () => {
       "uss-defiant": ["callisto"],
       "discovery-one": ["io"],
       "jovian-monolith": ["jupiter", "io"],
-      roadster: ["earth", "mars"],
+      roadster: ["earth", "mars", "sun"],
     });
   });
 });
@@ -113,7 +113,7 @@ describe("hidden surprise rows", () => {
       ["uss-defiant", "? Near Callisto", "callisto"],
       ["discovery-one", "? Near Io", "io"],
       ["jovian-monolith", "? Between Jupiter and Io", "io"],
-      ["roadster", "? Somewhere between Earth and Mars", "mars"],
+      ["roadster", "? Circles the Sun between Earth and Mars", "sun"],
     ]);
     for (const egg of EASTER_EGGS) {
       const clueBody = majorBodySnapshot.bodies.find(

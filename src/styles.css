@@ -1093,10 +1093,12 @@ h1 {
   white-space: nowrap;
 }
 
+/* Below the camera journey label (5.6rem, up to two lines here), which a
+   find starts. */
 .discovery-toast {
   position: absolute;
   z-index: 16;
-  top: 4.6rem;
+  top: 9rem;
   left: 50%;
   width: max-content;
   max-width: min(26rem, calc(100% - 1.7rem));
@@ -2966,8 +2968,9 @@ h1 {
     top: 9.4rem;
   }
 
+  /* Below the camera journey label (up to three lines). */
   .discovery-toast {
-    top: 7rem;
+    top: 9.8rem;
   }
 
   .timeline-dock {

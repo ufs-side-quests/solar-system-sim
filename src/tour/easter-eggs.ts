@@ -103,11 +103,13 @@ export const EASTER_EGGS = [
   },
   {
     id: ROADSTER_BODY_ID,
-    clue: "Somewhere between Earth and Mars",
-    clueBodyId: "mars",
+    clue: "Circles the Sun between Earth and Mars",
+    // The Roadster is usually far from both planets, so its hint label is
+    // out of view from either. From the Sun it is in view.
+    clueBodyId: "sun",
     name: "Starman's Tesla Roadster",
     origin: "real, launched by SpaceX in 2018",
-    hintBodyIds: ["earth", "mars"],
+    hintBodyIds: ["earth", "mars", "sun"],
     // The Roadster orbits the Sun and is seldom near Earth or Mars.
     cardHint: false,
   },

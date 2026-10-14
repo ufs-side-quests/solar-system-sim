@@ -470,16 +470,24 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
 const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
   (option) => option.id !== "" && !option.disabled,
 );
-const FOCUS_BROWSE_OPTIONS = FOCUS_OPTIONS.filter(
-  (option) =>
-    !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id) && !isEasterEggId(option.id),
-);
 const EGG_FOCUS_OPTION_BY_ID = new Map(
   FOCUS_OPTIONS.filter((option) => isEasterEggId(option.id)).map((option) => [
     option.id,
     option,
   ]),
 );
+
+const FOCUS_OPTION_BY_ID = new Map(
+  FOCUS_OPTIONS.map((option) => [option.id, option]),
+);
+
+function focusOption(bodyId: string): FocusOption {
+  const option = FOCUS_OPTION_BY_ID.get(bodyId);
+  if (option === undefined) {
+    throw new Error(`Focus option ${bodyId} is unavailable`);
+  }
+  return option;
+}
 
 /** An unfound egg stays out of browsing, search and Next object. */
 function isHiddenUntilFound(
@@ -564,6 +572,12 @@ const FOCUS_GROUPS = Array.from(
     label,
     options: FOCUS_OPTIONS.filter((option) => option.group === label),
   }));
+// Every option except the eggs, in the order the list shows them, so the
+// highlighted row and Enter pick the row on screen.
+const NON_EGG_OPTIONS = FOCUS_GROUPS.flatMap((group) => group.options);
+const FOCUS_BROWSE_OPTIONS = NON_EGG_OPTIONS.filter(
+  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+);
 
 const FocusSelect = memo(function FocusSelect({
   value,
@@ -574,16 +588,18 @@ const FocusSelect = memo(function FocusSelect({
   foundEasterEggIds: ReadonlySet<EasterEggId>;
   onSelect(bodyId: string): void;
 }>) {
-  const selectedOption = FOCUS_OPTIONS.find((option) => option.id === value);
-  if (selectedOption === undefined) {
-    throw new Error(`Focus option ${value} is unavailable`);
-  }
+  const selectedOption = focusOption(value);
   const hiddenSurpriseOptions = useMemo(
     () => hiddenSurpriseFocusOptions(foundEasterEggIds),
     [foundEasterEggIds],
   );
   const browseOptions = useMemo(
     () => [...FOCUS_BROWSE_OPTIONS, ...hiddenSurpriseOptions],
+    [hiddenSurpriseOptions],
+  );
+  // Clue rows have no search text, so search lists found eggs only.
+  const searchOptions = useMemo(
+    () => [...NON_EGG_OPTIONS, ...hiddenSurpriseOptions],
     [hiddenSurpriseOptions],
   );
   const groups = [
@@ -626,7 +642,8 @@ const FocusSelect = memo(function FocusSelect({
   } = useCombobox<FocusOption>({
     items: filteredOptions,
     selectedItem: selectedOption,
-    itemToString: (item) => item?.label ?? "",
+    // A clue row names the body it flies to, as that body's own row does.
+    itemToString: (item) => (item === null ? "" : focusOption(item.id).label),
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
@@ -635,10 +652,8 @@ const FocusSelect = memo(function FocusSelect({
       setFilteredOptions(
         normalizedInput.length === 0
           ? browseOptions
-          : FOCUS_OPTIONS.filter(
-              (option) =>
-                !isHiddenUntilFound(option, foundEasterEggIds) &&
-                option.searchText.toLocaleLowerCase().includes(normalizedInput),
+          : searchOptions.filter((option) =>
+              option.searchText.toLocaleLowerCase().includes(normalizedInput),
             ),
       );
     },

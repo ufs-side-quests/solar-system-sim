@@ -152,7 +152,7 @@ It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
 
 These references, and the real Tesla Roadster, are easter eggs.
-When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth and Mars for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth, Mars and the Sun for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
 The label uses game wording so that a child never reads it as a real astronomical discovery.
 While that body has an unfound egg, its selected-body card also says "Something hidden is out there. Look closely!", because on a phone the card can cover the label.
 Guided tour steps never show these hints.
@@ -160,6 +160,8 @@ The first selection reveals the real name, shows a short "You found" message wit
 Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
 Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
 The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Sun: the Roadster is usually far from both planets, and its hint is in view from the Sun.
+Once found, the Roadster joins the map's Spacecraft list as a real craft.
 Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
 The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
