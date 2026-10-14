@@ -16,18 +16,23 @@ export type OrientationTransitionSample = Readonly<{
 }>;
 
 // The rotation and the scale about an anchor that carry a camera part of the
-// way from its start offset to its end offset.
-export type AnchoredCameraMove = Readonly<{
+// way from its start offset to its end offset. A caller keeps one and lets
+// anchoredCameraMove overwrite it each frame.
+export type AnchoredCameraMove = {
   anchor: Vector3;
   rotation: Quaternion;
   scale: number;
-}>;
+};
 
 const DIRECT_ORIENTATION_END = 0.34;
 const DIRECT_ARRIVAL_START = 0.68;
 // Start and end directions closer than this to opposite (about 172 degrees)
 // have no clear shortest turn, so the camera swings level instead.
 const NEARLY_OPPOSITE_COSINE = -0.99;
+const scratchStartDirection = new Vector3();
+const scratchEndDirection = new Vector3();
+const scratchFirstTurn = new Quaternion();
+const scratchCompleteTurn = new Quaternion();
 
 function smootherStep(value: number): number {
   const clamped = Math.min(1, Math.max(0, value));
@@ -75,52 +80,87 @@ export function interpolateLogarithmicDistance(
   );
 }
 
-// The camera turns its direction from the anchor about one axis and changes
-// its distance by a constant factor per unit of progress, so the
-// anchor's apparent size grows steadily and the camera never comes closer than
-// the nearer of the two end distances.
-export function anchoredCameraMove(
-  startPosition: Vector3,
-  endPosition: Vector3,
-  anchor: Vector3,
-  progress: number,
+// The direction, square to the start direction, that a flight turns through
+// on its way round the anchor. A flight chooses it once, when it begins: the
+// anchor and the end pose move while time runs, and a side chosen again each
+// frame could flip and jump the camera. For a clear shortest turn the side
+// leans toward the end direction; for nearly opposite ends it is level,
+// toward the side the end direction leans to.
+export function chooseTurnSide(
+  startOffset: Vector3,
+  endOffset: Vector3,
   levelUp: Vector3,
-): AnchoredCameraMove {
-  const startOffset = startPosition.clone().sub(anchor);
-  const endOffset = endPosition.clone().sub(anchor);
-  const startDistance = startOffset.length();
-  const distance = interpolateLogarithmicDistance(
-    startDistance,
-    endOffset.length(),
-    progress,
-  );
-  const startDirection = startOffset.normalize();
-  const endDirection = endOffset.normalize();
-  const completeRotation = new Quaternion();
-  if (startDirection.dot(endDirection) > NEARLY_OPPOSITE_COSINE) {
-    completeRotation.setFromUnitVectors(startDirection, endDirection);
-  } else {
-    // Swing round the anchor through a level side direction, toward the side
-    // the end direction leans to.
-    const side = new Vector3().crossVectors(levelUp, startDirection);
+): Vector3 {
+  const startDirection = startOffset.clone().normalize();
+  const endDirection = endOffset.clone().normalize();
+  const cosine = startDirection.dot(endDirection);
+  const side = new Vector3();
+  if (cosine > NEARLY_OPPOSITE_COSINE) {
+    side.copy(endDirection).addScaledVector(startDirection, -cosine);
+  }
+  if (side.lengthSq() <= 1e-12) {
+    side.crossVectors(levelUp, startDirection);
     if (side.lengthSq() <= 1e-12) {
       side.set(1, 0, 0).cross(startDirection);
       if (side.lengthSq() <= 1e-12) side.set(0, 1, 0).cross(startDirection);
     }
-    side.normalize();
     if (side.dot(endDirection) < 0) side.negate();
-    completeRotation
-      .setFromUnitVectors(side, endDirection)
-      .multiply(new Quaternion().setFromUnitVectors(startDirection, side));
   }
-  return {
+  return side.normalize();
+}
+
+// The camera changes its distance from the anchor by a constant factor per
+// unit of progress, so the anchor's apparent size grows steadily and the
+// camera never comes closer than the nearer of the two end distances. Its
+// direction from the anchor turns by part of the rotation that carries the
+// start direction to the turn side and on to the end direction, about that
+// rotation's one axis. While the start, side and end directions lie in one
+// plane, the axis is square to it: the shortest turn, or a level swing for
+// nearly opposite ends.
+export function anchoredCameraMove(
+  output: AnchoredCameraMove,
+  startPosition: Vector3,
+  endPosition: Vector3,
+  anchor: Vector3,
+  progress: number,
+  turnSide: Vector3,
+): AnchoredCameraMove {
+  const startDirection = scratchStartDirection.subVectors(
+    startPosition,
     anchor,
-    rotation: new Quaternion().slerp(
-      completeRotation,
-      Math.min(1, Math.max(0, progress)),
-    ),
-    scale: distance / startDistance,
-  };
+  );
+  const endDirection = scratchEndDirection.subVectors(endPosition, anchor);
+  const startDistance = startDirection.length();
+  const distance = interpolateLogarithmicDistance(
+    startDistance,
+    endDirection.length(),
+    progress,
+  );
+  startDirection.normalize();
+  endDirection.normalize();
+  scratchCompleteTurn
+    .setFromUnitVectors(turnSide, endDirection)
+    .multiply(scratchFirstTurn.setFromUnitVectors(startDirection, turnSide));
+  // Take part of the turn about its axis. A slerp would take the shorter way
+  // round once the turn passes 180 degrees and flip the camera to the other
+  // side; the turn's own sign keeps the way it chose.
+  const halfAngle = Math.acos(Math.min(1, Math.max(-1, scratchCompleteTurn.w)));
+  const axisScale = Math.sin(halfAngle);
+  const partHalfAngle = halfAngle * Math.min(1, Math.max(0, progress));
+  output.anchor.copy(anchor);
+  if (axisScale <= 1e-12) {
+    output.rotation.identity();
+  } else {
+    const partScale = Math.sin(partHalfAngle) / axisScale;
+    output.rotation.set(
+      scratchCompleteTurn.x * partScale,
+      scratchCompleteTurn.y * partScale,
+      scratchCompleteTurn.z * partScale,
+      Math.cos(partHalfAngle),
+    );
+  }
+  output.scale = distance / startDistance;
+  return output;
 }
 
 export function applyAnchoredCameraMove(

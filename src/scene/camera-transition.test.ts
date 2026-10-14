@@ -1,9 +1,11 @@
-import { Vector3 } from "three";
+import { Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
+  type AnchoredCameraMove,
   anchoredCameraMove,
   applyAnchoredCameraMove,
+  chooseTurnSide,
   formatViewpointSpeed,
   interpolateLogarithmicDistance,
   sampleDirectCameraTransition,
@@ -118,15 +120,36 @@ describe("camera transition", () => {
     // About Jupiter's place and the overview's distance, in AU.
     const anchor = new Vector3(4.1, -2.9, 0.05);
     const endDistance = 0.002;
+    const newMove = (): AnchoredCameraMove => ({
+      anchor: new Vector3(),
+      rotation: new Quaternion(),
+      scale: 1,
+    });
+    // A flight chooses its turn side once, from the poses it begins with.
+    const moveAt = (
+      start: Vector3,
+      end: Vector3,
+      centre: Vector3,
+      progress: number,
+    ): AnchoredCameraMove =>
+      anchoredCameraMove(
+        newMove(),
+        start,
+        end,
+        centre,
+        progress,
+        chooseTurnSide(start.clone().sub(centre), end.clone().sub(centre), up),
+      );
     const positionAt = (
       start: Vector3,
       end: Vector3,
       progress: number,
+      centre: Vector3 = anchor,
     ): Vector3 =>
       applyAnchoredCameraMove(
         new Vector3(),
         start,
-        anchoredCameraMove(start, end, anchor, progress, up),
+        moveAt(start, end, centre, progress),
       );
     const progressSteps = Array.from({ length: 101 }, (_, step) => step / 100);
 
@@ -191,7 +214,7 @@ describe("camera transition", () => {
       const end = anchor.clone().add(new Vector3(-endDistance, 0, 0));
       const lookTarget = start.clone().lerp(anchor, 0.25);
       for (const progress of [0.1, 0.5, 0.9]) {
-        const move = anchoredCameraMove(start, end, anchor, progress, up);
+        const move = moveAt(start, end, anchor, progress);
         const camera = applyAnchoredCameraMove(new Vector3(), start, move);
         const look = applyAnchoredCameraMove(new Vector3(), lookTarget, move)
           .sub(camera)
@@ -205,14 +228,126 @@ describe("camera transition", () => {
 
     it("fails explicitly when the camera starts on the destination", () => {
       expect(() =>
-        anchoredCameraMove(
-          anchor,
-          anchor.clone().addScalar(1),
-          anchor,
-          0.5,
-          up,
-        ),
+        moveAt(anchor, anchor.clone().addScalar(1), anchor, 0.5),
       ).toThrow(/positive/u);
+    });
+
+    // Every frame of a 12 s flight at 60 frames a second after the turn: the
+    // eased progress crowds the last frames close to the destination.
+    const fineSteps = Array.from({ length: 721 }, (_, frame) =>
+      sampleDirectCameraTransition((frame * 1_000) / 60, 12_000),
+    )
+      .filter((sample) => sample.phase !== "orienting")
+      .map((sample) => sample.segmentProgress);
+    const closestApproach = (
+      start: Vector3,
+      end: Vector3,
+      centre: Vector3,
+      body: Vector3,
+    ): number =>
+      Math.min(
+        ...fineSteps.map((progress) =>
+          positionAt(start, end, progress, centre).distanceTo(body),
+        ),
+      );
+
+    it("keeps an observer flight outside the body it ends just above", () => {
+      // From Voyager 1 to just above Mercury's sunward surface, looking at
+      // the Sun, with Mercury at several places on its orbit; in AU.
+      const kmAu = 1 / 149_597_870.7;
+      const mercuryRadius = 2_439.7 * kmAu;
+      const start = new Vector3(-0.1, -0.85, 0.55)
+        .normalize()
+        .multiplyScalar(165);
+      for (const degrees of [0, 45, 90, 135, 180, 270]) {
+        const angle = (degrees * Math.PI) / 180;
+        const mercury = new Vector3(
+          Math.cos(angle),
+          Math.sin(angle),
+          0,
+        ).multiplyScalar(0.387);
+        const sun = new Vector3();
+        const end = mercury.clone().add(
+          sun
+            .clone()
+            .sub(mercury)
+            .normalize()
+            .multiplyScalar(mercuryRadius + 24.4 * kmAu),
+        );
+        expect(
+          closestApproach(start, end, mercury, mercury) / mercuryRadius,
+        ).toBeGreaterThan(1);
+        // Turning round the Sun, the body the observer looks at, takes the
+        // camera through Mercury.
+        expect(
+          closestApproach(start, end, sun, mercury) / mercuryRadius,
+        ).toBeLessThan(1);
+      }
+    });
+
+    it("keeps an Apollo site flight from the far side above the Moon", () => {
+      // In km, with the Moon at the centre. The inspection pose sits about
+      // 11 m up and 34 m from the site, looking at a point 1.1 m above it.
+      const moonRadius = 1_737.4;
+      const moon = new Vector3();
+      const start = new Vector3(1, 0, 0.2)
+        .normalize()
+        .multiplyScalar(4 * moonRadius);
+      for (const degrees of [105, 150, 180]) {
+        const angle = (degrees * Math.PI) / 180;
+        const normal = new Vector3(Math.cos(angle), Math.sin(angle), 0);
+        const lookTarget = normal.clone().multiplyScalar(moonRadius + 0.0011);
+        const end = normal
+          .clone()
+          .multiplyScalar(moonRadius + 0.011)
+          .add(
+            new Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(
+              0.033,
+            ),
+          );
+        expect(closestApproach(start, end, moon, moon)).toBeGreaterThan(
+          moonRadius,
+        );
+        // Turning round the look target tunnels under the surface.
+        expect(closestApproach(start, end, lookTarget, moon)).toBeLessThan(
+          moonRadius,
+        );
+      }
+    });
+
+    it("keeps its turn when the end direction drifts across opposite", () => {
+      // Time-lapse moves the destination during the flight, so the end
+      // direction drifts from a clear turn, through nearly opposite, to the
+      // other side of the start. The camera must not jump.
+      const centre = new Vector3();
+      const start = new Vector3(5, 0, 0);
+      const endAt = (step: number): Vector3 =>
+        new Vector3(-1, 0.2 - (0.4 * step) / 400, 0.1)
+          .normalize()
+          .multiplyScalar(5);
+      const turnSide = chooseTurnSide(start, endAt(0), up);
+      let previous = start.clone();
+      let largestStep = 0;
+      for (let step = 1; step <= 400; step += 1) {
+        const position = applyAnchoredCameraMove(
+          new Vector3(),
+          start,
+          anchoredCameraMove(
+            newMove(),
+            start,
+            endAt(step),
+            centre,
+            step / 400,
+            turnSide,
+          ),
+        );
+        largestStep = Math.max(largestStep, position.distanceTo(previous));
+        previous = position;
+      }
+      // About 3 degrees of turn at a distance of 5 per step at most; a flip
+      // of the turn side jumps by several units.
+      expect(largestStep).toBeLessThan(0.3);
+      expect(previous.distanceTo(endAt(400))).toBeLessThan(1e-9);
     });
   });
 });
