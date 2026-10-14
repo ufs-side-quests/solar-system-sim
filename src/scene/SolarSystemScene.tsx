@@ -4321,7 +4321,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         : position.sub(scenePosition(originState.positionM));
     };
 
-    const updateTrail = (exactState: SimulationState): void => {
+    const updateTrail = (
+      exactState: SimulationState,
+      jumped: boolean,
+    ): void => {
       const requestedReferenceFrame = referenceFrameRef.current;
       if (requestedReferenceFrame !== activeReferenceFrame) {
         activeReferenceFrame = requestedReferenceFrame;
@@ -4347,15 +4350,35 @@ float saturnRingTransmission(vec3 surfacePosition) {
         lastMoonTrailTime === undefined
           ? 0
           : Math.sign(exactState.timeSeconds - lastMoonTrailTime);
-      if (
+      const reversed =
         trailDirection !== 0 &&
         lastTrailDirection !== 0 &&
-        trailDirection !== lastTrailDirection
-      ) {
-        clearTrails();
-      }
-      if (trailDirection !== 0) {
-        lastTrailDirection = trailDirection;
+        trailDirection !== lastTrailDirection;
+      if (reversed && jumped) {
+        // A jump back along the trail, such as Pause holding the clock at
+        // the state on screen behind the frame the trail reached, keeps the
+        // trail up to the new time.
+        const dropPointsBeyond = (points: { timeSeconds: number }[]): void => {
+          while (
+            Math.sign(
+              (points.at(-1)?.timeSeconds ?? exactState.timeSeconds) -
+                exactState.timeSeconds,
+            ) === lastTrailDirection
+          ) {
+            points.pop();
+          }
+        };
+        dropPointsBeyond(moonTrailPoints);
+        for (const trail of planetTrails.values()) {
+          dropPointsBeyond(trail.points);
+        }
+      } else {
+        if (reversed) {
+          clearTrails();
+        }
+        if (trailDirection !== 0) {
+          lastTrailDirection = trailDirection;
+        }
       }
       const moonState = bodyStateById(exactState, "moon");
       if (moonState === undefined) {
@@ -5554,7 +5577,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         for (const trailState of requestedFrame.trailStates ?? [
           requestedFrame.end,
         ]) {
-          updateTrail(trailState);
+          updateTrail(trailState, requestedFrame.transitionDurationMs <= 0);
         }
       }
       const current = displayedStateRef.current;

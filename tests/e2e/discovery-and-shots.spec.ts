@@ -339,6 +339,94 @@ test("running the clock backward ends the planets race", async ({ page }) => {
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
 });
 
+test("Pause and Run backward stop the planets race where it is on screen", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  const scene = await startPlanetsRacing(page);
+  await expect
+    .poll(
+      async () =>
+        Number(await scene.getAttribute("data-rendered-time-seconds")) / 86_400,
+    )
+    .toBeGreaterThan(30);
+  // A loaded machine draws frames late, so the solver runs a batch of race
+  // frames ahead of the screen.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await page.evaluate(() => {
+    const record = {
+      atPauseDays: Number.NaN,
+      atBackwardDays: Number.NaN,
+      afterPauseDays: [] as number[],
+      afterBackwardDays: [] as number[],
+    };
+    (window as unknown as { raceStop: typeof record }).raceStop = record;
+    const renderedDays = (): number =>
+      Number(
+        document.querySelector<HTMLElement>("[data-rendered-time-seconds]")
+          ?.dataset.renderedTimeSeconds,
+      ) / 86_400;
+    document.addEventListener(
+      "click",
+      (event) => {
+        const name =
+          event.target instanceof HTMLElement ? event.target.textContent : "";
+        if (name === "Pause") record.atPauseDays = renderedDays();
+        if (name === "Run backward") record.atBackwardDays = renderedDays();
+      },
+      true,
+    );
+    const sample = (): void => {
+      if (Number.isFinite(record.atBackwardDays)) {
+        record.afterBackwardDays.push(renderedDays());
+      } else if (Number.isFinite(record.atPauseDays)) {
+        record.afterPauseDays.push(renderedDays());
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.getByRole("button", { name: "Pause" }).click();
+  await page.waitForTimeout(1_500);
+  await page.getByRole("button", { name: "Run backward" }).click();
+  await expect(page.locator(".playback-rate-control output")).toHaveText(
+    "1 hour / second",
+  );
+  await page.waitForTimeout(3_000);
+  const record = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          raceStop: {
+            atPauseDays: number;
+            atBackwardDays: number;
+            afterPauseDays: number[];
+            afterBackwardDays: number[];
+          };
+        }
+      ).raceStop,
+  );
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  // Each new time the scene drew while paused.
+  const drawnAfterPause = record.afterPauseDays.filter(
+    (days, index, all) =>
+      days !== record.atPauseDays && days !== all[index - 1],
+  );
+  console.log(
+    JSON.stringify({ atPauseDays: record.atPauseDays, drawnAfterPause }),
+  );
+  // The draw already under way at the click may still land; after it the
+  // planets stand still. Before the fix the race's frames handed over ahead
+  // of the screen kept them moving, by days to a month, over later draws.
+  expect(drawnAfterPause.length).toBeLessThanOrEqual(1);
+  expect(Math.max(...record.afterBackwardDays)).toBeLessThanOrEqual(
+    record.atBackwardDays,
+  );
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+});
+
 test("a discovery message takes the shot caption's place", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 768, height: 1024 });

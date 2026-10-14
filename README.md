@@ -90,6 +90,8 @@ The explorer starts at one simulated hour per real second so surface rotation re
 Playback rate is independent of solver keyframe size: continuous playback integrates one simulated day or less per REBOUND endpoint and uses velocity-constrained Hermite interpolation only between completed states.
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
+Pause or Run backward stops the planets at the state on screen before the next paint, and a new direction or rate takes the solver back to that time, so endpoints computed ahead of a slow screen never carry the planets on.
+The trails keep their points up to that time.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
 At full boost every planet, dwarf planet and moon has a readable radius of 0.02 AU times the square root of its radius in Earth radii.
 The Sun has a fixed readable radius of 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.

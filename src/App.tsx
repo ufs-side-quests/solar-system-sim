@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1213,6 +1214,8 @@ export function App() {
     const controller = new AbortController();
     const isActive = (): boolean => !controller.signal.aborted;
     let solverTime = 0;
+    // The last state handed to the screen; the solver's first answer sets it.
+    let previousState: SimulationState;
     let rateSampleTime = performance.now();
     let rateSampleSimulationTime = 0;
 
@@ -1253,11 +1256,45 @@ export function App() {
     const seekPending = (): boolean =>
       directSeekTimeSecondsRef.current !== undefined;
 
+    // The frames handed to the screen run ahead of it: by one keyframe, or
+    // on a loaded machine by a whole batch that late frames skipped over. A
+    // changed request (Pause, a new direction or rate) stops the clock at
+    // the state on screen, so the planets do not carry on after the child
+    // pressed Pause or Run backward. The hold stays between the start of
+    // this run and its last frame: a screen that has not yet shown the
+    // run's first state holds there.
+    const holdDisplayedState = async (
+      runStartSeconds: number,
+    ): Promise<void> => {
+      const lastHandedSeconds = previousState.timeSeconds;
+      // Nothing on screen yet: the last frame handed over is all there is.
+      const shownSeconds =
+        displayedStateRef.current?.timeSeconds ?? lastHandedSeconds;
+      const heldSeconds = Math.min(
+        Math.max(runStartSeconds, lastHandedSeconds),
+        Math.max(Math.min(runStartSeconds, lastHandedSeconds), shownSeconds),
+      );
+      const heldState = withKnownSatellites(
+        await client.api.integrateTo(heldSeconds),
+      );
+      solverTime = heldState.timeSeconds;
+      previousState = heldState;
+      resetMeasuredRate(heldState.timeSeconds);
+      if (isActive()) {
+        setFrame({
+          start: heldState,
+          end: heldState,
+          transitionDurationMs: 0,
+        });
+        setPlaybackBuffered(false);
+      }
+    };
+
     const run = async (): Promise<void> => {
       try {
         const rawInitialState = await client.api.initialize(majorBodySystem);
         const epochTimeSeconds = rawInitialState.timeSeconds;
-        let previousState = withKnownSatellites(rawInitialState);
+        previousState = withKnownSatellites(rawInitialState);
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
         if (isActive()) {
@@ -1341,6 +1378,7 @@ export function App() {
                 ),
               );
           const signedKeyframeSeconds = requestedDirection * keyframeSeconds;
+          const runStartSeconds = previousState.timeSeconds;
           const requestedRateIndex = timeRateIndexRef.current;
           const batchSize = isManual ? 1 : PLAYBACK_BATCH_SIZE;
           const transitionDurationMs = isManual
@@ -1465,17 +1503,15 @@ export function App() {
             if (prefetchedStates !== undefined) {
               const resolvedPrefetch = await prefetchedStates;
               solverTime = nextBatchTargets?.at(-1) ?? solverTime;
-              if (requestChanged) {
-                await client.api.integrateTo(previousState.timeSeconds);
-                solverTime = previousState.timeSeconds;
-                resetMeasuredRate(previousState.timeSeconds);
-                if (isActive()) {
-                  setPlaybackBuffered(false);
-                }
-                break;
+              if (!requestChanged) {
+                nextStates = resolvedPrefetch;
+                continue;
               }
-              nextStates = resolvedPrefetch;
-              continue;
+            }
+            // A manual step's request changes only for a seek, which moves
+            // the solver itself.
+            if (requestChanged && !isManual) {
+              await holdDisplayedState(runStartSeconds);
             }
             break;
           }
@@ -1504,6 +1540,22 @@ export function App() {
       client.close();
     };
   }, [simulationRunToken]);
+
+  // Pause or a new direction stops the planets at once, where they are on
+  // screen, before the next paint; the loop then holds the solver there. A
+  // frame still in flight, or the batch a loaded machine draws late, would
+  // otherwise carry them on. A seek's frame has no flight to cut short.
+  useLayoutEffect(() => {
+    const shown = displayedStateRef.current;
+    if (shown === undefined) return;
+    setFrame((current) =>
+      current === undefined ||
+      current.transitionDurationMs <= 0 ||
+      current.end.timeSeconds === shown.timeSeconds
+        ? current
+        : { start: shown, end: shown, transitionDurationMs: 0 },
+    );
+  }, [playing, direction, displayedStateRef]);
 
   const issueCameraNavigation = useCallback(
     (action: CameraNavigationAction): void => {
