@@ -223,6 +223,7 @@ import {
   nasaTextureByBodyId,
   SUNLIGHT_COLOR,
 } from "./visual-assets";
+import { solarPhotosphere } from "./solar-photosphere";
 import type { ReferenceFrame, SemanticZoomLevel, ViewMode } from "./view-mode";
 import {
   adaptExposure,
@@ -2142,63 +2143,47 @@ reflectedLight.directSpecular *= solarTransmission;`,
       );
       let material: Material;
       if (body.type === "star") {
+        const { centreLinearSrgb, limbDarkeningU, limbDarkeningV } =
+          solarPhotosphere;
         material = new ShaderMaterial({
+          uniforms: {
+            centreLinearSrgb: { value: new Vector3(...centreLinearSrgb) },
+            limbDarkeningU: { value: new Vector3(...limbDarkeningU) },
+            limbDarkeningV: { value: new Vector3(...limbDarkeningV) },
+          },
           vertexShader: `
-            varying vec2 vUv;
             varying vec3 vNormal;
             varying vec3 vViewPosition;
             void main() {
-              vUv = uv;
               vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
               vNormal = normalize(normalMatrix * normal);
               vViewPosition = viewPosition.xyz;
               gl_Position = projectionMatrix * viewPosition;
             }
           `,
+          // Allen's law per linear sRGB channel, from the derived photosphere
+          // (scripts/derive-solar-photosphere.mjs): the limb is darker and
+          // redder, and the whole disc adds up to the effective-temperature
+          // blackbody.
+          // Granules (about 1,000 km) are far below a pixel in every view, so
+          // the disc carries no granulation texture.
           fragmentShader: `
-            varying vec2 vUv;
+            uniform vec3 centreLinearSrgb;
+            uniform vec3 limbDarkeningU;
+            uniform vec3 limbDarkeningV;
             varying vec3 vNormal;
             varying vec3 vViewPosition;
 
-            float hash(vec2 point) {
-              return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
-            }
-
-            float noise(vec2 point) {
-              vec2 cell = floor(point);
-              vec2 local = fract(point);
-              local = local * local * (3.0 - 2.0 * local);
-              return mix(
-                mix(hash(cell), hash(cell + vec2(1.0, 0.0)), local.x),
-                mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0, 1.0)), local.x),
-                local.y
-              );
-            }
-
-            float fbm(vec2 point) {
-              float value = 0.0;
-              float amplitude = 0.5;
-              mat2 rotation = mat2(0.8, -0.6, 0.6, 0.8);
-              for (int octave = 0; octave < 4; octave++) {
-                value += noise(point) * amplitude;
-                point = rotation * point * 2.03 + vec2(13.4, 7.9);
-                amplitude *= 0.5;
-              }
-              return value;
-            }
-
             void main() {
-              float granulation = fbm(vUv * vec2(240.0, 120.0));
-              float largerCells = fbm(vUv * vec2(54.0, 27.0) + vec2(8.7, 3.1));
-              float limb = max(dot(vNormal, normalize(-vViewPosition)), 0.0);
-              vec3 granuleEdge = vec3(1.0, 0.72, 0.36);
-              vec3 warmWhite = vec3(1.0, 0.965, 0.90);
-              vec3 photosphere = vec3(1.0, 0.88, 0.64);
-              float cellContrast = smoothstep(0.28, 0.76, granulation);
-              vec3 color = mix(granuleEdge, photosphere, 0.68 + cellContrast * 0.25);
-              color = mix(color, warmWhite, smoothstep(0.45, 0.82, largerCells) * 0.38);
-              color *= 0.40 + 0.60 * pow(limb, 0.55);
-              gl_FragColor = vec4(color, 1.0);
+              float mu = clamp(
+                dot(normalize(vNormal), normalize(-vViewPosition)),
+                0.0,
+                1.0
+              );
+              vec3 darkening = 1.0 - limbDarkeningU - limbDarkeningV +
+                limbDarkeningU * mu + limbDarkeningV * mu * mu;
+              gl_FragColor = vec4(centreLinearSrgb * darkening, 1.0);
+              #include <colorspace_fragment>
             }
           `,
           toneMapped: false,
@@ -2341,7 +2326,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
         container.dataset["solarPresentation"] =
           "physical-limb-darkening-and-corona-scattering";
         container.dataset["solarPhotosphere"] =
-          "temperature-colour-procedural-granulation";
+          "blackbody-colour-allen-limb-darkening";
         container.dataset["solarCoronaLayers"] = "3d-shell";
         container.dataset["solarProminenceCount"] = "0";
       }

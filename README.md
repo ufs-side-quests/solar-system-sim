@@ -175,7 +175,9 @@ Saturn's observed Cassini ring profile is lit from the live solar incidence angl
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
 The command bar includes a native Full screen action that expands the simulation to the display, hides application controls and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
-The Sun combines a limb-darkened granular photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
+The Sun combines a computed photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
+The photosphere is white at the centre and darker and redder toward the edge: `scripts/derive-solar-photosphere.mjs` passes a 5772 K blackbody (IAU 2015 Resolution B3) with Allen's wavelength-dependent limb darkening through the CIE 1931 2 degree observer, so the whole disc integrates to the blackbody colour, and writes the centre colour and per-channel limb coefficients to `src/data/solar-photosphere.snapshot.json`.
+The disc draws no granulation because real granules, about 1,000 km across, are smaller than a pixel in every view.
 The renderer does not invent prominence or flare geometry because no generic animation can truthfully claim the Sun's actual activity at arbitrary simulation times.
 The background contains 8,789 stars from the ESA Hipparcos catalogue with Johnson V magnitude below 6.5.
 Catalogue ICRS positions are propagated from J1991.25 to the simulation date using the published proper-motion components where both are available, while missing motion remains explicitly unknown and fixed at the catalogue epoch.
@@ -211,6 +213,7 @@ pnpm data:naif
 pnpm data:nasa-assets
 pnpm data:lineup-globes
 pnpm data:stars
+pnpm data:solar-photosphere
 pnpm data:horizons-regression
 pnpm complete
 pnpm dev
@@ -218,6 +221,7 @@ pnpm dev
 
 The data commands refresh authority snapshots and therefore require network access.
 They are not required for an ordinary build because validated snapshots and assets are committed locally.
+`pnpm data:solar-photosphere` needs no network: it reads the committed CIE table `data/cie-1931-2deg-cmf.csv`.
 `pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
 It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light, sample count and seed, without adaptive sampling or denoising, so a rerun on the same Blender build and platform writes identical files), and records each picture's source hash, output hash, byte length, render settings and platform in `src/data/lineup-globes.snapshot.json`.
 

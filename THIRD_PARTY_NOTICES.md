@@ -176,3 +176,14 @@ The Hipparcos and Tycho Catalogues are distributed under the Creative Commons At
 The catalogue data remains subject to that source licence and is not relicensed under the application GPL.
 Required catalogue credit: `Credit: ESA`.
 VizieR requests acknowledgement of the VizieR catalogue access tool, CDS, Strasbourg, France, with DOI `10.26093/cds/vizier`.
+
+## Solar photosphere colour inputs
+
+`data/cie-1931-2deg-cmf.csv` holds the CIE 1931 2 degree standard observer colour matching functions at 1 nm, copied verbatim from colour-science 0.4.7, which takes them from the Colour and Vision Research Laboratory (CVRL).
+
+- colour-science source file: <https://github.com/colour-science/colour/blob/v0.4.7/colour/colorimetry/datasets/cmfs.py>, distributed under the BSD 3-Clause License
+- CVRL tables: <http://cvrl.ioo.ucl.ac.uk/cie.htm>
+
+`scripts/derive-solar-photosphere.mjs` uses the limb-darkening polynomial coefficients of SolarSoft `darklimb_u.pro` and `darklimb_v.pro` (D. Alexander, 1996), fits to the constants in Allen's Astrophysical Quantities.
+
+- SolarSoft mirror: <https://github.com/lmco/SolarSoft/tree/master/gen/idl/solar>

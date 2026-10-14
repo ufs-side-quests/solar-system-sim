@@ -108,7 +108,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     transitionOverviewDistanceAu: 3,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 86_400,
-    timeRateLabel: "1 day per second · solar rotation becomes visible",
+    timeRateLabel: "1 day per second · the Sun turns slowly",
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: {

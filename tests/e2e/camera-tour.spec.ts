@@ -36,7 +36,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute(
     "data-solar-photosphere",
-    "temperature-colour-procedural-granulation",
+    "blackbody-colour-allen-limb-darkening",
   );
   await expect(scene).toHaveAttribute("data-solar-corona-layers", "3d-shell");
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
