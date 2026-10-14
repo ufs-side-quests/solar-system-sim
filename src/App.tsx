@@ -103,9 +103,14 @@ import type {
   GravityWellMode,
   GravityWellScale,
 } from "./scene/gravity-potential";
-import { type SimulationFrame } from "./scene/interpolation";
+import {
+  enqueueTrailSteps,
+  type SimulationFrame,
+  type TrailQueue,
+} from "./scene/interpolation";
 import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
 import type { ExposureMode } from "./scene/physical-lighting";
+import type { ExposureStatus } from "./scene/SolarSystemScene";
 import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
@@ -935,64 +940,194 @@ function formatAngularDiameter(degrees: number): string {
   return `${(arcminutes * 60).toLocaleString(undefined, { maximumFractionDigits: 2 })}″`;
 }
 
-function useDisplayedSimulationState(
-  frame: SimulationFrame | undefined,
-): Readonly<{
+// React shows the clock, the facts, the magnification and the exposure at
+// most this often; the scene reads every solver frame and displayed state
+// from refs on each animation frame, and reports its camera on each one.
+const REACT_PRESENTATION_INTERVAL_MS = 100;
+// Trail states wait until the scene draws them. While nobody drains them (a
+// background tab, or the schematic map) only the newest are kept.
+const MAXIMUM_PENDING_TRAIL_STATES = 64;
+
+type PresentedSimulation = Readonly<{
+  frame: SimulationFrame | undefined;
   state: SimulationState | undefined;
+  // Achieved simulated seconds per second, measured by the playback loop.
+  effectiveRate: number;
+  // The scene camera's magnification and exposure.
+  viewMagnification: number;
+  exposureStatus: ExposureStatus;
+}>;
+
+function useSimulationFrames(): Readonly<{
+  presented: PresentedSimulation;
+  frameRef: RefObject<SimulationFrame | undefined>;
   stateRef: RefObject<SimulationState | undefined>;
+  trailQueueRef: RefObject<TrailQueue>;
+  publishFrame: (frame: SimulationFrame) => void;
+  reportEffectiveRate: (rate: number) => void;
+  reportViewMagnification: (
+    magnification: number,
+    presentNow?: boolean,
+  ) => void;
+  reportExposureStatus: (status: ExposureStatus) => void;
 }> {
-  const [displayedState, setDisplayedState] = useState<SimulationState>();
-  const displayedStateRef = useRef<SimulationState | undefined>(undefined);
-  useEffect(() => {
-    if (frame === undefined) {
-      displayedStateRef.current = undefined;
-      setDisplayedState(undefined);
+  const initialExposureStatus: ExposureStatus = {
+    ev: 0,
+    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
+    mode: "auto",
+  };
+  const [presented, setPresented] = useState<PresentedSimulation>({
+    frame: undefined,
+    state: undefined,
+    effectiveRate: 0,
+    viewMagnification: DEFAULT_CAMERA_ZOOM,
+    exposureStatus: initialExposureStatus,
+  });
+  const frameRef = useRef<SimulationFrame | undefined>(undefined);
+  const effectiveRateRef = useRef(0);
+  const viewMagnificationRef = useRef(DEFAULT_CAMERA_ZOOM);
+  const exposureStatusRef = useRef(initialExposureStatus);
+  const stateRef = useRef<SimulationState | undefined>(undefined);
+  const trailQueueRef = useRef<TrailQueue>({ steps: [], dropped: false });
+  const animationFrameRef = useRef(0);
+  const presentTimerRef = useRef<number | undefined>(undefined);
+  const lastPresentedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const present = useCallback((): void => {
+    window.clearTimeout(presentTimerRef.current);
+    presentTimerRef.current = undefined;
+    lastPresentedAtRef.current = performance.now();
+    setPresented({
+      frame: frameRef.current,
+      state: stateRef.current,
+      effectiveRate: effectiveRateRef.current,
+      viewMagnification: viewMagnificationRef.current,
+      exposureStatus: exposureStatusRef.current,
+    });
+  }, []);
+  // The latest state always reaches React, at most one interval late.
+  const schedulePresent = useCallback((): void => {
+    if (presentTimerRef.current !== undefined) {
       return;
     }
-    if (
-      frame.transitionDurationMs <= 0 ||
-      frame.start.timeSeconds === frame.end.timeSeconds
-    ) {
-      displayedStateRef.current = frame.end;
-      setDisplayedState(frame.end);
-      return;
-    }
-    const startedAt = performance.now();
-    let lastReactPresentationAt = Number.NEGATIVE_INFINITY;
-    let animationFrame = 0;
-    const present = (now: number): void => {
-      const fraction = Math.min(
-        1,
-        Math.max(0, (now - startedAt) / frame.transitionDurationMs),
-      );
-      const nextState = interpolateDisplayedSimulationFrame(frame, fraction);
-      displayedStateRef.current = nextState;
-      if (now - lastReactPresentationAt >= 100 || fraction === 1) {
-        lastReactPresentationAt = now;
-        setDisplayedState(nextState);
+    presentTimerRef.current = window.setTimeout(
+      present,
+      Math.max(
+        0,
+        lastPresentedAtRef.current +
+          REACT_PRESENTATION_INTERVAL_MS -
+          performance.now(),
+      ),
+    );
+  }, [present]);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(animationFrameRef.current);
+      window.clearTimeout(presentTimerRef.current);
+    },
+    [],
+  );
+  const publishFrame = useCallback(
+    (frame: SimulationFrame): void => {
+      const previousFrame = frameRef.current;
+      frameRef.current = frame;
+      cancelAnimationFrame(animationFrameRef.current);
+      if (frame.end.timeSeconds !== previousFrame?.end.timeSeconds) {
+        const jumped = frame.transitionDurationMs <= 0;
+        enqueueTrailSteps(
+          trailQueueRef.current,
+          (frame.trailStates ?? [frame.end]).map((state) => ({
+            state,
+            jumped,
+          })),
+          MAXIMUM_PENDING_TRAIL_STATES,
+        );
       }
-      if (fraction < 1) {
-        animationFrame = requestAnimationFrame(present);
+      if (
+        frame.transitionDurationMs <= 0 ||
+        frame.start.timeSeconds === frame.end.timeSeconds
+      ) {
+        stateRef.current = frame.end;
+        present();
+        return;
       }
-    };
-    animationFrame = requestAnimationFrame(present);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [frame]);
-  return { state: displayedState, stateRef: displayedStateRef };
+      const startedAt = performance.now();
+      const interpolate = (now: number): void => {
+        const fraction = Math.min(
+          1,
+          Math.max(0, (now - startedAt) / frame.transitionDurationMs),
+        );
+        stateRef.current = interpolateDisplayedSimulationFrame(frame, fraction);
+        schedulePresent();
+        if (fraction < 1) {
+          animationFrameRef.current = requestAnimationFrame(interpolate);
+        }
+      };
+      animationFrameRef.current = requestAnimationFrame(interpolate);
+    },
+    [present, schedulePresent],
+  );
+  const reportEffectiveRate = useCallback(
+    (rate: number): void => {
+      effectiveRateRef.current = rate;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
+  // A child's own request shows at once: the slider it moves reads it back.
+  const reportViewMagnification = useCallback(
+    (magnification: number, presentNow = false): void => {
+      viewMagnificationRef.current = magnification;
+      if (presentNow) {
+        present();
+      } else {
+        schedulePresent();
+      }
+    },
+    [present, schedulePresent],
+  );
+  const reportExposureStatus = useCallback(
+    (status: ExposureStatus): void => {
+      exposureStatusRef.current = status;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
+  return {
+    presented,
+    frameRef,
+    stateRef,
+    trailQueueRef,
+    publishFrame,
+    reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
+  };
 }
 
 const DISCOVERY_TOAST_DURATION_MS = 6_000;
 
 export function App() {
   const audio = useInterfaceAudio();
-  const [frame, setFrame] = useState<SimulationFrame>();
-  const { state, stateRef: displayedStateRef } =
-    useDisplayedSimulationState(frame);
+  const {
+    presented: {
+      frame,
+      state,
+      effectiveRate,
+      viewMagnification,
+      exposureStatus,
+    },
+    frameRef,
+    stateRef: displayedStateRef,
+    trailQueueRef,
+    publishFrame,
+    reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
+  } = useSimulationFrames();
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
   const [timeRateIndex, setTimeRateIndex] = useState(4);
-  const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
   // True from the moment a tour step asks for its time until the scene shows
@@ -1047,8 +1182,6 @@ export function App() {
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
-  const [viewMagnification, setViewMagnification] =
-    useState(DEFAULT_CAMERA_ZOOM);
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -1110,11 +1243,6 @@ export function App() {
     useState<VisualQuality>("photographic");
   const [exposureMode, setExposureMode] = useState<ExposureMode>("auto");
   const [manualExposureEv, setManualExposureEv] = useState(0);
-  const [exposureStatus, setExposureStatus] = useState({
-    ev: 0,
-    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
-    mode: "auto" as ExposureMode,
-  });
   const [immersiveMode, setImmersiveMode] = useState(false);
   const phoneLayout = usePhoneLayout();
   // On a phone the card opens short (name, size, Expand) so the sky stays in
@@ -1274,7 +1402,7 @@ export function App() {
       rateSampleTime = performance.now();
       rateSampleSimulationTime = simulationTime;
       if (isActive()) {
-        setEffectiveRate(0);
+        reportEffectiveRate(0);
       }
     };
 
@@ -1285,7 +1413,7 @@ export function App() {
         return;
       }
       if (isActive()) {
-        setEffectiveRate(
+        reportEffectiveRate(
           ((simulationTime - rateSampleSimulationTime) * 1_000) / elapsedMs,
         );
       }
@@ -1332,7 +1460,7 @@ export function App() {
       previousState = heldState;
       resetMeasuredRate(heldState.timeSeconds);
       if (isActive()) {
-        setFrame({
+        publishFrame({
           start: heldState,
           end: heldState,
           transitionDurationMs: 0,
@@ -1349,7 +1477,7 @@ export function App() {
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
         if (isActive()) {
-          setFrame({
+          publishFrame({
             start: previousState,
             end: previousState,
             transitionDurationMs: 0,
@@ -1381,7 +1509,7 @@ export function App() {
             previousState = nextState;
             resetMeasuredRate(nextState.timeSeconds);
             if (isActive()) {
-              setFrame({
+              publishFrame({
                 start: nextState,
                 end: nextState,
                 transitionDurationMs: 0,
@@ -1533,11 +1661,11 @@ export function App() {
                 pendingTrailStates.push(rawNextState);
                 continue;
               }
-              const frameStartState = withKnownSatellites(previousState);
               const nextState = withKnownSatellites(rawNextState);
               if (isActive()) {
-                setFrame({
-                  start: frameStartState,
+                publishFrame({
+                  // previousState already carries the propagated satellites.
+                  start: previousState,
                   end: nextState,
                   transitionDurationMs,
                   trailStates: [...pendingTrailStates, nextState],
@@ -1599,14 +1727,16 @@ export function App() {
   useLayoutEffect(() => {
     const shown = displayedStateRef.current;
     if (shown === undefined) return;
-    setFrame((current) =>
+    const current = frameRef.current;
+    if (
       current === undefined ||
       current.transitionDurationMs <= 0 ||
       current.end.timeSeconds === shown.timeSeconds
-        ? current
-        : { start: shown, end: shown, transitionDurationMs: 0 },
-    );
-  }, [playing, direction, displayedStateRef]);
+    ) {
+      return;
+    }
+    publishFrame({ start: shown, end: shown, transitionDurationMs: 0 });
+  }, [playing, direction, displayedStateRef, frameRef, publishFrame]);
 
   const issueCameraNavigation = useCallback(
     (action: CameraNavigationAction): void => {
@@ -1887,15 +2017,6 @@ export function App() {
           setSeeking(true);
         }
       }
-      setFrame((currentFrame) =>
-        currentFrame === undefined
-          ? currentFrame
-          : {
-              ...currentFrame,
-              start: withKnownSatellites(currentFrame.start),
-              end: withKnownSatellites(currentFrame.end),
-            },
-      );
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
         setCameraOrientation(
@@ -1936,15 +2057,6 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-    setFrame((currentFrame) =>
-      currentFrame === undefined
-        ? currentFrame
-        : {
-            ...currentFrame,
-            start: withKnownSatellites(currentFrame.start),
-            end: withKnownSatellites(currentFrame.end),
-          },
-    );
   };
 
   const navigateToParent = (): void => {
@@ -2587,7 +2699,7 @@ export function App() {
     }
     tourCameraMovedRef.current = true;
     setCameraZoom(requested);
-    setViewMagnification(requested);
+    reportViewMagnification(requested, true);
   };
 
   const selectedTimeRate = TIME_RATES[timeRateIndex];
@@ -3414,7 +3526,8 @@ export function App() {
         ) : (
           <Suspense fallback={<p className="loading">Loading view...</p>}>
             <SolarSystemScene
-              frame={frame}
+              frameRef={frameRef}
+              trailQueueRef={trailQueueRef}
               displayedStateRef={displayedStateRef}
               bodyVisibility={
                 viewMode === "reality" ? 0 : bodyVisibilityPercent / 100
@@ -3498,11 +3611,11 @@ export function App() {
               onOrientationChange={handleSceneOrientationChange}
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
-              onViewZoomChange={setViewMagnification}
+              onViewZoomChange={reportViewMagnification}
               onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
-              onExposureStatusChange={setExposureStatus}
+              onExposureStatusChange={reportExposureStatus}
             />
           </Suspense>
         )}
