@@ -151,7 +151,17 @@ test("anchors every observer scene at its origin while centring its look-at targ
         width: element.clientWidth,
         height: element.clientHeight,
       }));
-      expect(targetPosition.x).toBeCloseTo(sceneSize.width / 2, 3);
+      // A tour card that covers the centre moves the picture right, so the
+      // target sits in the middle of the open sky beside the card. The shift
+      // is reported to 0.1 px.
+      const lensShiftPx = Number(
+        await scene.getAttribute("data-lens-shift-px"),
+      );
+      expect(lensShiftPx).toBeGreaterThanOrEqual(0);
+      const openSkyCentreX = sceneSize.width / 2 + lensShiftPx;
+      expect(Math.abs(targetPosition.x - openSkyCentreX)).toBeLessThanOrEqual(
+        0.051,
+      );
       expect(targetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
       if (step.targetBodyId === "earth") {
         await expect(
@@ -172,7 +182,9 @@ test("anchors every observer scene at its origin while centring its look-at targ
         x: Number(await scene.getAttribute("data-camera-target-screen-x")),
         y: Number(await scene.getAttribute("data-camera-target-screen-y")),
       };
-      expect(movingTargetPosition.x).toBeCloseTo(sceneSize.width / 2, 3);
+      expect(
+        Math.abs(movingTargetPosition.x - openSkyCentreX),
+      ).toBeLessThanOrEqual(0.051);
       expect(movingTargetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
       await tour.getByRole("button", { name: "Pause tour" }).click();
       await page.screenshot({
