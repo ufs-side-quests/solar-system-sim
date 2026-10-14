@@ -179,10 +179,30 @@ VizieR requests acknowledgement of the VizieR catalogue access tool, CDS, Strasb
 
 ## Solar photosphere colour inputs
 
-`data/cie-1931-2deg-cmf.csv` holds the CIE 1931 2 degree standard observer colour matching functions at 1 nm, copied verbatim from colour-science 0.4.7, which takes them from the Colour and Vision Research Laboratory (CVRL).
+`data/cie-1931-2deg-cmf.csv` holds the CIE 1931 2 degree standard observer colour matching functions at 1 nm.
+The data originates from the International Commission on Illumination (CIE), which publishes it in CIE 015 Colorimetry and ISO/CIE 11664-1 (CIE standard colorimetric observers).
+The file is copied verbatim from colour-science 0.4.7, which takes the tables from the Colour and Vision Research Laboratory (CVRL).
 
-- colour-science source file: <https://github.com/colour-science/colour/blob/v0.4.7/colour/colorimetry/datasets/cmfs.py>, distributed under the BSD 3-Clause License
+- colour-science source file: <https://github.com/colour-science/colour/blob/v0.4.7/colour/colorimetry/datasets/cmfs.py>
 - CVRL tables: <http://cvrl.ioo.ucl.ac.uk/cie.htm>
+- CIE 015 Colorimetry: <https://cie.co.at/publications/colorimetry-4th-edition>
+
+The colour-science source file states `__copyright__ = "Copyright 2013 Colour Developers"` and `__license__ = "BSD-3-Clause"`.
+Its licence, verbatim from <https://github.com/colour-science/colour/blob/v0.4.7/LICENSE>:
+
+```text
+Copyright 2013 Colour Developers
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE
+```
 
 `scripts/derive-solar-photosphere.mjs` uses the limb-darkening polynomial coefficients of SolarSoft `darklimb_u.pro` and `darklimb_v.pro` (D. Alexander, 1996), fits to the constants in Allen's Astrophysical Quantities.
 

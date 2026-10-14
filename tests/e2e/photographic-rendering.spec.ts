@@ -454,6 +454,7 @@ test("renders the restrained solar photosphere in the authored close-view scene"
   // is nearly white at the centre; Allen limb darkening dims and reddens
   // the edge (I(0.4)/I(1) is 0.635, edge blue/red falls to 0.67 of centre).
   const sunLabel = page.locator('.body-label[data-body-id="sun"]');
+  await expect(sunLabel).toHaveAttribute("data-surface-asset-state", "derived");
   // The tour camera has arrived when the Sun's drawn radius stops changing.
   let previousRadius = Number.NaN;
   await expect

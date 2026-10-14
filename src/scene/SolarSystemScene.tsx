@@ -2165,8 +2165,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
           // (scripts/derive-solar-photosphere.mjs): the limb is darker and
           // redder, and the whole disc adds up to the effective-temperature
           // blackbody.
-          // Granules (about 1,000 km) are far below a pixel in every view, so
-          // the disc carries no granulation texture.
+          // No measured granule map exists for an arbitrary time, so the disc
+          // draws none; in the tour view a granule is about a fifth of a pixel.
           fragmentShader: `
             uniform vec3 centreLinearSrgb;
             uniform vec3 limbDarkeningU;
@@ -2342,7 +2342,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
       label.addEventListener("click", () => pickBody(body.id));
       label.dataset["surfaceAssetState"] =
         body.type === "star"
-          ? "procedural"
+          ? "derived"
           : asset !== undefined
             ? "pending"
             : materialPresentation !== undefined

@@ -217,7 +217,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
     .toBeCloseTo(0.032, 6);
   await expect(
     tour.getByText(
-      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
+      "Photosphere, chromosphere and quiet corona · the Sun is drawn much dimmer than real so its darker edge shows",
       { exact: true },
     ),
   ).toBeVisible();

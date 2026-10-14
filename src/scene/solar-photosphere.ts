@@ -33,8 +33,13 @@ export const solarPhotosphere = z
   )
   .parse(solarPhotosphereJson);
 
+// The kelvin value rounded to the nearest 100 °C, as NASA gives it for
+// children: the photosphere is about 5,500 °C.
+const surfaceCelsius =
+  Math.round((solarPhotosphere.effectiveTemperatureK - 273.15) / 100) * 100;
+
 /** Plain words for the Sun's computed surface colour. */
-export const SUN_SURFACE_WORDING = `Computed colour of a ${solarPhotosphere.effectiveTemperatureK.toLocaleString("en-GB")} K star, darker and redder at the edge`;
+export const SUN_SURFACE_WORDING = `Computed colour of a star about ${surfaceCelsius.toLocaleString("en-GB")} °C hot, darker and redder at the edge`;
 
 /** The technical description behind SUN_SURFACE_WORDING. */
 export const SUN_SURFACE_TECHNICAL = `${String(solarPhotosphere.effectiveTemperatureK)} K blackbody (IAU 2015 B3) through the CIE 1931 observer, with Allen limb darkening per colour`;

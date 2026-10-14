@@ -177,7 +177,7 @@ The command bar includes a native Full screen action that expands the simulation
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
 The Sun combines a computed photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
 The photosphere is white at the centre and darker and redder toward the edge: `scripts/derive-solar-photosphere.mjs` passes a 5772 K blackbody (IAU 2015 Resolution B3) with Allen's wavelength-dependent limb darkening through the CIE 1931 2 degree observer, so the whole disc integrates to the blackbody colour, and writes the centre colour and per-channel limb coefficients to `src/data/solar-photosphere.snapshot.json`.
-The disc draws no granulation because real granules, about 1,000 km across, are smaller than a pixel in every view.
+No measured granule map exists for an arbitrary time, so the disc draws none; in the tour view a granule is about a fifth of a pixel.
 The renderer does not invent prominence or flare geometry because no generic animation can truthfully claim the Sun's actual activity at arbitrary simulation times.
 The background contains 8,789 stars from the ESA Hipparcos catalogue with Johnson V magnitude below 6.5.
 Catalogue ICRS positions are propagated from J1991.25 to the simulation date using the published proper-motion components where both are available, while missing motion remains explicitly unknown and fixed at the catalogue epoch.
