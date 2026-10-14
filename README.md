@@ -239,6 +239,8 @@ They are not required for an ordinary build because validated snapshots and asse
 `pnpm data:solar-photosphere` needs no network: it reads the committed CIE table `data/cie-1931-2deg-cmf.csv`.
 `pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
 It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light, sample count and seed, without adaptive sampling or denoising, so a rerun on the same Blender build and platform writes identical files), and records each picture's source hash, output hash, byte length, render settings and platform in `src/data/lineup-globes.snapshot.json`.
+`pnpm models:repair` needs no network but needs the git history: it reads the original ISS, Discovery One and Deep Space Nine models by their git blob ids, checks their sha256, and rewrites the repaired files in `public/models/` (the changes are listed in `THIRD_PARTY_NOTICES.md`).
+A rerun writes identical files; copy the printed sha256 and byte lengths into the model manifests.
 
 Open the URL printed by Vite.
 
