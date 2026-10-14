@@ -185,12 +185,14 @@ import type { WayfinderMode } from "./scene/wayfinder";
 import {
   ECLIPSE_PATH_SOURCE_URL,
   ECLIPSE_SOURCE_URL,
+  ECLIPSE_STORY_ENDING,
   ECLIPSE_STORY_STEP_DURATION_MS,
   ECLIPSE_STORY_STEPS,
   ECLIPSE_STORY_TRANSITION_DURATION_MS,
   type EclipseStoryStep,
 } from "./eclipse/eclipse-story";
 import {
+  SCALE_TOUR_ENDING,
   SCALE_TOUR_STEP_DURATION_MS,
   SCALE_TOUR_STEPS,
   SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -1041,6 +1043,8 @@ export function App() {
   const [tourKind, setTourKind] = useState<GuidedTourKind | null>(null);
   const [tourStepIndex, setTourStepIndex] = useState<number | null>(null);
   const [tourPlaying, setTourPlaying] = useState(false);
+  // The last step's timer fired: the panel shows the ending, not the step.
+  const [tourEnded, setTourEnded] = useState(false);
   const [tourMinimised, setTourMinimised] = useState(false);
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
@@ -1048,6 +1052,16 @@ export function App() {
   const [settledCameraTransitionSequence, setSettledCameraTransitionSequence] =
     useState(0);
   const displaySettingsBeforeTourRef = useRef<DisplaySettingsBeforeTour>(null);
+  // The simulated time when the first of a chain of tours began, so a Scale
+  // tour started from an ending replays from there, not from where the last
+  // story stopped the clock. Undefined when no physics state existed yet, so
+  // the clock was still at the epoch.
+  const tourChainStartTimeSecondsRef = useRef<number | undefined>(undefined);
+  const tourPanelRef = useRef<HTMLElement>(null);
+  const tourFlyHomeRef = useRef<HTMLButtonElement>(null);
+  // The ending replaces the buttons a child may have focused; it takes focus
+  // only from inside the tour panel.
+  const tourEndingTakesFocusRef = useRef(false);
   // True once the child moves the camera away from the presented step pose.
   const tourCameraMovedRef = useRef(false);
   const [activeCinematicShotId, setActiveCinematicShotId] = useState<
@@ -1501,6 +1515,7 @@ export function App() {
     }
     displaySettingsBeforeTourRef.current = null;
     setTourPlaying(false);
+    setTourEnded(false);
     setTourKind(null);
     setTourStepIndex(null);
     setTourMinimised(false);
@@ -1821,10 +1836,14 @@ export function App() {
     issueCameraNavigation(action);
   };
 
+  // A tour started from another tour's ending keeps the settings and the clock
+  // time from before the first tour, so "Fly home" returns to those settings.
   const rememberDisplaySettingsBeforeTour = (): void => {
     if (tourStepIndex !== null) {
       return;
     }
+    tourChainStartTimeSecondsRef.current =
+      displayedStateRef.current?.timeSeconds;
     displaySettingsBeforeTourRef.current = {
       viewMode,
       bodyVisibilityPercent,
@@ -1847,6 +1866,20 @@ export function App() {
   };
 
   const startScaleTour = (): void => {
+    // From an ending the clock may stand years past the chain's start (the
+    // last Scale steps run at 30 days per second). Replay from that start, or
+    // from the epoch when the start lies outside the validated window.
+    if (tourStepIndex !== null) {
+      const startTimeSeconds = tourChainStartTimeSecondsRef.current;
+      restartSimulation();
+      if (
+        startTimeSeconds !== undefined &&
+        Math.abs(startTimeSeconds) <= VALIDATED_WINDOW_SECONDS
+      ) {
+        directSeekTimeSecondsRef.current = startTimeSeconds;
+        setSeeking(true);
+      }
+    }
     rememberDisplaySettingsBeforeTour();
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -1856,6 +1889,7 @@ export function App() {
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
+    setTourEnded(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -1874,6 +1908,7 @@ export function App() {
     setActiveCinematicShotId(null);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
+    setTourEnded(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : ECLIPSE_STORY_TRANSITION_DURATION_MS,
@@ -1976,6 +2011,20 @@ export function App() {
       ? ECLIPSE_STORY_STEP_DURATION_MS
       : SCALE_TOUR_STEP_DURATION_MS;
 
+  const showTourEnding = useCallback((): void => {
+    tourEndingTakesFocusRef.current =
+      tourPanelRef.current?.contains(document.activeElement) ?? false;
+    setTourPlaying(false);
+    setTourEnded(true);
+  }, []);
+
+  useEffect(() => {
+    if (tourEnded && tourEndingTakesFocusRef.current) {
+      tourEndingTakesFocusRef.current = false;
+      tourFlyHomeRef.current?.focus();
+    }
+  }, [tourEnded]);
+
   const advanceScaleTour = (direction: -1 | 1): void => {
     if (tourStepIndex === null) {
       return;
@@ -1986,7 +2035,7 @@ export function App() {
       return;
     }
     if (next >= activeTourSteps.length) {
-      exitTour();
+      showTourEnding();
       return;
     }
     setTourStepIndex(next);
@@ -2078,7 +2127,7 @@ export function App() {
     }
     const timer = window.setTimeout(() => {
       if (tourStepIndex === activeTourSteps.length - 1) {
-        setTourPlaying(false);
+        showTourEnding();
         return;
       }
       setTourStepIndex(tourStepIndex + 1);
@@ -2087,12 +2136,15 @@ export function App() {
   }, [
     activeTourStepDurationMs,
     activeTourSteps.length,
+    showTourEnding,
     tourPlaying,
     tourStepIndex,
   ]);
 
   const activeTourStep =
     tourStepIndex === null ? undefined : activeTourSteps[tourStepIndex];
+  const tourEnding =
+    tourKind === "eclipse" ? ECLIPSE_STORY_ENDING : SCALE_TOUR_ENDING;
   const activeEclipseSurfaceObserver =
     tourKind === "eclipse" && activeTourStep?.surfaceObserver !== undefined;
   const activeCinematicShot =
@@ -3323,6 +3375,7 @@ export function App() {
 
         {activeTourStep === undefined || tourStepIndex === null ? null : (
           <aside
+            ref={tourPanelRef}
             className={tourMinimised ? "scale-tour is-minimised" : "scale-tour"}
             role="dialog"
             aria-modal="false"
@@ -3334,6 +3387,7 @@ export function App() {
             data-tour-kind={tourKind ?? "scale"}
             data-tour-step={activeTourStep.id}
             data-tour-playing={String(tourPlaying)}
+            data-tour-ended={String(tourEnded)}
             data-tour-minimised={String(tourMinimised)}
             data-tour-narration-state={audio.narrationStatus}
             data-tour-observer={
@@ -3374,113 +3428,166 @@ export function App() {
             <div className="tour-progress" aria-hidden="true">
               <span
                 key={`${activeTourStep.id}-${String(tourPlaying)}`}
-                className={tourPlaying ? "is-playing" : undefined}
+                className={
+                  tourEnded
+                    ? "is-complete"
+                    : tourPlaying
+                      ? "is-playing"
+                      : undefined
+                }
                 style={{
                   animationDuration: `${String(activeTourStepDurationMs)}ms`,
                 }}
               />
             </div>
             <div className="tour-copy" aria-live="polite">
-              <span>{activeTourStep.eyebrow}</span>
-              <h2>{activeTourStep.title}</h2>
-              <strong>{activeTourStep.scale}</strong>
-              <p>{activeTourStep.description}</p>
-              {activeTourStep.timeUtc !== undefined ? (
-                <time dateTime={activeTourStep.timeUtc}>
-                  12 August 2026 · exact model time
-                </time>
-              ) : null}
-              {tourKind === "eclipse" &&
-              surfaceObservation?.solarEclipse !== undefined ? (
-                <div
-                  className="eclipse-live-metrics"
-                  aria-label="Live eclipse geometry"
+              {tourEnded ? (
+                <>
+                  <span>{tourEnding.eyebrow}</span>
+                  <h2>{tourEnding.title}</h2>
+                  <p className="tour-kid-line">{tourEnding.kidLine}</p>
+                  {"safety" in tourEnding ? (
+                    <p className="tour-ending-safety">{tourEnding.safety}</p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <span>{activeTourStep.eyebrow}</span>
+                  <h2>{activeTourStep.title}</h2>
+                  <p className="tour-kid-line">{activeTourStep.kidLine}</p>
+                  <strong>{activeTourStep.scale}</strong>
+                  <p>{activeTourStep.description}</p>
+                  {activeTourStep.timeUtc !== undefined ? (
+                    <time dateTime={activeTourStep.timeUtc}>
+                      12 August 2026 · exact model time
+                    </time>
+                  ) : null}
+                  {tourKind === "eclipse" &&
+                  surfaceObservation?.solarEclipse !== undefined ? (
+                    <div
+                      className="eclipse-live-metrics"
+                      aria-label="Live eclipse geometry"
+                    >
+                      <span>
+                        <small>Sun altitude</small>
+                        {surfaceObservation.sunAltitudeDeg.toFixed(2)}°
+                      </span>
+                      <span>
+                        <small>Disc separation</small>
+                        {surfaceObservation.solarEclipse.centerSeparationDeg.toFixed(
+                          3,
+                        )}
+                        °
+                      </span>
+                      <span>
+                        <small>Sun hidden</small>
+                        {(
+                          surfaceObservation.solarEclipse.obscurationFraction *
+                          100
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </div>
+                  ) : null}
+                  <small className="tour-motion">
+                    Motion · {activeTourStep.timeRateLabel}
+                  </small>
+                  <small className="tour-visual-key">
+                    {activeTourStep.visualKey}
+                    {tourKind === "eclipse" ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={
+                            activeTourStep.id === "spain-totality"
+                              ? ECLIPSE_PATH_SOURCE_URL
+                              : ECLIPSE_SOURCE_URL
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          NASA data
+                        </a>
+                      </>
+                    ) : null}
+                  </small>
+                </>
+              )}
+            </div>
+            {tourEnded ? (
+              <div className="tour-actions">
+                <button
+                  ref={tourFlyHomeRef}
+                  type="button"
+                  className="primary-action"
+                  onClick={exitTour}
                 >
-                  <span>
-                    <small>Sun altitude</small>
-                    {surfaceObservation.sunAltitudeDeg.toFixed(2)}°
-                  </span>
-                  <span>
-                    <small>Disc separation</small>
-                    {surfaceObservation.solarEclipse.centerSeparationDeg.toFixed(
-                      3,
-                    )}
-                    °
-                  </span>
-                  <span>
-                    <small>Sun hidden</small>
-                    {(
-                      surfaceObservation.solarEclipse.obscurationFraction * 100
-                    ).toFixed(1)}
-                    %
-                  </span>
-                </div>
-              ) : null}
-              <small className="tour-motion">
-                Motion · {activeTourStep.timeRateLabel}
-              </small>
-              <small className="tour-visual-key">
-                {activeTourStep.visualKey}
+                  Fly home
+                </button>
                 {tourKind === "eclipse" ? (
                   <>
-                    {" · "}
-                    <a
-                      href={
-                        activeTourStep.id === "spain-totality"
-                          ? ECLIPSE_PATH_SOURCE_URL
-                          : ECLIPSE_SOURCE_URL
-                      }
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      NASA data
-                    </a>
+                    <button type="button" onClick={startScaleTour}>
+                      Take the Scale tour
+                    </button>
+                    <button type="button" onClick={startEclipseStory}>
+                      Watch again
+                    </button>
                   </>
-                ) : null}
-              </small>
-            </div>
-            <div className="tour-actions">
-              <button
-                type="button"
-                disabled={tourStepIndex === 0}
-                onClick={() => advanceScaleTour(-1)}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (tourPlaying) {
-                    setTourPlaying(false);
-                    return;
-                  }
-                  setTourPlaying(true);
-                  // A new flight holds the clock for its whole length, so
-                  // the step is presented again only after the child moved
-                  // the camera away from it.
-                  if (tourCameraMovedRef.current) {
-                    setTourPresentationToken((current) => current + 1);
-                  }
-                }}
-              >
-                {tourPlaying
-                  ? tourKind === "eclipse"
-                    ? "Pause story"
-                    : "Pause tour"
-                  : tourKind === "eclipse"
-                    ? "Resume story"
-                    : "Resume tour"}
-              </button>
-              <button
-                type="button"
-                className="primary-action"
-                onClick={() => advanceScaleTour(1)}
-              >
-                {tourStepIndex === activeTourSteps.length - 1
-                  ? "Finish"
-                  : "Next"}
-              </button>
-            </div>
+                ) : (
+                  <>
+                    <button type="button" onClick={startEclipseStory}>
+                      Watch the eclipse
+                    </button>
+                    <button type="button" onClick={startScaleTour}>
+                      Start again
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="tour-actions">
+                <button
+                  type="button"
+                  disabled={tourStepIndex === 0}
+                  onClick={() => advanceScaleTour(-1)}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tourPlaying) {
+                      setTourPlaying(false);
+                      return;
+                    }
+                    setTourPlaying(true);
+                    // A new flight holds the clock for its whole length, so
+                    // the step is presented again only after the child moved
+                    // the camera away from it.
+                    if (tourCameraMovedRef.current) {
+                      setTourPresentationToken((current) => current + 1);
+                    }
+                  }}
+                >
+                  {tourPlaying
+                    ? tourKind === "eclipse"
+                      ? "Pause story"
+                      : "Pause tour"
+                    : tourKind === "eclipse"
+                      ? "Resume story"
+                      : "Resume tour"}
+                </button>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => advanceScaleTour(1)}
+                >
+                  {tourStepIndex === activeTourSteps.length - 1
+                    ? "Finish"
+                    : "Next"}
+                </button>
+              </div>
+            )}
           </aside>
         )}
 

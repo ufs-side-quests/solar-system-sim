@@ -1776,6 +1776,10 @@ h1 {
   background: var(--accent-strong);
 }
 
+.tour-progress span.is-complete {
+  width: 100%;
+}
+
 .tour-progress span.is-playing {
   animation-name: tour-progress;
   animation-timing-function: linear;
@@ -1817,6 +1821,17 @@ h1 {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+.tour-copy .tour-kid-line {
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.tour-copy .tour-ending-safety {
+  color: #ffd98a;
+  font-size: 0.86rem;
 }
 
 .tour-copy .tour-visual-key {
