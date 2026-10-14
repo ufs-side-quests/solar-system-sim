@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { useCombobox } from "downshift";
 
 import { useInterfaceAudio } from "./audio/use-interface-audio";
@@ -916,6 +916,12 @@ export function App() {
   const [apolloInspectionSiteId, setApolloInspectionSiteId] = useState<
     string | null
   >(null);
+  // The body a press on a label, the scene or the map selected; only that
+  // selection invites a second press to fly there.
+  const [announcedPickId, setAnnouncedPickId] = useState<string | null>(null);
+  const [navigationMapBottomPx, setNavigationMapBottomPx] = useState<
+    number | null
+  >(null);
   const [showTacticalOverlay, setShowTacticalOverlay] = useState(false);
   const [showOrbitGuides, setShowOrbitGuides] = useState(false);
   const [wayfinderMode, setWayfinderMode] = useState<WayfinderMode>("sun");
@@ -1519,6 +1525,21 @@ export function App() {
     setSelectedBodyId(bodyId);
   }, []);
 
+  const handleSceneBodyPick = useCallback(
+    (bodyId: string): void => {
+      handleSceneBodySelection(bodyId);
+      setAnnouncedPickId(bodyId);
+    },
+    [handleSceneBodySelection],
+  );
+
+  // Any other control that changes the selection ends the invitation.
+  useEffect(() => {
+    setAnnouncedPickId((current) =>
+      current === selectedBodyId ? current : null,
+    );
+  }, [selectedBodyId]);
+
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
       setActiveCinematicShotId(null);
@@ -1777,7 +1798,7 @@ export function App() {
     setControlPanelOpen(false);
   };
 
-  const focusApolloLandingSite = (siteId: string): void => {
+  const focusApolloLandingSite = useCallback((siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
       throw new Error(`Apollo landing site ${siteId} is unavailable`);
     }
@@ -1799,7 +1820,21 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-  };
+  }, []);
+
+  // A second press on a selected label flies there; for an Apollo site that
+  // is the card's "Show on Moon".
+  const handleSceneFocusBody = useCallback(
+    (bodyId: string): void => {
+      if (isApolloLandingSiteId(bodyId)) {
+        focusApolloLandingSite(bodyId);
+        return;
+      }
+      setSurfaceObserverEnabled(false);
+      navigateToFocus(bodyId);
+    },
+    [focusApolloLandingSite, navigateToFocus],
+  );
 
   const enterApolloLandingSiteObserver = (siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
@@ -2772,7 +2807,16 @@ export function App() {
         </button>
       ) : null}
 
-      <section className="workspace">
+      <section
+        className="workspace"
+        style={
+          navigationMapBottomPx === null
+            ? undefined
+            : ({
+                "--navigation-map-bottom": `${String(navigationMapBottomPx)}px`,
+              } as CSSProperties)
+        }
+      >
         {fullscreenError === undefined ? null : (
           <p className="fullscreen-error error" role="alert">
             {fullscreenError}
@@ -2788,6 +2832,7 @@ export function App() {
               <span aria-hidden="true">/</span>
               <button
                 type="button"
+                aria-label={`Go to ${focusedParentName}`}
                 onClick={() => navigateToFocus(focusedParentId)}
               >
                 {focusedParentName}
@@ -2951,7 +2996,9 @@ export function App() {
               eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
               foundEasterEggIds={foundEasterEggIds}
               onSelectBody={handleSceneBodySelection}
-              onFocusBody={navigateToFocus}
+              onPickBody={handleSceneBodyPick}
+              onFocusBody={handleSceneFocusBody}
+              onNavigationMapBottomChange={setNavigationMapBottomPx}
               onOrientationChange={handleSceneOrientationChange}
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
@@ -3030,6 +3077,17 @@ export function App() {
             </button>
           </div>
         </nav>
+
+        <p className="visually-hidden" aria-live="polite">
+          {selectedBodyDetail === undefined ||
+          activeTourStep !== undefined ||
+          surfaceObserverEnabled ||
+          selectedBodyId !== announcedPickId ||
+          selectedBodyId === focusBodyId ||
+          selectedBodyId === apolloInspectionSiteId
+            ? null
+            : `${selectedBodyDetail.name} selected. Select again to fly there.`}
+        </p>
 
         <p className="discovery-toast" role="status">
           {discoveredEasterEggId === null

@@ -141,7 +141,7 @@ test("observes the live sky from physical surface coordinates", async ({
   await expect(scene).toHaveAttribute("data-surface-observer-body", "moon");
   await expect(scene).toHaveAttribute("data-surface-observer-target", "earth");
   await expect(
-    page.getByRole("button", { name: "Focus Earth", exact: true }),
+    page.getByRole("button", { name: "Earth", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
   await page.screenshot({

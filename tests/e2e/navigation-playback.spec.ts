@@ -17,7 +17,7 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
   });
-  const venusLabel = page.getByRole("button", { name: "Focus Venus" });
+  const venusLabel = page.getByRole("button", { name: "Venus", exact: true });
   await expect(venusLabel).toBeVisible();
   const cameraDirectionBeforeSelection = await scene.getAttribute(
     "data-camera-direction",

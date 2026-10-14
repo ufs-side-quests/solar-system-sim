@@ -36,7 +36,7 @@ test("renders both Voyager probes at physical scale from JPL-seeded REBOUND stat
   await expect(scene).toHaveAttribute("data-focus-body", "voyager-1");
   await expect(scene).toHaveAttribute("data-voyager1-geometry-visible", "true");
   await expect(
-    page.getByRole("button", { name: "Focus Voyager 1" }),
+    page.getByRole("button", { name: "Voyager 1", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Speed relative to the Sun", { exact: true }),

@@ -1084,6 +1084,15 @@ h1 {
   transform: translateX(-50%);
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .discovery-toast {
   position: absolute;
   z-index: 16;
@@ -2248,10 +2257,26 @@ h1 {
 }
 
 .selected-body-detail {
+  --selected-body-detail-bottom: 6.6rem;
+  --selected-body-detail-min-top: 1.8rem;
+
   left: 0.85rem;
-  bottom: 6.6rem;
+  bottom: var(--selected-body-detail-bottom);
   width: min(30rem, calc(100% - 1.7rem));
-  max-height: calc(100% - 8.4rem);
+
+  /* The card stacks below the navigation map (its bottom edge comes from the
+     scene) and scrolls, so it never covers the map's controls. On a screen too
+     short for both it keeps its heading. */
+  max-height: max(
+    8rem,
+    calc(
+      100% - var(--selected-body-detail-bottom) -
+        max(
+          var(--selected-body-detail-min-top),
+          var(--navigation-map-bottom, 0px) + 0.5rem
+        )
+    )
+  );
   overflow-y: auto;
   border-radius: 1rem;
 }
@@ -2948,7 +2973,7 @@ h1 {
   }
 
   .selected-body-detail {
-    bottom: 8.6rem;
+    --selected-body-detail-bottom: 8.6rem;
   }
 
   .surface-observer-hud {
@@ -3169,10 +3194,11 @@ h1 {
 
   /* The card keeps its top below the camera dock (5.8rem + 2.9rem tall). */
   .selected-body-detail {
+    --selected-body-detail-bottom: 10.6rem;
+    --selected-body-detail-min-top: 9.2rem;
+
     left: 0.55rem;
-    bottom: 10.6rem;
     width: calc(100% - 1.1rem);
-    max-height: calc(100% - 19.8rem);
   }
 
   .surface-observer-hud {

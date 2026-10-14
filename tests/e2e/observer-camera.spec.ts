@@ -155,7 +155,7 @@ test("anchors every observer scene at its origin while centring its look-at targ
       expect(targetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
       if (step.targetBodyId === "earth") {
         await expect(
-          page.getByRole("button", { name: "Focus Earth", exact: true }),
+          page.getByRole("button", { name: "Earth", exact: true }),
         ).toBeVisible();
       }
       await page
