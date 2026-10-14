@@ -220,3 +220,35 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
     fullPage: true,
   });
 });
+
+test("Home keeps the clock running", async ({ page }) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+  await page.getByRole("slider", { name: "Playback rate" }).fill("3");
+  await page.getByRole("button", { name: "Run forward" }).click();
+  await selectFocus(page.getByRole("combobox", { name: "Focus" }), "Earth");
+  await expect(scene).toHaveAttribute("data-focus-body", "earth");
+
+  await page.getByRole("button", { name: "Home" }).click();
+
+  await expect(scene).toHaveAttribute("data-focus-body", "solar-system");
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect(page.locator(".run-status")).toContainText("1 day/s requested");
+  const timeOutput = page.locator(".time-readout output");
+  const startTime = Number(await timeOutput.getAttribute("data-time-seconds"));
+  await expect
+    .poll(
+      async () =>
+        Number(await timeOutput.getAttribute("data-time-seconds")) - startTime,
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(DAY_SECONDS);
+});

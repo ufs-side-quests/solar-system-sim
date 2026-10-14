@@ -59,3 +59,16 @@ export function focusNearPlaneAu(
     focusDistance / FOCUS_DISTANCE_TO_NEAR_PLANE_RATIO,
   );
 }
+
+// A camera distance tuned for a landscape view. The field of view is vertical,
+// so in a portrait view the camera moves out by the aspect ratio: the region
+// that fits the landscape height then fits the portrait width.
+export function portraitFitDistanceAu(
+  distanceAu: number,
+  aspect: number,
+): number {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    throw new Error("Camera aspect must be positive and finite");
+  }
+  return distanceAu / Math.min(1, aspect);
+}

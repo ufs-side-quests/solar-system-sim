@@ -79,7 +79,11 @@ import {
   isOperationalSpacecraftBodyId,
   operationalSpacecraftSnapshot,
 } from "../physics/operational-spacecraft";
-import { focusDistanceAu, focusNearPlaneAu } from "./camera-focus";
+import {
+  focusDistanceAu,
+  focusNearPlaneAu,
+  portraitFitDistanceAu,
+} from "./camera-focus";
 import {
   GravityWellLayer,
   type GravityWellDiagnostics,
@@ -613,6 +617,8 @@ type SolarSystemSceneProps = Readonly<{
   resetViewToken: number;
   cameraZoom: number;
   cameraDistanceOverrideAu: number | undefined;
+  // Move the override distance out in a portrait view (cool shots).
+  fitCameraDistanceToPortrait: boolean;
   cameraTargetBodyId: string | undefined;
   observerCameraStyle: "surface-facing" | "limb" | "shadow-axis";
   cameraTransitionSequence: number;
@@ -676,6 +682,7 @@ export function SolarSystemScene({
   resetViewToken,
   cameraZoom,
   cameraDistanceOverrideAu,
+  fitCameraDistanceToPortrait,
   cameraTargetBodyId,
   observerCameraStyle,
   cameraTransitionSequence,
@@ -732,6 +739,7 @@ export function SolarSystemScene({
   const resetViewTokenRef = useRef(resetViewToken);
   const cameraZoomRef = useRef(cameraZoom);
   const cameraDistanceOverrideAuRef = useRef(cameraDistanceOverrideAu);
+  const fitCameraDistanceToPortraitRef = useRef(fitCameraDistanceToPortrait);
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
   const observerCameraStyleRef = useRef(observerCameraStyle);
   const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
@@ -782,6 +790,7 @@ export function SolarSystemScene({
   resetViewTokenRef.current = resetViewToken;
   cameraZoomRef.current = cameraZoom;
   cameraDistanceOverrideAuRef.current = cameraDistanceOverrideAu;
+  fitCameraDistanceToPortraitRef.current = fitCameraDistanceToPortrait;
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
   observerCameraStyleRef.current = observerCameraStyle;
   eclipseShadowVisibleRef.current = eclipseShadowVisible;
@@ -4660,8 +4669,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
       delete container.dataset["cameraTargetBody"];
       delete container.dataset["cameraObserverAltitudeKm"];
       delete container.dataset["cameraObserverStyle"];
+      const overrideDistance = cameraDistanceOverrideAuRef.current;
       const focusDistance =
-        cameraDistanceOverrideAuRef.current ??
+        (overrideDistance !== undefined &&
+        fitCameraDistanceToPortraitRef.current
+          ? portraitFitDistanceAu(overrideDistance, camera.aspect)
+          : overrideDistance) ??
         (requestedFocusBodyId === "sun"
           ? SOLAR_SYSTEM_CAMERA_POSITION.length()
           : isSpacecraftFocus

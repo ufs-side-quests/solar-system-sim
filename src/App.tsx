@@ -43,6 +43,7 @@ import {
 import {
   formatSimulationDateUtc,
   simulationDateUtc,
+  VALIDATED_WINDOW_SECONDS,
 } from "./physics/simulation-date";
 import {
   isVoyagerBodyId,
@@ -181,7 +182,11 @@ import {
   SCALE_TOUR_TRANSITION_DURATION_MS,
   type ScaleTourStep,
 } from "./tour/scale-tour";
-import { CINEMATIC_SHOTS, type CinematicShot } from "./tour/cinematic-shots";
+import {
+  CINEMATIC_SHOTS,
+  PLANETS_RACING_SHOT,
+  type CinematicShot,
+} from "./tour/cinematic-shots";
 
 const SolarSystemScene = lazy(async () => {
   const module = await import("./scene/SolarSystemScene");
@@ -1506,7 +1511,9 @@ export function App() {
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourPlaying(false);
-    setPlaying(false);
+    if (tourStepIndex !== null) {
+      setPlaying(false);
+    }
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation("perspective");
     if (focusBodyIdRef.current === "") {
@@ -1532,6 +1539,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    setActiveCinematicShotId(null);
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
@@ -1549,6 +1557,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    setActiveCinematicShotId(null);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
     setTourPlaying(!reducedMotion);
@@ -1767,12 +1776,27 @@ export function App() {
         ? activeCinematicShot.cameraTargetBodyId
         : undefined;
 
+  // A fresh worker initialised with the epoch state, so the clock returns to
+  // the snapshot epoch at once instead of integrating back to it.
+  const restartSimulation = useCallback((): void => {
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = undefined;
+    setSeeking(false);
+    setPlaybackBuffered(false);
+    setError(undefined);
+    setClearTrailsToken((current) => current + 1);
+    setSimulationRunToken((current) => current + 1);
+  }, []);
+
   const presentCinematicShot = (shot: CinematicShot): void => {
     const requestedRateIndex = TIME_RATES.findIndex(
       (rate) => rate.secondsPerSecond === shot.timeRateSecondsPerSecond,
     );
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
+    }
+    if (shot.loopEndTimeSeconds !== null) {
+      restartSimulation();
     }
     setTourPlaying(false);
     setTourKind(null);
@@ -1787,6 +1811,7 @@ export function App() {
     setBodyVisibilityPercent(shot.bodyVisibilityPercent);
     setShowLabels(shot.labels);
     setShowOrbitGuides(shot.orbitGuides);
+    setShowPlanetTrails(shot.planetTrails);
     setShowTacticalOverlay(false);
     setShowEclipticPlane(false);
     setSelectedBodyPanelCollapsed(true);
@@ -1806,6 +1831,23 @@ export function App() {
     setTourTransitionSequence((current) => current + 1);
     setControlPanelOpen(false);
   };
+
+  // The solver frame, not the displayed state: it changes in the same render
+  // that a new run starts from the epoch, so a restart is never repeated on a
+  // stale time.
+  const activeShotTimeSeconds = frame?.end.timeSeconds;
+  const activeShotLoopEndTimeSeconds =
+    activeCinematicShot?.loopEndTimeSeconds ?? null;
+  useEffect(() => {
+    if (
+      activeShotLoopEndTimeSeconds === null ||
+      activeShotTimeSeconds === undefined ||
+      activeShotTimeSeconds <= activeShotLoopEndTimeSeconds
+    ) {
+      return;
+    }
+    restartSimulation();
+  }, [activeShotLoopEndTimeSeconds, activeShotTimeSeconds, restartSimulation]);
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
@@ -1890,6 +1932,7 @@ export function App() {
       epochTimeSeconds: state?.timeSeconds ?? 0,
     });
     setOrbitViewEnabled(true);
+    setActiveCinematicShotId(null);
     setTourPlaying(false);
     setSurfaceObserverEnabled(false);
     setViewMode("reality");
@@ -2350,12 +2393,19 @@ export function App() {
     ? apolloLandingSiteById.get(selectedBodyId)
     : undefined;
 
+  // A looping shot only runs forward from the epoch: going backward ends it.
   const startPlaying = (nextDirection: -1 | 1): void => {
+    if (nextDirection === -1) {
+      setActiveCinematicShotId(null);
+    }
     setDirection(nextDirection);
     setPlaying(true);
   };
 
   const queueStep = (stepDirection: -1 | 1): void => {
+    if (stepDirection === -1) {
+      setActiveCinematicShotId(null);
+    }
     setPlaying(false);
     manualDeltaSecondsRef.current +=
       stepDirection * selectedTimeRate.secondsPerSecond;
@@ -2399,7 +2449,7 @@ export function App() {
       ? DEEP_SPACE_NINE_NAME
       : undefined);
   const outsideValidatedWindow =
-    Math.abs(state?.timeSeconds ?? 0) > 365 * DAY_SECONDS;
+    Math.abs(state?.timeSeconds ?? 0) > VALIDATED_WINDOW_SECONDS;
 
   return (
     <main
@@ -2607,6 +2657,16 @@ export function App() {
           </span>
         </div>
 
+        {/* The discovery toast takes the caption's place while it shows. */}
+        {activeCinematicShot === undefined ||
+        !playing ||
+        discoveredEasterEggId !== null ? null : (
+          <p className="cinematic-shot-caption" role="status">
+            <strong>{activeCinematicShot.name}</strong>
+            <span>{activeCinematicShot.description}</span>
+          </p>
+        )}
+
         <time
           className="global-simulation-clock"
           dateTime={simulationDateUtc(state?.timeSeconds ?? 0)
@@ -2620,17 +2680,7 @@ export function App() {
         {error !== undefined ? (
           <p className="error" role="alert">
             Simulation stopped: {error}{" "}
-            <button
-              type="button"
-              onClick={() => {
-                manualDeltaSecondsRef.current = 0;
-                directSeekTimeSecondsRef.current = undefined;
-                setSeeking(false);
-                setPlaybackBuffered(false);
-                setError(undefined);
-                setSimulationRunToken((current) => current + 1);
-              }}
-            >
+            <button type="button" onClick={restartSimulation}>
               Restart simulation
             </button>
           </p>
@@ -2684,6 +2734,10 @@ export function App() {
                 typeof activeTourStep?.cameraDistanceAu === "number"
                   ? activeTourStep.cameraDistanceAu
                   : activeCinematicShot?.cameraDistanceAu
+              }
+              fitCameraDistanceToPortrait={
+                typeof activeTourStep?.cameraDistanceAu !== "number" &&
+                activeCinematicShot !== undefined
               }
               cameraTargetBodyId={activeCameraTargetBodyId}
               observerCameraStyle={
@@ -2777,6 +2831,14 @@ export function App() {
               onClick={startEclipseStory}
             >
               Eclipse story
+            </button>
+            <button
+              type="button"
+              className="planets-racing-launch-button"
+              aria-pressed={activeCinematicShotId === PLANETS_RACING_SHOT.id}
+              onClick={() => presentCinematicShot(PLANETS_RACING_SHOT)}
+            >
+              Planets racing
             </button>
           </div>
         </nav>
