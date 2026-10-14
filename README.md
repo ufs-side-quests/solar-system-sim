@@ -52,7 +52,7 @@ The race restarts the simulation from the snapshot epoch with a fresh physics wo
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
 While a cool shot is active, the clock runs, and no discovery message shows, a caption names it and says what to watch; a tour, a new focus, a view-mode change, or running or stepping the clock backward ends the shot.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
-Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -152,12 +152,18 @@ It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
 
 These references, and the real Tesla Roadster, are easter eggs.
-When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth and Mars for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth, Mars and the Sun for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
 The label uses game wording so that a child never reads it as a real astronomical discovery.
 While that body has an unfound egg, its selected-body card also says "Something hidden is out there. Look closely!", because on a phone the card can cover the label.
 Guided tour steps never show these hints.
 The first selection reveals the real name, shows a short "You found" message with the egg's origin, and plays a three-note chime through the interface sound effects setting.
 Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
+Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
+The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Sun: the Roadster is usually far from both planets, and its hint is in view from the Sun.
+Once found, the Roadster joins the map's Spacecraft list as a real craft.
+Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
+The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.

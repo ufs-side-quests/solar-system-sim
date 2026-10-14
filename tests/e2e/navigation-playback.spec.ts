@@ -81,6 +81,22 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   page,
 }, testInfo) => {
   test.setTimeout(360_000);
+  // Next object walks only found easter eggs, so this walk starts with all
+  // of them found.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "solar-explorer.found-eggs.v1",
+      JSON.stringify([
+        "death-star-1",
+        "death-star-2",
+        "deep-space-nine",
+        "uss-defiant",
+        "discovery-one",
+        "jovian-monolith",
+        "roadster",
+      ]),
+    );
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Pause" }).click();
   await page.getByRole("button", { name: "Display" }).click();

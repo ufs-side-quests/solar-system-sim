@@ -26,9 +26,10 @@ test("renders Discovery One and presents every cinematic shot", async ({
     "true",
   );
 
+  // An unfound easter egg is selected by its full name only.
   await selectFocus(
     page.getByRole("combobox", { name: "Focus" }),
-    "Discovery One",
+    "Discovery One (fictional)",
   );
   await expect(scene).toHaveAttribute("data-focus-body", "discovery-one");
   await expect(scene).toHaveAttribute(
