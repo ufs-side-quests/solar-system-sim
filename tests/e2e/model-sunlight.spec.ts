@@ -139,3 +139,58 @@ test("keeps the focused model's sunlit hull out of saturation", async ({
   expect(hullPixels).toBeGreaterThan(5_000);
   expect(saturatedPixels / hullPixels).toBeLessThan(0.15);
 });
+
+// Scene units are AU, so a 4 m car stresses float32 depth and shadow lookups.
+// When either fails, far-side and shadowed faces cover the sunlit paint.
+test("draws the Roadster's sunlit paint in front of its far side", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const scene = await openPausedScene(page);
+  await focusModel(page, scene, "Tesla Roadster and Starman", "roadster");
+  await expect
+    .poll(
+      async () =>
+        Math.abs(
+          Number(await scene.getAttribute("data-camera-exposure")) /
+            Number(await scene.getAttribute("data-camera-exposure-target")) -
+            1,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(0.005);
+  await page.addStyleTag({
+    content: ".body-label-layer { visibility: hidden; }",
+  });
+  const centreX = Number(
+    await scene.getAttribute("data-focused-target-screen-x"),
+  );
+  const centreY = Number(
+    await scene.getAttribute("data-focused-target-screen-y"),
+  );
+  const frame = await page
+    .locator("canvas.major-body-layer")
+    .screenshot({ animations: "disabled" });
+  await testInfo.attach("roadster", { body: frame, contentType: "image/png" });
+  const { data, info } = await sharp(frame)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let litPixels = 0;
+  let paintPixels = 0;
+  for (let y = Math.round(centreY - 150); y < centreY + 150; y += 1) {
+    for (let x = Math.round(centreX - 200); x < centreX + 200; x += 1) {
+      const offset = (y * info.width + x) * info.channels;
+      const red = data[offset] ?? Number.NaN;
+      const green = data[offset + 1] ?? Number.NaN;
+      const blue = data[offset + 2] ?? Number.NaN;
+      if (Math.max(red, green, blue) <= 40) continue;
+      litPixels += 1;
+      if (red > 2 * green && red > 2 * blue) paintPixels += 1;
+    }
+  }
+  // Measured at 1280 x 800: about 12,900 lit and 9,500 paint pixels when
+  // drawn right; about 5,900 and 3,600 when every face of the car has one depth.
+  expect(litPixels).toBeGreaterThan(10_000);
+  expect(paintPixels).toBeGreaterThan(7_000);
+});

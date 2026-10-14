@@ -90,6 +90,10 @@ import {
   sunlitModelViewDirection,
 } from "./camera-focus";
 import {
+  applyCameraRelativeDirectionalShadows,
+  applyMetreLogDepth,
+} from "./au-scale-precision";
+import {
   GravityWellLayer,
   type GravityWellDiagnostics,
 } from "./GravityWellLayer";
@@ -258,6 +262,10 @@ import {
 // The focused model's shadow light stays on while the camera is within this
 // many model radii: farther out the model is about 2 pixels wide.
 const LOCAL_MODEL_SUNLIGHT_RANGE_RADII = 1_000;
+const LOCAL_SHADOW_MAP_SIZE = 2048;
+// The shadow box spans 2.8 model radii; a lookup offset of 1.5 texels along the
+// normal removes acne stripes on sunlit faces.
+const LOCAL_SHADOW_NORMAL_BIAS_RADII = (2.8 * 1.5) / LOCAL_SHADOW_MAP_SIZE;
 const ECLIPTIC_NORTH = j2000EclipticToScene({ x: 0, y: 0, z: 1 }).normalize();
 const ECLIPTIC_FORWARD = j2000EclipticToScene({ x: 0, y: 1, z: 0 }).normalize();
 const ECLIPTIC_RIGHT = ECLIPTIC_FORWARD.clone()
@@ -936,6 +944,7 @@ export function SolarSystemScene({
       DEFAULT_CAMERA_FAR_AU,
     );
     camera.position.copy(SOLAR_SYSTEM_CAMERA_POSITION);
+    applyMetreLogDepth(ASTRONOMICAL_UNIT_M, DEFAULT_CAMERA_FAR_AU);
     const renderer = new WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -1345,9 +1354,12 @@ export function SolarSystemScene({
     );
     localModelSunlight.name = "Focused model solar shadow light";
     localModelSunlight.castShadow = true;
-    localModelSunlight.shadow.mapSize.set(2048, 2048);
+    localModelSunlight.shadow.mapSize.set(
+      LOCAL_SHADOW_MAP_SIZE,
+      LOCAL_SHADOW_MAP_SIZE,
+    );
     localModelSunlight.shadow.bias = -0.00002;
-    localModelSunlight.shadow.normalBias = 0;
+    applyCameraRelativeDirectionalShadows(localModelSunlight, camera);
     localModelSunlight.visible = false;
     scene.add(localModelSunlight);
     scene.add(localModelSunlight.target);
@@ -6727,6 +6739,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             localModelSunlight.shadow.camera.near = localShadowRadiusAu;
             localModelSunlight.shadow.camera.far = localShadowRadiusAu * 40;
             localModelSunlight.shadow.camera.updateProjectionMatrix();
+            localModelSunlight.shadow.normalBias =
+              localShadowRadiusAu * LOCAL_SHADOW_NORMAL_BIAS_RADII;
             const localDistanceAu =
               localShadowPosition.distanceTo(sunScenePosition);
             // The parallel light also reaches every other surface. Near the
