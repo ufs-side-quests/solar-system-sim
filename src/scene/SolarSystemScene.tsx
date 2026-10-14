@@ -1530,6 +1530,13 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.textContent = "Umbra";
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
+    const eclipseShadowLeftEarth = document.createElement("p");
+    eclipseShadowLeftEarth.className = "eclipse-shadow-status";
+    eclipseShadowLeftEarth.setAttribute("role", "status");
+    eclipseShadowLeftEarth.textContent =
+      "The Moon's dark shadow is not on Earth now";
+    eclipseShadowLeftEarth.hidden = true;
+    labelLayer.append(eclipseShadowLeftEarth);
 
     // An easter egg near the focused or selected body shows its label as a
     // hidden surprise, unless that body hides it from the camera. Tour steps
@@ -4526,6 +4533,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       };
     };
 
+    // The last footprint relative to Earth, where the shadow camera holds
+    // while the shadow axis misses Earth.
+    let heldShadowFootprintOffsetAu: Vector3 | undefined;
     const eclipseShadowFootprintPosition = (
       current: SimulationState,
     ): Vector3 => {
@@ -4554,14 +4564,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const earthRadiusAu =
         eclipseEarthDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M;
       if (alongAxisAu <= 0 || axisOffsetAu >= earthRadiusAu) {
-        throw new Error("The live lunar shadow axis does not intersect Earth");
+        // Before and after the eclipse the axis misses Earth: a true state,
+        // not a fault. The camera holds over the spot where the shadow left;
+        // with no such spot yet, over the point nearest the axis.
+        return earthPosition
+          .clone()
+          .add(
+            heldShadowFootprintOffsetAu ??
+              closestAxisPoint
+                .clone()
+                .sub(earthPosition)
+                .setLength(earthRadiusAu),
+          );
       }
       const surfaceOffsetAu = Math.sqrt(
         earthRadiusAu * earthRadiusAu - axisOffsetAu * axisOffsetAu,
       );
-      return closestAxisPoint.sub(
+      const footprint = closestAxisPoint.sub(
         shadowDirection.clone().multiplyScalar(surfaceOffsetAu),
       );
+      heldShadowFootprintOffsetAu = footprint.clone().sub(earthPosition);
+      return footprint;
     };
 
     const observerTargetPosition = (
@@ -6037,6 +6060,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               outwardNormal,
             );
             eclipseShadowGroup.visible = true;
+            eclipseShadowLeftEarth.hidden = true;
             container.dataset["eclipseShadowVisible"] = "true";
             container.dataset["eclipseUmbraRadiusKm"] = (
               umbraRadiusM / 1_000
@@ -6051,6 +6075,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           } else {
             eclipseShadowGroup.visible = false;
             eclipseShadowLocator.hidden = true;
+            eclipseShadowLeftEarth.hidden = false;
             container.dataset["eclipseShadowVisible"] = "false";
             delete container.dataset["eclipseShadowLatitudeDeg"];
             delete container.dataset["eclipseShadowLongitudeDeg"];
@@ -6058,6 +6083,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         } else {
           eclipseShadowGroup.visible = false;
           eclipseShadowLocator.hidden = true;
+          eclipseShadowLeftEarth.hidden = true;
           container.dataset["eclipseShadowVisible"] = "false";
           delete container.dataset["eclipseShadowLatitudeDeg"];
           delete container.dataset["eclipseShadowLongitudeDeg"];

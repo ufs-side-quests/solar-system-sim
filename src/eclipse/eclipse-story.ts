@@ -253,8 +253,10 @@ export const ECLIPSE_STORY_STEPS: readonly EclipseStoryStep[] = [
     timeRateSecondsPerSecond: 120,
     timeRateLabel:
       "2 minutes per second · the umbra crosses the rotating Earth",
-    timeUtc: "2026-08-12T17:45:53.800Z",
-    timeSeconds: simulationSecondsForUtc("2026-08-12T17:45:53.800Z"),
+    // The step's 48 minutes end at 18:28, when the Spain step begins and
+    // minutes before the shadow's axis leaves Earth at about 18:32 UTC.
+    timeUtc: "2026-08-12T17:40:00.000Z",
+    timeSeconds: simulationSecondsForUtc("2026-08-12T17:40:00.000Z"),
     viewMode: "reality",
     bodyVisibilityPercent: 0,
     overlays: noDecorativeOverlays,

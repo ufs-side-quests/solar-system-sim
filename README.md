@@ -290,6 +290,8 @@ The Scale tour clock waits at the time the step began, because Scale steps set n
 A Scale tour that starts with the clock outside the validated ±1 year window first restarts the simulation from the epoch.
 A step's time on screen starts only when its clock has landed and its camera has settled, so a long seek or flight never shortens the step.
 While an Eclipse story step moves the clock, the card says "Moving the clock to 12 Aug 2026…" and hides the live eclipse readouts until the clock lands.
+The shadow step plays 17:40 to 18:28 UTC, inside the time the shadow's axis meets Earth (about 16:59 to 18:32 UTC by astronomy-engine), and a unit test checks that window.
+If the clock leaves that time, the view says "The Moon's dark shadow is not on Earth now" and the camera stays over the spot where the shadow left.
 A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Finish, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
