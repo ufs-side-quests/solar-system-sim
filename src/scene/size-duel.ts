@@ -65,9 +65,15 @@ function capitalised(text: string): string {
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
+/** Saturn's rings reach past Jupiter, so the rule must come before the guess. */
+function hasRings(duel: SizeDuel): boolean {
+  return duel.pair.some((circle) => circle.id === "saturn");
+}
+
 export function sizeDuelQuestion(duel: SizeDuel): string {
   const [first, second] = duel.pair;
-  return `Guess first! Which is wider: ${nameInSentence(first)} or ${nameInSentence(second)}?`;
+  const question = `Which is wider: ${nameInSentence(first)} or ${nameInSentence(second)}?`;
+  return hasRings(duel) ? `${question} Rings do not count.` : question;
 }
 
 /** "The Moon is about 1.5 times wider than Pluto.", or "only a little wider" below 1.1. */
@@ -81,9 +87,8 @@ export function formatWidthRatio(duel: SizeDuel): string {
 
 export function sizeDuelResult(duel: SizeDuel, guessId: string): string {
   const verdict = guessId === duel.wider.id ? "Yes!" : "Not quite!";
-  // Saturn's rings reach past Jupiter, but the question is about the ball.
-  const rings = duel.pair.some((circle) => circle.id === "saturn")
-    ? " We measure the ball, not the rings."
+  const rings = hasRings(duel)
+    ? " We measure the planet itself, not its rings."
     : "";
   return `${verdict} ${formatWidthRatio(duel)}${rings}`;
 }

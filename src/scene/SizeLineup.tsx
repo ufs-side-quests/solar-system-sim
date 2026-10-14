@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { CSSProperties, ReactElement } from "react";
+import type { CSSProperties, ReactElement, ReactNode } from "react";
 
 import { majorBodySnapshot } from "../physics/solar-system-data";
 import {
@@ -15,7 +15,6 @@ import {
 } from "./lineup-globe-assets";
 import {
   SIZE_DUEL_PAIRS,
-  type SizeDuel,
   sizeDuelQuestion,
   sizeDuelResult,
   sizeDuels,
@@ -38,14 +37,21 @@ const BODY_COLUMNS = LAYOUT.circles.map((circle) => {
   };
 });
 const SUN_SURFACE = "Plain colour";
-const DUELS = sizeDuels(LAYOUT.circles, SIZE_DUEL_PAIRS);
+// Each duel carries its two pictures, so a missing one fails at load too.
+const DUELS = sizeDuels(LAYOUT.circles, SIZE_DUEL_PAIRS).map((duel) => ({
+  duel,
+  choices: duel.pair.map((circle) => ({
+    circle,
+    picture: lineupGlobePicture(lineupGlobeSnapshot.pictures, circle.id),
+  })),
+}));
 
-function duelAt(index: number): SizeDuel {
-  const duel = DUELS[index % DUELS.length];
-  if (duel === undefined) {
-    throw new Error("Size duel list is empty");
+function duelAt(index: number): (typeof DUELS)[number] {
+  const entry = DUELS[index];
+  if (entry === undefined) {
+    throw new Error(`Size duel ${String(index)} is not in the duel list`);
   }
-  return duel;
+  return entry;
 }
 
 /** True when the lineup draws this body, so the card can offer it. */
@@ -140,11 +146,16 @@ export function SizeLineup({
       ? { circle: LAYOUT.sun, surface: SUN_SURFACE }
       : BODY_COLUMNS.find(({ circle }) => circle.id === selectedBodyId);
 
+  // One status line stays mounted in both modes, so a screen reader hears
+  // each new duel question as well as the lineup comparison.
   let caption: string;
-  let content: ReactElement;
+  let beforeStatus: ReactElement | null = null;
+  let statusClassName = "size-lineup-comparison";
+  let status: ReactNode;
+  let afterStatus: ReactElement | null = null;
   if (duelState === undefined) {
     caption = "Sizes to scale. Distances are not.";
-    content = (
+    beforeStatus = (
       <>
         <div className="size-lineup-row">
           {column(
@@ -176,67 +187,76 @@ export function SizeLineup({
         <p className="size-lineup-note">
           The Sun is too big to fit, so you see only its edge on the left.
         </p>
-        {selected === undefined ? null : (
-          <p className="size-lineup-comparison" aria-live="polite">
-            <strong>{selected.circle.name}</strong>{" "}
-            {formatBodySize(
-              selected.circle.id,
-              selected.circle.meanRadiusM,
-              EARTH_MEAN_RADIUS_M,
-            )}
-            <small>Surface: {selected.surface}</small>
-            {selected.circle.id === "saturn" ? (
-              <small>Rings: real Cassini pictures of the main rings</small>
-            ) : null}
-          </p>
-        )}
       </>
     );
+    status =
+      selected === undefined ? null : (
+        <>
+          <strong>{selected.circle.name}</strong>{" "}
+          {formatBodySize(
+            selected.circle.id,
+            selected.circle.meanRadiusM,
+            EARTH_MEAN_RADIUS_M,
+          )}
+          <small>Surface: {selected.surface}</small>
+          {selected.circle.id === "saturn" ? (
+            <small>Rings: real Cassini pictures of the main rings</small>
+          ) : null}
+        </>
+      );
   } else {
     const { guessId } = duelState;
-    const duel = duelAt(duelState.index);
+    const { duel, choices } = duelAt(duelState.index);
     caption =
       guessId === undefined
         ? "Same size for now. Guess first!"
         : "Sizes to scale.";
-    content = (
+    statusClassName = "size-lineup-comparison size-duel-status";
+    status =
+      guessId === undefined
+        ? sizeDuelQuestion(duel)
+        : sizeDuelResult(duel, guessId);
+    afterStatus = (
       <>
-        <p className="size-duel-question">{sizeDuelQuestion(duel)}</p>
         <div className="size-duel-row">
-          {duel.pair.map((circle) => (
-            <button
-              key={circle.id}
-              type="button"
-              className="size-lineup-body size-duel-choice"
-              aria-pressed={guessId === circle.id}
-              data-lineup-body={circle.id}
-              onClick={() => {
-                if (guessId !== undefined) {
-                  return;
-                }
-                setDuelState({ index: duelState.index, guessId: circle.id });
-                onGuess(circle.id === duel.wider.id);
-              }}
-            >
-              {globe(
-                circle,
-                lineupGlobePicture(lineupGlobeSnapshot.pictures, circle.id),
-                // While guessing both globes match; the reveal shrinks the
-                // narrower one to its true size beside the wider one.
-                guessId === undefined || circle.id === duel.wider.id
-                  ? 1
-                  : 1 / duel.ratio,
-              )}
-              <span>{circle.name}</span>
-            </button>
-          ))}
+          {choices.map(({ circle, picture }) => {
+            const isWider = circle.id === duel.wider.id;
+            let guessClass = "";
+            if (guessId === circle.id) {
+              guessClass = isWider ? " is-right-guess" : " is-wrong-guess";
+            }
+            return (
+              <button
+                key={circle.id}
+                type="button"
+                className={`size-lineup-body size-duel-choice${guessClass}`}
+                aria-pressed={guessId === circle.id}
+                // After the guess the choices stay in place for focus but do nothing.
+                aria-disabled={guessId === undefined ? undefined : "true"}
+                data-lineup-body={circle.id}
+                onClick={() => {
+                  if (guessId !== undefined) {
+                    return;
+                  }
+                  setDuelState({ index: duelState.index, guessId: circle.id });
+                  onGuess(isWider);
+                }}
+              >
+                {globe(
+                  circle,
+                  picture,
+                  // While guessing both globes match; the reveal shrinks the
+                  // narrower one to its true size beside the wider one.
+                  guessId === undefined || isWider ? 1 : 1 / duel.ratio,
+                )}
+                <span>{circle.name}</span>
+                {guessId !== undefined && isWider ? (
+                  <span className="size-duel-wider">Wider</span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
-        <p
-          className="size-lineup-comparison size-duel-result"
-          aria-live="polite"
-        >
-          {guessId === undefined ? null : sizeDuelResult(duel, guessId)}
-        </p>
         <div className="size-duel-actions">
           <button
             type="button"
@@ -295,7 +315,11 @@ export function SizeLineup({
           {`Picture did not load: ${failedPictureNames.join(", ")}.`}
         </p>
       )}
-      {content}
+      {beforeStatus}
+      <p className={statusClassName} aria-live="polite">
+        {status}
+      </p>
+      {afterStatus}
     </aside>
   );
 }

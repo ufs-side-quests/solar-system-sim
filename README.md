@@ -42,7 +42,8 @@ Each body is a small lit globe rendered once from the surface map the 3D globe u
 Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
 Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
 "Guess first" turns the dialog into a size duel: two globes at the same size and a question such as "Which is wider: the Moon or Pluto?".
-After the child taps one, the narrower globe shrinks to its true size and a line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
+For Saturn and Jupiter the question adds "Rings do not count.", because Saturn with its rings is wider than Jupiter.
+After the child taps one, the narrower globe shrinks to its true size, a "Wider" tag marks the winner, and the same line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
 "Next pair" steps through six fixed pairs, and "See all" returns to the lineup.
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
@@ -244,7 +245,7 @@ The photographic-rendering journey verifies the three rendering profiles, bounde
 The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
 It also decodes each picture and measures the opaque globe across and down against the frame half width and the sourced radii within 2 px, so a render with a wrong camera scale fails.
 The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.
-The size-duel journey checks the equal globes while guessing, the keyboard guess, the result line, the drawn Moon to Pluto ratio within 2 percent after the reveal, the next pair, the return to the lineup, and that only a right guess plays the chime.
+The size-duel journey checks the equal globes while guessing, that one live region carries the lineup line, each question and each result, the keyboard guess, the "Wider" tag, the dashed wrong guess and accented right guess, the drawn Moon to Pluto ratio within 1 percent under reduced motion, the rings rule for Saturn and Jupiter, the return to the lineup, and that only a right guess plays the chime.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.

@@ -57,7 +57,7 @@ describe("size duel", () => {
       throw new Error("Size duel pairs are missing");
     }
     expect(sizeDuelQuestion(moonPluto)).toBe(
-      "Guess first! Which is wider: the Moon or Pluto?",
+      "Which is wider: the Moon or Pluto?",
     );
     expect(sizeDuelResult(moonPluto, "moon")).toBe(
       "Yes! The Moon is about 1.5 times wider than Pluto.",
@@ -71,8 +71,12 @@ describe("size duel", () => {
     expect(formatWidthRatio(venusEarth)).toBe(
       "Earth is only a little wider than Venus.",
     );
+    // With its rings Saturn is wider, so the rule comes with the question.
+    expect(sizeDuelQuestion(saturnJupiter)).toBe(
+      "Which is wider: Saturn or Jupiter? Rings do not count.",
+    );
     expect(sizeDuelResult(saturnJupiter, "saturn")).toBe(
-      "Not quite! Jupiter is about 1.2 times wider than Saturn. We measure the ball, not the rings.",
+      "Not quite! Jupiter is about 1.2 times wider than Saturn. We measure the planet itself, not its rings.",
     );
   });
 
