@@ -23,6 +23,13 @@ The three-dimensional funnel is an energy-landscape visualization, not a claim t
 The camera uses standard orbit controls: left drag orbits, right drag pans, and wheel or pinch dollies toward or away from the current target.
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
+The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from a sourced sidereal orbital period (NASA NSSDC fact sheets for planets, Pluto and the Moon; JPL SSD satellite mean elements for moons), one sidereal spin with "spins backwards" or "spins on its side" for planets, and speed compared with a named, rounded 900 km/h jet airliner reference.
+"Compare sizes" on the selected-body card opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
+Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
+Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
+Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
+Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
+Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
@@ -62,7 +69,18 @@ Playback rate is independent of solver keyframe size: continuous playback integr
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
-It also caps enhanced radii against the nearest major-body separation, preventing a readability setting from merging neighboring bodies.
+At full boost every planet, dwarf planet and moon has a readable radius of 0.02 AU times the square root of its radius in Earth radii.
+The Sun has a fixed readable radius of 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.
+Natural bodies form systems: the Sun, and each planet or dwarf planet with its moons.
+The open system is the one that holds the focus; a spacecraft counts with the body it orbits, and the overview, the Sun and heliocentric objects open no system.
+The Sun, every planet and dwarf planet, and every moon of the open system (catalogue moons as points) take part in the scale rule: each pair fills at most 40% of the distance between their centres.
+Every body uses one shared factor on its readable radius, the smallest that the scale rule needs, and no body is drawn smaller than its true radius.
+Because the factor is shared, the drawn Sun, planets, dwarf planets and moons keep their true size order, in the overview and in every focus view.
+A moon of any other system, whether a major moon or a catalogue point, is not drawn when it and an enlarged body would fill more than 40% of their separation; in the overview at full boost this hides the Moon inside Earth and the large moons inside the giant planets.
+So every drawn pair of the Sun, planets, dwarf planets and moons fills at most 40% of the distance between their centres, unless one of them is drawn at its true radius.
+Such a pair still does not overlap while the bodies sit farther apart than 1.67 true radii of the larger one; at the snapshot epoch the closest sourced pair is Jupiter and Metis, at about 1.8 Jupiter radii.
+A unit test checks these rules over the snapshot epoch positions in the overview and in Jupiter, Earth and Pluto focus views.
+Spacecraft and fictional objects never limit the drawn size of a natural body.
 
 The International Space Station is a separate massless spacecraft state around the live REBOUND Earth position.
 Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in UTC, transformed from TEME through true equator of date into the J2000 mean-equator frame, and then translated by Earth's barycentric state.
@@ -115,6 +133,14 @@ The application places it in a clearly labelled hypothetical circular exhibit or
 The USS Defiant uses a textured high-detail free model at its 170.68 metre production reference length.
 It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
+
+These references, and the real Tesla Roadster, are easter eggs.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth and Mars for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
+The label uses game wording so that a child never reads it as a real astronomical discovery.
+While that body has an unfound egg, its selected-body card also says "Something hidden is out there. Look closely!", because on a phone the card can cover the label.
+Guided tour steps never show these hints.
+The first selection reveals the real name, shows a short "You found" message with the egg's origin, and plays a three-note chime through the interface sound effects setting.
+Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
@@ -159,6 +185,7 @@ pnpm data:horizons-satellites
 pnpm data:sbdb
 pnpm data:naif
 pnpm data:nasa-assets
+pnpm data:lineup-globes
 pnpm data:stars
 pnpm data:horizons-regression
 pnpm complete
@@ -167,6 +194,8 @@ pnpm dev
 
 The data commands refresh authority snapshots and therefore require network access.
 They are not required for an ordinary build because validated snapshots and assets are committed locally.
+`pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
+It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light and sample count, so a rerun on the same Blender build writes identical files), and records each picture's source hash, output hash, byte length and render settings in `src/data/lineup-globes.snapshot.json`.
 
 Open the URL printed by Vite.
 
@@ -185,6 +214,8 @@ The eclipse-story journey checks all seven 12 August 2026 scenes at their exact 
 It verifies London contact geometry, apparent solar and lunar diameters, live disc overlap, and a physical centre-line comparison in northern Spain.
 The gravity-field journey verifies positive-GM superposition, sourced-radius surface capping, physical joules-per-kilogram diagnostics, contour and surface rendering, local-detail and absolute-comparison scaling, and synchronization with simulation time.
 The photographic-rendering journey verifies the three rendering profiles, bounded device-pixel ratios, inverse-square illumination metadata, smooth auto-exposure, Sun-facing close-view framing, live atmosphere and Saturn-ring lighting models, and measured browser frame diagnostics before capturing Earth, Saturn, and the close Sun.
+The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
+The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings, tap targets, the camera dock's 44 px buttons, and a visible error for a picture that fails to load.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.

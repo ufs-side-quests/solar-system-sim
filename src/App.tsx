@@ -12,6 +12,14 @@ import type { RefObject } from "react";
 import { useCombobox } from "downshift";
 
 import { useInterfaceAudio } from "./audio/use-interface-audio";
+import {
+  discoveryMessage,
+  type EasterEggId,
+  hintsAtUnfoundEasterEgg,
+  isEasterEggId,
+  loadFoundEasterEggs,
+  saveFoundEasterEggs,
+} from "./tour/easter-eggs";
 import { createPhysicsClient } from "./physics/client";
 import type { BodyState, SimulationState } from "./physics/contracts";
 import { withKnownSatellites } from "./physics/known-satellite-ephemeris";
@@ -30,6 +38,7 @@ import {
   ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
   majorBodySystem,
+  type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
   formatSimulationDateUtc,
@@ -50,8 +59,17 @@ import {
 import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
+  EARTH_MEAN_RADIUS_M,
   formatMassKg,
+  formatLiveOrbitalPeriod,
+  formatSourcedOrbitalPeriod,
+  formatSpeedWithJetComparison,
+  formatSpinPeriod,
+  formatBodySize,
+  PLAIN_SURFACE_BY_BODY_ID,
+  SIDEREAL_ORBITAL_PERIOD_BY_ID,
 } from "./scene/body-physical-facts";
+import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
   CameraNavigationAction,
   CameraNavigationCommand,
@@ -78,6 +96,7 @@ import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
   JOVIAN_MONOLITH_NAME,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./scene/jovian-monolith";
 import {
@@ -93,6 +112,7 @@ import {
 } from "./scene/lunar-landing-sites";
 import {
   bodyOrientationAngles,
+  planetSpinNote,
   siderealRotationRateRadPerSecond,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
@@ -124,6 +144,7 @@ import {
 import { fictionalModelAssetByBodyId } from "./scene/fictional-model-assets";
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
+import { isInSizeLineup, SizeLineup } from "./scene/SizeLineup";
 import {
   surfaceObserverBodies,
   surfaceObserverFrame,
@@ -247,6 +268,18 @@ const SEMANTIC_ZOOM_LABELS: Readonly<Record<SemanticZoomLevel, string>> = {
   "moon-system": "Moon system",
   surface: "Surface detail",
 };
+// How many times wider the real Sun is than a body, from the sourced radii.
+function sunWidthRatio(bodyId: string): number {
+  const sun = majorBodySnapshot.bodies.find((body) => body.id === "sun");
+  const body = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (sun === undefined || body === undefined) {
+    throw new Error(`Sourced radius is missing for the Sun or ${bodyId}`);
+  }
+  return Math.round(sun.meanRadiusM / body.meanRadiusM);
+}
+
 const VIEW_MODE_OPTIONS = [
   {
     mode: "reality",
@@ -257,8 +290,7 @@ const VIEW_MODE_OPTIONS = [
   {
     mode: "orrery",
     label: "Orrery",
-    description:
-      "Physical positions with enlarged bodies and markers so the system remains readable.",
+    description: `Physical positions with enlarged bodies and markers so the system remains readable. Sizes are squeezed so small worlds stay visible. The real Sun is about ${String(sunWidthRatio("jupiter"))} times wider than Jupiter and ${String(sunWidthRatio("earth"))} times wider than Earth.`,
   },
   {
     mode: "schematic",
@@ -680,6 +712,11 @@ function formatSimulationOffset(seconds: number): string {
   return `${sign}${(absoluteSeconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
 }
 
+/** "the Sun" reads as a name; every other parent keeps its own name. */
+function parentPhrase(parent: MajorBodyDefinition): string {
+  return parent.id === "sun" ? "the Sun" : parent.name;
+}
+
 function normalizedDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
 }
@@ -749,6 +786,8 @@ function useDisplayedSimulationState(
   return { state: displayedState, stateRef: displayedStateRef };
 }
 
+const DISCOVERY_TOAST_DURATION_MS = 6_000;
+
 export function App() {
   const audio = useInterfaceAudio();
   const [frame, setFrame] = useState<SimulationFrame>();
@@ -764,10 +803,15 @@ export function App() {
   const [bodyVisibilityPercent, setBodyVisibilityPercent] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>("reality");
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [sizeLineupOpen, setSizeLineupOpen] = useState(false);
   const [displayPanelTab, setDisplayPanelTab] =
     useState<DisplayPanelTab>("view");
   const [focusBodyId, setFocusBodyId] = useState("");
   const [selectedBodyId, setSelectedBodyId] = useState("");
+  const [foundEasterEggIds, setFoundEasterEggIds] =
+    useState<ReadonlySet<EasterEggId>>(loadFoundEasterEggs);
+  const [discoveredEasterEggId, setDiscoveredEasterEggId] =
+    useState<EasterEggId | null>(null);
   const [showMoonTrail, setShowMoonTrail] = useState(false);
   const [showPlanetTrails, setShowPlanetTrails] = useState(false);
   const [showMinorBodyTrails, setShowMinorBodyTrails] = useState(false);
@@ -1097,13 +1141,16 @@ export function App() {
           let nextStates = await client.api.integrateSeries(targetTimes);
           solverTime = targetTimes.at(-1) ?? solverTime;
 
-          const initialRequestChanged =
-            !isManual &&
-            (!playingRef.current ||
-              directionRef.current !== requestedDirection ||
-              timeRateIndexRef.current !== requestedRateIndex ||
-              directSeekTimeSecondsRef.current !== undefined);
-          if (initialRequestChanged) {
+          // A tour step's pending seek ends the current batch too, so it
+          // applies whatever the playback rate. ISS and spacecraft focus seeks
+          // restart the run and apply at the top of the new loop.
+          const playbackRequestChanged = (): boolean =>
+            directSeekTimeSecondsRef.current !== undefined ||
+            (!isManual &&
+              (!playingRef.current ||
+                directionRef.current !== requestedDirection ||
+                timeRateIndexRef.current !== requestedRateIndex));
+          if (playbackRequestChanged()) {
             await client.api.integrateTo(previousState.timeSeconds);
             solverTime = previousState.timeSeconds;
             resetMeasuredRate(previousState.timeSeconds);
@@ -1133,12 +1180,7 @@ export function App() {
             const pendingTrailStates: SimulationState[] = [];
 
             for (const [stateIndex, rawNextState] of nextStates.entries()) {
-              requestChanged =
-                !isManual &&
-                (!playingRef.current ||
-                  directionRef.current !== requestedDirection ||
-                  timeRateIndexRef.current !== requestedRateIndex ||
-                  directSeekTimeSecondsRef.current !== undefined);
+              requestChanged = playbackRequestChanged();
               if (requestChanged) {
                 break;
               }
@@ -1287,6 +1329,33 @@ export function App() {
     setOrbitViewEnabled(enabled);
   }, []);
 
+  // Every selection path (label, scene click, focus list, next object) ends
+  // here, so the first selection of an easter egg counts as finding it.
+  useEffect(() => {
+    if (
+      !isEasterEggId(selectedBodyId) ||
+      foundEasterEggIds.has(selectedBodyId)
+    ) {
+      return;
+    }
+    const found = new Set(foundEasterEggIds).add(selectedBodyId);
+    setFoundEasterEggIds(found);
+    saveFoundEasterEggs(found);
+    setDiscoveredEasterEggId(selectedBodyId);
+    audio.interact("discovery");
+  }, [selectedBodyId, foundEasterEggIds, audio.interact]);
+
+  useEffect(() => {
+    if (discoveredEasterEggId === null) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setDiscoveredEasterEggId(null),
+      DISCOVERY_TOAST_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [discoveredEasterEggId]);
+
   const handleSceneBodySelection = useCallback((bodyId: string): void => {
     setApolloInspectionSiteId(null);
     setSelectedBodyId(bodyId);
@@ -1422,7 +1491,9 @@ export function App() {
       (selectedBodyId === "jwst" || isVoyagerBodyId(selectedBodyId)
         ? "sun"
         : undefined) ??
-      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID
+        ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+        : undefined) ??
       (selectedBodyId === DISCOVERY_ONE_BODY_ID
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : undefined) ??
@@ -1989,7 +2060,7 @@ export function App() {
       return undefined;
     }
     const parentId = isJovianMonolith
-      ? "jupiter"
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
       : isDiscoveryOne
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : isFictionalOrbiter
@@ -2011,7 +2082,7 @@ export function App() {
     const speedLabel =
       parentDefinition === undefined
         ? undefined
-        : `Speed relative to ${parentDefinition.name}`;
+        : `Speed relative to ${parentPhrase(parentDefinition)}`;
     if (isJovianMonolith) {
       return {
         name: JOVIAN_MONOLITH_NAME,
@@ -2104,10 +2175,7 @@ export function App() {
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-        speedLabel:
-          parentDefinition === undefined
-            ? undefined
-            : `Speed relative to ${parentDefinition.name}`,
+        speedLabel,
         mass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
@@ -2200,10 +2268,7 @@ export function App() {
             parentState === undefined
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-          speedLabel:
-            parentDefinition === undefined
-              ? undefined
-              : `Speed relative to ${parentDefinition.name}`,
+          speedLabel,
           mass:
             bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
@@ -2296,13 +2361,41 @@ export function App() {
         composition,
       };
     }
+    const surfaceClassification =
+      nasaTextureByBodyId.get(definition.id)?.classification ??
+      nasaMaterialPresentationByBodyId.get(definition.id)?.classification;
+    const diameterKm = (definition.meanRadiusM * 2) / 1_000;
+    const liveOrbitalPeriodSeconds =
+      parentState === undefined
+        ? undefined
+        : osculatingOrbitalPeriodSeconds(bodyState, parentState);
+    const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
     return {
       name: definition.name,
-      surface:
-        nasaTextureByBodyId.get(definition.id)?.classification ??
-        nasaMaterialPresentationByBodyId.get(definition.id)?.classification ??
+      size: formatBodySize(
+        definition.id,
+        definition.meanRadiusM,
+        EARTH_MEAN_RADIUS_M,
+      ),
+      orbitLabel:
+        parentDefinition === undefined
+          ? undefined
+          : `One trip around ${parentPhrase(parentDefinition)}`,
+      orbitalPeriod: formatSourcedOrbitalPeriod(definition.id),
+      orbitalPeriodSource:
+        sourcedOrbitalPeriod === undefined
+          ? undefined
+          : `Sidereal orbital period · ${sourcedOrbitalPeriod.authority}`,
+      liveOrbitalPeriod:
+        liveOrbitalPeriodSeconds === undefined
+          ? undefined
+          : formatLiveOrbitalPeriod(liveOrbitalPeriodSeconds),
+      spinNote: planetSpinNote(definition),
+      surface: PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour",
+      surfaceTechnical:
+        surfaceClassification ??
         "Neutral - no installed authoritative surface asset",
-      diameterKm: (definition.meanRadiusM * 2) / 1_000,
+      diameterKm,
       parentName: parentDefinition?.name,
       distance:
         parentState === undefined
@@ -2355,7 +2448,9 @@ export function App() {
     : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
-    (focusBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+    (focusBodyId === JOVIAN_MONOLITH_BODY_ID
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+      : undefined) ??
     (focusBodyId === DISCOVERY_ONE_BODY_ID
       ? DISCOVERY_ONE_PARENT_BODY_ID
       : undefined) ??
@@ -2388,9 +2483,12 @@ export function App() {
       data-tour-presentation={activeTourStep?.presentation}
       onClickCapture={(event) => {
         const target = event.target;
+        // A hidden-surprise label is an unfound easter egg: its discovery
+        // chime replaces the button sound.
         if (
           target instanceof Element &&
-          target.closest("button:not(:disabled), summary") !== null
+          target.closest("button:not(:disabled), summary") !== null &&
+          target.closest(".is-hidden-surprise") === null
         ) {
           audio.interact("button");
         }
@@ -2691,6 +2789,7 @@ export function App() {
               manualExposureEv={manualExposureEv}
               deepSpacePresentation={activeTourStep?.presentation}
               eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
+              foundEasterEggIds={foundEasterEggIds}
               onSelectBody={handleSceneBodySelection}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}
@@ -2770,6 +2869,12 @@ export function App() {
             </button>
           </div>
         </nav>
+
+        <p className="discovery-toast" role="status">
+          {discoveredEasterEggId === null
+            ? null
+            : discoveryMessage(discoveredEasterEggId)}
+        </p>
 
         {surfaceObservation === undefined || tourKind === "eclipse" ? null : (
           <aside
@@ -3066,6 +3171,17 @@ export function App() {
           </aside>
         )}
 
+        {sizeLineupOpen ? (
+          <SizeLineup
+            selectedBodyId={selectedBodyId}
+            onSelectBody={(bodyId) => {
+              setSurfaceObserverEnabled(false);
+              navigateToFocus(bodyId);
+            }}
+            onClose={() => setSizeLineupOpen(false)}
+          />
+        ) : null}
+
         {selectedBodyDetail === undefined ||
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
@@ -3169,8 +3285,51 @@ export function App() {
                 </button>
               </div>
             </div>
+            {selectedBodyPanelCollapsed ||
+            !showLabels ||
+            !objectVisibility.spacecraft ||
+            !hintsAtUnfoundEasterEgg(
+              selectedBodyId,
+              foundEasterEggIds,
+            ) ? null : (
+              <p className="selected-body-egg-hint">
+                Something hidden is out there. Look closely!
+              </p>
+            )}
             {selectedBodyPanelCollapsed ? null : (
               <div className="selected-body-metrics">
+                {selectedBodyDetail.size === undefined ? null : (
+                  <span>
+                    <small>Size</small>
+                    {selectedBodyDetail.size}
+                    {isInSizeLineup(selectedBodyId) ? (
+                      <button
+                        type="button"
+                        className="compare-sizes-button"
+                        aria-haspopup="dialog"
+                        onClick={() => setSizeLineupOpen(true)}
+                      >
+                        Compare sizes
+                      </button>
+                    ) : null}
+                  </span>
+                )}
+                {selectedBodyDetail.orbitLabel === undefined ||
+                selectedBodyDetail.orbitalPeriod === undefined ? null : (
+                  <span title={selectedBodyDetail.orbitalPeriodSource}>
+                    <small>{selectedBodyDetail.orbitLabel}</small>
+                    {selectedBodyDetail.orbitalPeriod}
+                  </span>
+                )}
+                {selectedBodyDetail.rotationHours === undefined ? null : (
+                  <span title="Sidereal rotation: one full turn measured against the stars">
+                    <small>One spin</small>
+                    {formatSpinPeriod(selectedBodyDetail.rotationHours)}
+                    {selectedBodyDetail.spinNote === undefined
+                      ? null
+                      : `, ${selectedBodyDetail.spinNote}`}
+                  </span>
+                )}
                 {selectedBodyDetail.distance === undefined ? null : (
                   <span>
                     <small>
@@ -3188,17 +3347,6 @@ export function App() {
                     km
                   </span>
                 )}
-                {selectedBodyDetail.speed === undefined ? null : (
-                  <span>
-                    <small>
-                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
-                    </small>
-                    {selectedBodyDetail.speed.toLocaleString(undefined, {
-                      maximumFractionDigits: 3,
-                    })}{" "}
-                    km/s
-                  </span>
-                )}
                 {selectedBodyDetail.dimensionsM === undefined ? null : (
                   <span>
                     <small>Maximum footprint</small>
@@ -3211,45 +3359,29 @@ export function App() {
                     {selectedBodyDetail.ephemerisStatus}
                   </span>
                 )}
-                {selectedBodyDetail.diameterKm === undefined ? null : (
-                  <span>
-                    <small>Diameter</small>
-                    {selectedBodyDetail.diameterKm.toLocaleString(undefined, {
-                      maximumFractionDigits: 0,
-                    })}{" "}
-                    km
-                  </span>
-                )}
-                {selectedBodyDetail.rotationHours === undefined ? null : (
-                  <span>
-                    <small>Sidereal rotation</small>
-                    {selectedBodyDetail.rotationHours.toLocaleString(
-                      undefined,
-                      {
-                        maximumFractionDigits: 2,
-                      },
-                    )}{" "}
-                    h
-                  </span>
-                )}
-                {selectedBodyDetail.primeMeridianDeg === undefined ? null : (
-                  <span>
-                    <small>Rotation angle</small>
-                    {selectedBodyDetail.primeMeridianDeg.toLocaleString(
-                      undefined,
-                      { maximumFractionDigits: 1 },
-                    )}
-                    °
-                  </span>
-                )}
                 <span>
                   <small>Mass</small>
                   {selectedBodyDetail.mass}
                 </span>
-                <span className="selected-body-surface">
+                <span
+                  className={
+                    selectedBodyDetail.surfaceTechnical === undefined
+                      ? "selected-body-surface"
+                      : undefined
+                  }
+                  title={selectedBodyDetail.surfaceTechnical}
+                >
                   <small>Surface</small>
                   {selectedBodyDetail.surface}
                 </span>
+                {selectedBodyDetail.speed === undefined ? null : (
+                  <span className="selected-body-speed">
+                    <small>
+                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
+                    </small>
+                    {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
+                  </span>
+                )}
                 <span className="selected-body-composition">
                   <small>
                     <span>Composition</span>
@@ -3267,6 +3399,48 @@ export function App() {
                   {selectedBodyDetail.composition?.summary ??
                     "Not provided by the installed authority snapshot"}
                 </span>
+                {selectedBodyDetail.surfaceTechnical === undefined ? null : (
+                  <details className="selected-body-more">
+                    <summary>More detail</summary>
+                    <div className="selected-body-more-grid">
+                      <span>
+                        <small>Diameter</small>
+                        {selectedBodyDetail.diameterKm.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 0 },
+                        )}{" "}
+                        km
+                      </span>
+                      {selectedBodyDetail.liveOrbitalPeriod ===
+                      undefined ? null : (
+                        <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
+                          <small>{"This moment's orbit (live)"}</small>
+                          {selectedBodyDetail.liveOrbitalPeriod}
+                        </span>
+                      )}
+                      <span>
+                        <small>Sidereal rotation</small>
+                        {selectedBodyDetail.rotationHours.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 2 },
+                        )}{" "}
+                        h
+                      </span>
+                      <span>
+                        <small>Rotation angle</small>
+                        {selectedBodyDetail.primeMeridianDeg.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 1 },
+                        )}
+                        °
+                      </span>
+                      <span>
+                        <small>Surface map</small>
+                        {selectedBodyDetail.surfaceTechnical}
+                      </span>
+                    </div>
+                  </details>
+                )}
                 {selectedApolloSite === undefined ? null : (
                   <span className="apollo-mission-detail">
                     <small>Mission record</small>

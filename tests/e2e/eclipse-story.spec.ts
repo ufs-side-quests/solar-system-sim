@@ -304,3 +304,87 @@ test("starts before alignment and moves the Moon across the Sun guide", async ({
     )
     .toBeGreaterThan(16);
 });
+
+test("jumps to each story time while the story plays at an unchanged rate", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+
+  // Step 1 plays at the default 1 hour per second, so the clock shows
+  // 15:4x for only a fraction of a second: watch every frame from before
+  // the click so the window cannot pass unseen.
+  const reachedAlignment = page.waitForFunction(
+    () =>
+      /12 Aug 2026 · 15:4\d/u.test(
+        document.querySelector(".global-simulation-clock")?.textContent ?? "",
+      ),
+    undefined,
+    { polling: "raf", timeout: 5_000 },
+  );
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await expect(
+    story.getByRole("button", { name: "Pause story" }),
+  ).toBeVisible();
+  await reachedAlignment;
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute(
+    "data-tour-step",
+    "london-before-contact",
+  );
+  // Let step 2's jump land before Next, as a reader would.
+  const beforeContactSeconds = Number(
+    await story.getAttribute("data-tour-time-seconds"),
+  );
+  await page.waitForFunction(
+    (requestedSeconds) =>
+      Math.abs(
+        Number(
+          document.querySelector<HTMLElement>("[data-rendered-time-seconds]")
+            ?.dataset.renderedTimeSeconds,
+        ) - requestedSeconds,
+      ) < 180,
+    beforeContactSeconds,
+    { polling: "raf", timeout: 10_000 },
+  );
+  // Step 3 keeps step 2's 1 minute per second rate.
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "london-first-contact");
+  const firstContactSeconds = Number(
+    await story.getAttribute("data-tour-time-seconds"),
+  );
+  await page.waitForFunction(
+    (requestedSeconds) => {
+      const renderedSeconds = Number(
+        document.querySelector<HTMLElement>("[data-rendered-time-seconds]")
+          ?.dataset.renderedTimeSeconds,
+      );
+      const hiddenReadout = [
+        ...document.querySelectorAll(".eclipse-live-metrics span"),
+      ].find(
+        (metric) => metric.querySelector("small")?.textContent === "Sun hidden",
+      );
+      const hiddenPercent = Number.parseFloat(
+        hiddenReadout?.textContent.replace("Sun hidden", "") ?? "",
+      );
+      // 3 s at 1 minute per second is at most 180 simulated seconds.
+      return (
+        renderedSeconds >= requestedSeconds - 1 &&
+        renderedSeconds <= requestedSeconds + 180 &&
+        hiddenPercent < 1
+      );
+    },
+    firstContactSeconds,
+    { polling: "raf", timeout: 3_000 },
+  );
+});

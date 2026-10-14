@@ -45,6 +45,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 
+import {
+  easterEgg,
+  type EasterEggId,
+  HIDDEN_SURPRISE_LABEL,
+  segmentClearsSphere,
+} from "../tour/easter-eggs";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
@@ -123,6 +129,7 @@ import {
   JOVIAN_MONOLITH_BOUNDING_RADIUS_M,
   JOVIAN_MONOLITH_DIMENSIONS_M,
   JOVIAN_MONOLITH_NAME,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./jovian-monolith";
 import { createDeathStarModel } from "./death-star-model";
@@ -176,10 +183,7 @@ import {
   type SurfaceObserverConfiguration,
   type SurfaceObserverFrame,
 } from "./surface-observer";
-import {
-  isPhysicalBodyResolvable,
-  nonOverlappingDisplayedRadiusAu,
-} from "./scale";
+import { isPhysicalBodyResolvable, orreryLayout } from "./scale";
 import { SmallBodyGpuLayer } from "./SmallBodyGpuLayer";
 import type { SmallBodyGpuStatus } from "./SmallBodyGpuLayer";
 import { pointInsideViewport, rayToViewportEdge } from "./sun-guide";
@@ -324,6 +328,9 @@ const LABEL_MINIMUM_RADIUS_PIXELS = 0.5;
 const LABEL_CHARACTER_WIDTH_PX = 5;
 const LABEL_HORIZONTAL_CHROME_PX = 14;
 const LABEL_HALF_HEIGHT_PX = 9;
+// A press on the canvas that moves no farther than this is a tap: it selects
+// the body under it, and during a camera flight it keeps the flight.
+const TAP_SLOP_PX = 8;
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
@@ -548,7 +555,7 @@ function parentBodyId(bodyId: string): string | undefined {
     : bodyId === "hubble"
       ? "earth"
       : bodyId === JOVIAN_MONOLITH_BODY_ID
-        ? "jupiter"
+        ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
         : bodyId === DISCOVERY_ONE_BODY_ID
           ? DISCOVERY_ONE_PARENT_BODY_ID
           : isDeepSpaceNineObjectId(bodyId)
@@ -559,6 +566,21 @@ function parentBodyId(bodyId: string): string | undefined {
                 ? "sun"
                 : (knownSatelliteById.get(bodyId)?.parentId ??
                   PARENT_BODY_ID[bodyId]);
+}
+
+// The planet or dwarf planet whose system holds the focus, so the Orrery
+// shows its moons. A spacecraft counts with the body it orbits. The Sun, the
+// overview and heliocentric objects open no system.
+function orrerySystemRootId(focusBodyId: string | null): string | undefined {
+  let bodyId = focusBodyId ?? undefined;
+  while (bodyId !== undefined && bodyId !== "sun") {
+    const definition = majorBodyById.get(bodyId);
+    if (definition?.type === "planet" || definition?.type === "dwarf-planet") {
+      return bodyId;
+    }
+    bodyId = parentBodyId(bodyId);
+  }
+  return undefined;
 }
 
 function formatTacticalDistance(distanceAu: number): string {
@@ -621,6 +643,7 @@ type SolarSystemSceneProps = Readonly<{
   deepSpacePresentation:
     "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale" | undefined;
   eclipseShadowVisible: boolean;
+  foundEasterEggIds: ReadonlySet<EasterEggId>;
   onSelectBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
@@ -683,6 +706,7 @@ export function SolarSystemScene({
   manualExposureEv,
   deepSpacePresentation,
   eclipseShadowVisible,
+  foundEasterEggIds,
   onSelectBody,
   onFocusBody,
   onOrientationChange,
@@ -718,6 +742,7 @@ export function SolarSystemScene({
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
   const observerCameraStyleRef = useRef(observerCameraStyle);
   const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
+  const foundEasterEggIdsRef = useRef(foundEasterEggIds);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
   const cameraNavigationCommandRef = useRef(cameraNavigationCommand);
@@ -768,6 +793,7 @@ export function SolarSystemScene({
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
   observerCameraStyleRef.current = observerCameraStyle;
   eclipseShadowVisibleRef.current = eclipseShadowVisible;
+  foundEasterEggIdsRef.current = foundEasterEggIds;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
   cameraNavigationCommandRef.current = cameraNavigationCommand;
@@ -1116,7 +1142,49 @@ export function SolarSystemScene({
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
     let interruptCameraTransition: () => void = () => undefined;
+    // A press that begins on the canvas during a camera flight counts as a tap
+    // until it moves past TAP_SLOP_PX: children touch the screen while they
+    // wait, and a tap must not strand them mid-flight. A drag past it, a
+    // second finger, or the wheel still hands the camera to the child at once.
+    const canvasPresses = new Map<number, { x: number; y: number }>();
+    let flightTapPending = false;
+    const handleCanvasPressDown = (event: PointerEvent): void => {
+      if (event.target !== renderer.domElement) return;
+      canvasPresses.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      flightTapPending =
+        canvasPresses.size === 1 && activeCameraTransition !== undefined;
+    };
+    const handleCanvasPressMove = (event: PointerEvent): void => {
+      if (!flightTapPending) return;
+      const press = canvasPresses.get(event.pointerId);
+      if (press === undefined) return;
+      if (
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) <=
+        TAP_SLOP_PX
+      ) {
+        // OrbitControls never sees the jitter, so it adds no rotation or
+        // damping that would fight the flight.
+        event.stopPropagation();
+        return;
+      }
+      flightTapPending = false;
+      handleControlStart();
+    };
+    const handleCanvasPressEnd = (event: PointerEvent): void => {
+      canvasPresses.delete(event.pointerId);
+      if (canvasPresses.size === 0) flightTapPending = false;
+    };
+    // Capture on the container runs before the canvas listeners and before
+    // OrbitControls' document listeners, so a dropped move reaches neither.
+    container.addEventListener("pointerdown", handleCanvasPressDown, true);
+    container.addEventListener("pointermove", handleCanvasPressMove, true);
+    container.addEventListener("pointerup", handleCanvasPressEnd, true);
+    container.addEventListener("pointercancel", handleCanvasPressEnd, true);
     const handleControlStart = (): void => {
+      if (flightTapPending) return;
       interruptCameraTransition();
       if (orbitViewEnabledRef.current) {
         orbitViewEnabledRef.current = false;
@@ -1424,6 +1492,55 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.textContent = "Umbra";
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
+
+    // An easter egg near the focused or selected body shows its label as a
+    // hidden surprise, unless that body hides it from the camera. Tour steps
+    // never hint: the label list is undefined only while no step is active.
+    const easterEggHintVisible = (
+      eggId: EasterEggId,
+      eggPosition: Vector3,
+    ): boolean => {
+      if (spacecraftLabelBodyIdsRef.current !== undefined) {
+        return false;
+      }
+      for (const hintBodyId of easterEgg(eggId).hintBodyIds) {
+        if (
+          focusBodyIdRef.current !== hintBodyId &&
+          selectedBodyIdRef.current !== hintBodyId
+        ) {
+          continue;
+        }
+        const hintMesh = bodyMeshes.get(hintBodyId);
+        if (hintMesh === undefined) {
+          throw new Error(`Easter egg hint body ${hintBodyId} is unavailable`);
+        }
+        if (
+          segmentClearsSphere(
+            camera.position,
+            eggPosition,
+            hintMesh.position,
+            hintMesh.scale.x,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+    // The real name appears once the child has selected the egg.
+    const nameEasterEggLabel = (
+      label: HTMLButtonElement,
+      eggId: EasterEggId,
+      name: string,
+    ): void => {
+      const found = foundEasterEggIdsRef.current.has(eggId);
+      const text = found ? name : HIDDEN_SURPRISE_LABEL;
+      if (label.textContent !== text) {
+        label.textContent = text;
+        label.setAttribute("aria-label", `Focus ${text}`);
+        label.classList.toggle("is-hidden-surprise", !found);
+      }
+    };
 
     const monolithGeometry = new BoxGeometry(
       JOVIAN_MONOLITH_DIMENSIONS_M.thickness / ASTRONOMICAL_UNIT_M,
@@ -3526,7 +3643,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           Math.hypot(
             event.clientX - selectionPointerStartX,
             event.clientY - selectionPointerStartY,
-          ) > 5;
+          ) > TAP_SLOP_PX;
         if (selectionPointerMoved) {
           cancelStarTooltip();
           hideBodyHoverTooltip();
@@ -3970,6 +4087,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastNavigationMapUpdateAt = Number.NEGATIVE_INFINITY;
     let lastSmallBodiesVisible: boolean | undefined;
     let lastSceneMutationKey = "";
+    // Moons that the Orrery layout does not draw because they would crowd an
+    // enlarged body, for example the Moon inside an enlarged Earth.
+    let orreryHiddenBodyIds: ReadonlySet<string> = new Set();
     let lastVisualQuality: VisualQuality | undefined;
     let currentExposure = renderer.toneMappingExposure;
     let lastReportedExposureEv = Number.NaN;
@@ -5538,8 +5658,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
             )} J/kg`;
           }
         }
-        const currentFocusBodyId = focusBodyIdRef.current;
+        const layout = orreryLayout(
+          majorBodySnapshot.bodies,
+          additionalAvailableKnownSatellites,
+          sceneBodyPositions,
+          orrerySystemRootId(focusBodyIdRef.current),
+          bodyVisibilityRef.current,
+        );
+        orreryHiddenBodyIds = layout.hiddenIds;
         let visibleKnownMoonPointCount = 0;
+        let hiddenKnownMoonPointCount = 0;
         for (const system of knownMoonSystems.values()) {
           const visible =
             currentVisibility.moons && viewModeRef.current === "orrery";
@@ -5547,22 +5675,31 @@ float saturnRingTransmission(vec3 surfacePosition) {
           if (!visible) {
             continue;
           }
-          for (const [index, definition] of system.definitions.entries()) {
+          // Drawn points are packed first; the draw range leaves out moons
+          // that would crowd an enlarged body.
+          let drawnPointCount = 0;
+          for (const definition of system.definitions) {
             const position = sceneBodyPositions.get(definition.id);
             if (position === undefined) {
               throw new Error(
                 `Integrated state is missing known moon ${definition.name}`,
               );
             }
-            system.positions[index * 3] = position.x;
-            system.positions[index * 3 + 1] = position.y;
-            system.positions[index * 3 + 2] = position.z;
+            if (layout.hiddenIds.has(definition.id)) {
+              hiddenKnownMoonPointCount += 1;
+              continue;
+            }
+            system.positions[drawnPointCount * 3] = position.x;
+            system.positions[drawnPointCount * 3 + 1] = position.y;
+            system.positions[drawnPointCount * 3 + 2] = position.z;
+            drawnPointCount += 1;
           }
           const attribute = system.geometry.getAttribute("position");
           if (!(attribute instanceof BufferAttribute)) {
             throw new Error("Known-moon position attribute is unavailable");
           }
           attribute.needsUpdate = true;
+          system.geometry.setDrawRange(0, drawnPointCount);
           system.geometry.computeBoundingSphere();
           visibleKnownMoonPointCount += system.definitions.length;
         }
@@ -5572,43 +5709,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
         container.dataset["knownMoonPointCount"] = String(
           visibleKnownMoonPointCount,
         );
+        container.dataset["knownMoonPointHiddenCount"] = String(
+          hiddenKnownMoonPointCount,
+        );
+        container.dataset["orreryClearanceScale"] =
+          layout.clearanceScale.toPrecision(9);
         for (const body of majorBodySnapshot.bodies) {
           const bodyState = bodyStateById(current, body.id);
           const mesh = bodyMeshes.get(body.id);
           if (bodyState !== undefined && mesh !== undefined) {
             mesh.position.copy(scenePosition(bodyState.positionM));
-            const bodyPosition = sceneBodyPositions.get(body.id);
-            if (bodyPosition === undefined) {
-              throw new Error(`Scene position is missing body ${body.id}`);
+            const radius = layout.radiusAuById.get(body.id);
+            if (radius === undefined) {
+              throw new Error(`Orrery layout is missing body ${body.id}`);
             }
-            let nearestBodyDistanceAu = Number.POSITIVE_INFINITY;
-            for (const [otherBodyId, otherPosition] of sceneBodyPositions) {
-              const otherBodyIsSpacecraft =
-                otherBodyId === ISS_BODY_ID ||
-                isVoyagerBodyId(otherBodyId) ||
-                isOperationalSpacecraftBodyId(otherBodyId);
-              if (otherBodyId !== body.id && !otherBodyIsSpacecraft) {
-                const otherMajorBody = majorBodyById.get(otherBodyId);
-                const isHiddenOverviewMoon =
-                  (currentFocusBodyId === null ||
-                    currentFocusBodyId === "sun") &&
-                  body.type !== "moon" &&
-                  (otherMajorBody?.type === "moon" ||
-                    knownSatelliteById.has(otherBodyId));
-                if (isHiddenOverviewMoon) {
-                  continue;
-                }
-                nearestBodyDistanceAu = Math.min(
-                  nearestBodyDistanceAu,
-                  bodyPosition.distanceTo(otherPosition),
-                );
-              }
-            }
-            const radius = nonOverlappingDisplayedRadiusAu(
-              body,
-              bodyVisibilityRef.current,
-              nearestBodyDistanceAu,
-            );
             if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
               const meanRadiusKm = body.meanRadiusM / 1_000;
               const equatorialRadiusKm =
@@ -7827,8 +7941,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
         );
         const bodyRendered =
           bodyLayerVisible &&
-          (viewModeRef.current === "orrery" ||
-            isPhysicalBodyResolvable(radiusPixels));
+          (viewModeRef.current === "orrery"
+            ? !orreryHiddenBodyIds.has(body.id)
+            : isPhysicalBodyResolvable(radiusPixels));
         mesh.visible = bodyRendered;
         label.dataset["bodyRendered"] = String(bodyRendered);
         const isInCameraFrustum =
@@ -8054,7 +8169,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
-            selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID);
+            selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
+            easterEggHintVisible(JOVIAN_MONOLITH_BODY_ID, monolithPosition));
+        nameEasterEggLabel(
+          monolithLabel,
+          JOVIAN_MONOLITH_BODY_ID,
+          JOVIAN_MONOLITH_NAME,
+        );
         monolithLabel.hidden = !labelVisible;
         monolithLabel.classList.toggle(
           "is-selected",
@@ -8128,7 +8249,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
-            selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID);
+            selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
+            easterEggHintVisible(DISCOVERY_ONE_BODY_ID, position));
+        nameEasterEggLabel(
+          discoveryOneLabel,
+          DISCOVERY_ONE_BODY_ID,
+          DISCOVERY_ONE_NAME,
+        );
         discoveryOneLabel.hidden = !labelVisible;
         discoveryOneLabel.classList.toggle(
           "is-selected",
@@ -8220,7 +8347,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === orbiter.id ||
-            selectedBodyIdRef.current === orbiter.id);
+            selectedBodyIdRef.current === orbiter.id ||
+            easterEggHintVisible(orbiter.id, position));
+        nameEasterEggLabel(label, orbiter.id, orbiter.name);
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
@@ -8306,7 +8435,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === object.id ||
-            selectedBodyIdRef.current === object.id);
+            selectedBodyIdRef.current === object.id ||
+            easterEggHintVisible(object.id, position));
+        nameEasterEggLabel(label, object.id, object.name);
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
@@ -8566,9 +8697,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           surfaceObserverRef.current === null &&
           (geometryVisible ||
             selectedBodyIdRef.current === spacecraft.id ||
-            focusBodyIdRef.current === spacecraft.id) &&
+            focusBodyIdRef.current === spacecraft.id ||
+            (spacecraft.id === ROADSTER_BODY_ID &&
+              easterEggHintVisible(ROADSTER_BODY_ID, position))) &&
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(spacecraft.id));
+        if (spacecraft.id === ROADSTER_BODY_ID) {
+          nameEasterEggLabel(label, ROADSTER_BODY_ID, spacecraft.name);
+        }
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
@@ -8859,6 +8995,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
       controls.dispose();
       dracoLoader.dispose();
       controls.removeEventListener("start", handleControlStart);
+      container.removeEventListener("pointerdown", handleCanvasPressDown, true);
+      container.removeEventListener("pointermove", handleCanvasPressMove, true);
+      container.removeEventListener("pointerup", handleCanvasPressEnd, true);
+      container.removeEventListener(
+        "pointercancel",
+        handleCanvasPressEnd,
+        true,
+      );
       renderer.domElement.removeEventListener(
         "pointerdown",
         handleSurfacePointerDown,

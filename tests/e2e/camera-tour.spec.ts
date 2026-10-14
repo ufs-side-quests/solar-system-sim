@@ -268,6 +268,10 @@ test("keeps escape navigation visible and guides the user through scale", async 
       Number(await scene.getAttribute("data-camera-distance-au")),
     )
     .toBeCloseTo(0.025, 7);
+  // Easter egg hints stay out of the narrated science.
+  await expect(
+    page.locator(".body-label.is-hidden-surprise").filter({ visible: true }),
+  ).toHaveCount(0);
   await expect(
     tour.getByText(
       "Thin blue curves · major-moon orbits; all bodies retain physical size",
