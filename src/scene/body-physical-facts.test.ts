@@ -255,6 +255,9 @@ describe("child-first distances", () => {
   it("states plain distances to two significant figures", () => {
     expect(formatPlainDistance(360_512_000)).toBe("about 360,000 km");
     expect(formatPlainDistance(9_376_000)).toBe("about 9,400 km");
+    expect(formatPlainDistance(1_433_175_000)).toBe("about 1.4 million km");
+    expect(formatPlainDistance(1_500_000_000)).toBe("about 1.5 million km");
+    expect(formatPlainDistance(12_400_000_000)).toBe("about 12 million km");
     expect(formatPlainDistance(24_990_000_000_000)).toBe("about 25 billion km");
     expect(formatPlainDistance(999_999_000_000)).toBe("about 1 billion km");
     // USS Defiant patrols 2.5 km from Deep Space Nine.

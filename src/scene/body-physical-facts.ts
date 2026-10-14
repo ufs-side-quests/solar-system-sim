@@ -565,7 +565,7 @@ export function formatPlainDistance(distanceM: number): string {
     return `about ${rounded(km / 1e9, 1)} billion km`;
   }
   if (km >= 1e6) {
-    return `about ${rounded(km / 1e6, 0)} million km`;
+    return `about ${rounded(km / 1e6, km < 1e7 ? 1 : 0)} million km`;
   }
   return `about ${rounded(km, km < 10 ? 1 : 0)} km`;
 }
