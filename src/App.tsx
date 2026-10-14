@@ -160,7 +160,11 @@ import {
   SCALE_TOUR_TRANSITION_DURATION_MS,
   type ScaleTourStep,
 } from "./tour/scale-tour";
-import { CINEMATIC_SHOTS, type CinematicShot } from "./tour/cinematic-shots";
+import {
+  CINEMATIC_SHOTS,
+  PLANETS_RACING_SHOT,
+  type CinematicShot,
+} from "./tour/cinematic-shots";
 
 const SolarSystemScene = lazy(async () => {
   const module = await import("./scene/SolarSystemScene");
@@ -1433,7 +1437,9 @@ export function App() {
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourPlaying(false);
-    setPlaying(false);
+    if (tourStepIndex !== null) {
+      setPlaying(false);
+    }
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation("perspective");
     if (focusBodyIdRef.current === "") {
@@ -1714,6 +1720,7 @@ export function App() {
     setBodyVisibilityPercent(shot.bodyVisibilityPercent);
     setShowLabels(shot.labels);
     setShowOrbitGuides(shot.orbitGuides);
+    setShowPlanetTrails(shot.planetTrails);
     setShowTacticalOverlay(false);
     setShowEclipticPlane(false);
     setSelectedBodyPanelCollapsed(true);
@@ -2507,6 +2514,13 @@ export function App() {
           </span>
         </div>
 
+        {activeCinematicShot === undefined || tourKind !== null ? null : (
+          <p className="cinematic-shot-caption" role="status">
+            <strong>{activeCinematicShot.name}</strong>
+            <span>{activeCinematicShot.description}</span>
+          </p>
+        )}
+
         <time
           className="global-simulation-clock"
           dateTime={simulationDateUtc(state?.timeSeconds ?? 0)
@@ -2676,6 +2690,14 @@ export function App() {
               onClick={startEclipseStory}
             >
               Eclipse story
+            </button>
+            <button
+              type="button"
+              className="planets-racing-launch-button"
+              aria-pressed={activeCinematicShotId === PLANETS_RACING_SHOT.id}
+              onClick={() => presentCinematicShot(PLANETS_RACING_SHOT)}
+            >
+              Planets racing
             </button>
           </div>
         </nav>

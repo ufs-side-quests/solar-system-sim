@@ -14,10 +14,28 @@ export type CinematicShot = Readonly<{
   viewMode: Exclude<ViewMode, "schematic">;
   bodyVisibilityPercent: number;
   orbitGuides: boolean;
+  planetTrails: boolean;
   labels: boolean;
 }>;
 
+export const PLANETS_RACING_SHOT: CinematicShot = {
+  id: "planets-racing",
+  name: "Planets racing round the Sun",
+  description: "Closer planets go round faster. Watch Mercury lap Earth.",
+  focusBodyId: "sun",
+  orientation: "overhead",
+  cameraDistanceAu: 6,
+  cameraZoom: 1,
+  timeRateSecondsPerSecond: 30 * 86_400,
+  viewMode: "orrery",
+  bodyVisibilityPercent: 100,
+  orbitGuides: true,
+  planetTrails: true,
+  labels: true,
+};
+
 export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
+  PLANETS_RACING_SHOT,
   {
     id: "earth-daylight",
     name: "Earth in daylight",
@@ -31,6 +49,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -46,6 +65,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -61,6 +81,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -76,6 +97,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -90,6 +112,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -105,6 +128,7 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
 ];

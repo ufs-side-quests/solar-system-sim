@@ -96,3 +96,60 @@ test("renders Discovery One and presents every cinematic shot", async ({
     });
   }
 });
+
+test("one tap from the first screen sets the planets racing round the Sun", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  await expect(scene).toHaveAttribute("data-orbit-guide-count", "0");
+
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+  await expect(scene).toHaveAttribute("data-focus-body", "sun");
+  await expect(scene).toHaveAttribute("data-planet-trails-visible", "true");
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-orbit-guide-count")),
+    )
+    .toBeGreaterThan(0);
+  await expect(page.locator(".cinematic-shot-caption")).toContainText(
+    "Closer planets go round faster. Watch Mercury lap Earth.",
+  );
+  await expect(page.locator(".run-status")).toContainText(
+    "30 days/s requested",
+  );
+  const timeOutput = page.locator(".time-readout output");
+  const startTime = Number(await timeOutput.getAttribute("data-time-seconds"));
+  await page.screenshot({
+    path: testInfo.outputPath("planets-racing-0s.png"),
+    animations: "disabled",
+  });
+  await expect
+    .poll(
+      async () =>
+        (Number(await timeOutput.getAttribute("data-time-seconds")) -
+          startTime) /
+        86_400,
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(60);
+  await page.screenshot({
+    path: testInfo.outputPath("planets-racing-10s.png"),
+    animations: "disabled",
+  });
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+});

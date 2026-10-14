@@ -25,7 +25,9 @@ Flight mode provides low, equatorial, polar, synchronous, high-observation, powe
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
-An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, and a guided scale tour.
+An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
+Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecliptic so Mercury to Mars fill the view, turns on orbit guides, planet trails and labels, and runs the clock forward at 30 days per second, so Mercury laps Earth about every 4 seconds.
+While a cool shot is active, a caption names it and says what to watch.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
 Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a map double-click uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
@@ -195,6 +197,7 @@ The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet,
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Focus.
+Home keeps the clock in its current play state; it pauses only when it ends an active tour.
 Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.

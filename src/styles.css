@@ -165,6 +165,7 @@ p {
   > :is(
     .focus-breadcrumb,
     .status-cluster,
+    .cinematic-shot-caption,
     .camera-dock,
     .surface-observer-hud,
     .selected-body-detail,
@@ -957,6 +958,29 @@ h1 {
 
 .status-cluster {
   right: 0.9rem;
+}
+
+.cinematic-shot-caption {
+  position: absolute;
+  z-index: 8;
+  top: 3.5rem;
+  right: 0.9rem;
+  display: grid;
+  max-width: 17rem;
+  margin: 0;
+  gap: 0.2rem;
+  padding: 0.5rem 0.65rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: rgb(5 11 18 / 72%);
+  backdrop-filter: blur(12px);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.cinematic-shot-caption strong {
+  color: var(--text);
 }
 
 .global-simulation-clock {
@@ -3011,6 +3035,13 @@ h1 {
 
   .camera-scale {
     display: none;
+  }
+
+  .cinematic-shot-caption {
+    top: 9.4rem;
+    right: 0.55rem;
+    max-width: calc(100% - 13.6rem);
+    font-size: 0.74rem;
   }
 
   .camera-dock-actions {
