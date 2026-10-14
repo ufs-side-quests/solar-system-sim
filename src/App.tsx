@@ -38,6 +38,7 @@ import {
   ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
   majorBodySystem,
+  type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
   formatSimulationDateUtc,
@@ -58,7 +59,15 @@ import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
   formatMassKg,
+  formatLiveOrbitalPeriod,
+  formatSourcedOrbitalPeriod,
+  formatSpeedWithJetComparison,
+  formatSpinPeriod,
+  formatWidthComparedToEarth,
+  PLAIN_SURFACE_BY_BODY_ID,
+  SIDEREAL_ORBITAL_PERIOD_BY_ID,
 } from "./scene/body-physical-facts";
+import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
   CameraNavigationAction,
   CameraNavigationCommand,
@@ -101,6 +110,7 @@ import {
 } from "./scene/lunar-landing-sites";
 import {
   bodyOrientationAngles,
+  planetSpinNote,
   siderealRotationRateRadPerSecond,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
@@ -682,6 +692,19 @@ function formatSimulationOffset(seconds: number): string {
     return `${sign}${(absoluteSeconds / 3_600).toLocaleString(undefined, { maximumFractionDigits: 1 })} h`;
   }
   return `${sign}${(absoluteSeconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
+}
+
+const EARTH_MEAN_RADIUS_M = (() => {
+  const earth = majorBodySnapshot.bodies.find((body) => body.id === "earth");
+  if (earth === undefined) {
+    throw new Error("Major-body snapshot is missing Earth");
+  }
+  return earth.meanRadiusM;
+})();
+
+/** "the Sun" reads as a name; every other parent keeps its own name. */
+function parentPhrase(parent: MajorBodyDefinition): string {
+  return parent.id === "sun" ? "the Sun" : parent.name;
 }
 
 function normalizedDegrees(value: number): number {
@@ -1983,7 +2006,7 @@ export function App() {
     const speedLabel =
       parentDefinition === undefined
         ? undefined
-        : `Speed relative to ${parentDefinition.name}`;
+        : `Speed relative to ${parentPhrase(parentDefinition)}`;
     if (isJovianMonolith) {
       return {
         name: JOVIAN_MONOLITH_NAME,
@@ -2076,10 +2099,7 @@ export function App() {
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-        speedLabel:
-          parentDefinition === undefined
-            ? undefined
-            : `Speed relative to ${parentDefinition.name}`,
+        speedLabel,
         mass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
@@ -2172,10 +2192,7 @@ export function App() {
             parentState === undefined
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-          speedLabel:
-            parentDefinition === undefined
-              ? undefined
-              : `Speed relative to ${parentDefinition.name}`,
+          speedLabel,
           mass:
             bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
@@ -2268,13 +2285,43 @@ export function App() {
         composition,
       };
     }
+    const surfaceClassification =
+      nasaTextureByBodyId.get(definition.id)?.classification ??
+      nasaMaterialPresentationByBodyId.get(definition.id)?.classification;
+    const diameterKm = (definition.meanRadiusM * 2) / 1_000;
+    const liveOrbitalPeriodSeconds =
+      parentState === undefined
+        ? undefined
+        : osculatingOrbitalPeriodSeconds(bodyState, parentState);
+    const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
     return {
       name: definition.name,
-      surface:
-        nasaTextureByBodyId.get(definition.id)?.classification ??
-        nasaMaterialPresentationByBodyId.get(definition.id)?.classification ??
+      size:
+        definition.id === "earth"
+          ? `Our home: ${diameterKm.toLocaleString("en-GB", { maximumFractionDigits: 0 })} km wide`
+          : formatWidthComparedToEarth(
+              definition.meanRadiusM,
+              EARTH_MEAN_RADIUS_M,
+            ),
+      orbitLabel:
+        parentDefinition === undefined
+          ? undefined
+          : `One trip around ${parentPhrase(parentDefinition)}`,
+      orbitalPeriod: formatSourcedOrbitalPeriod(definition.id),
+      orbitalPeriodSource:
+        sourcedOrbitalPeriod === undefined
+          ? undefined
+          : `Sidereal orbital period · ${sourcedOrbitalPeriod.authority}`,
+      liveOrbitalPeriod:
+        liveOrbitalPeriodSeconds === undefined
+          ? undefined
+          : formatLiveOrbitalPeriod(liveOrbitalPeriodSeconds),
+      spinNote: planetSpinNote(definition),
+      surface: PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour",
+      surfaceTechnical:
+        surfaceClassification ??
         "Neutral - no installed authoritative surface asset",
-      diameterKm: (definition.meanRadiusM * 2) / 1_000,
+      diameterKm,
       parentName: parentDefinition?.name,
       distance:
         parentState === undefined
@@ -3147,6 +3194,28 @@ export function App() {
             )}
             {selectedBodyPanelCollapsed ? null : (
               <div className="selected-body-metrics">
+                {selectedBodyDetail.size === undefined ? null : (
+                  <span>
+                    <small>Size</small>
+                    {selectedBodyDetail.size}
+                  </span>
+                )}
+                {selectedBodyDetail.orbitLabel === undefined ||
+                selectedBodyDetail.orbitalPeriod === undefined ? null : (
+                  <span title={selectedBodyDetail.orbitalPeriodSource}>
+                    <small>{selectedBodyDetail.orbitLabel}</small>
+                    {selectedBodyDetail.orbitalPeriod}
+                  </span>
+                )}
+                {selectedBodyDetail.rotationHours === undefined ? null : (
+                  <span title="Sidereal rotation: one full turn measured against the stars">
+                    <small>One spin</small>
+                    {formatSpinPeriod(selectedBodyDetail.rotationHours)}
+                    {selectedBodyDetail.spinNote === undefined
+                      ? null
+                      : `, ${selectedBodyDetail.spinNote}`}
+                  </span>
+                )}
                 {selectedBodyDetail.distance === undefined ? null : (
                   <span>
                     <small>
@@ -3164,17 +3233,6 @@ export function App() {
                     km
                   </span>
                 )}
-                {selectedBodyDetail.speed === undefined ? null : (
-                  <span>
-                    <small>
-                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
-                    </small>
-                    {selectedBodyDetail.speed.toLocaleString(undefined, {
-                      maximumFractionDigits: 3,
-                    })}{" "}
-                    km/s
-                  </span>
-                )}
                 {selectedBodyDetail.dimensionsM === undefined ? null : (
                   <span>
                     <small>Maximum footprint</small>
@@ -3187,45 +3245,29 @@ export function App() {
                     {selectedBodyDetail.ephemerisStatus}
                   </span>
                 )}
-                {selectedBodyDetail.diameterKm === undefined ? null : (
-                  <span>
-                    <small>Diameter</small>
-                    {selectedBodyDetail.diameterKm.toLocaleString(undefined, {
-                      maximumFractionDigits: 0,
-                    })}{" "}
-                    km
-                  </span>
-                )}
-                {selectedBodyDetail.rotationHours === undefined ? null : (
-                  <span>
-                    <small>Sidereal rotation</small>
-                    {selectedBodyDetail.rotationHours.toLocaleString(
-                      undefined,
-                      {
-                        maximumFractionDigits: 2,
-                      },
-                    )}{" "}
-                    h
-                  </span>
-                )}
-                {selectedBodyDetail.primeMeridianDeg === undefined ? null : (
-                  <span>
-                    <small>Rotation angle</small>
-                    {selectedBodyDetail.primeMeridianDeg.toLocaleString(
-                      undefined,
-                      { maximumFractionDigits: 1 },
-                    )}
-                    °
-                  </span>
-                )}
                 <span>
                   <small>Mass</small>
                   {selectedBodyDetail.mass}
                 </span>
-                <span className="selected-body-surface">
+                <span
+                  className={
+                    selectedBodyDetail.surfaceTechnical === undefined
+                      ? "selected-body-surface"
+                      : undefined
+                  }
+                  title={selectedBodyDetail.surfaceTechnical}
+                >
                   <small>Surface</small>
                   {selectedBodyDetail.surface}
                 </span>
+                {selectedBodyDetail.speed === undefined ? null : (
+                  <span className="selected-body-speed">
+                    <small>
+                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
+                    </small>
+                    {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
+                  </span>
+                )}
                 <span className="selected-body-composition">
                   <small>
                     <span>Composition</span>
@@ -3243,6 +3285,48 @@ export function App() {
                   {selectedBodyDetail.composition?.summary ??
                     "Not provided by the installed authority snapshot"}
                 </span>
+                {selectedBodyDetail.surfaceTechnical === undefined ? null : (
+                  <details className="selected-body-more">
+                    <summary>More detail</summary>
+                    <div className="selected-body-more-grid">
+                      <span>
+                        <small>Diameter</small>
+                        {selectedBodyDetail.diameterKm.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 0 },
+                        )}{" "}
+                        km
+                      </span>
+                      {selectedBodyDetail.liveOrbitalPeriod ===
+                      undefined ? null : (
+                        <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
+                          <small>{"This moment's orbit (live)"}</small>
+                          {selectedBodyDetail.liveOrbitalPeriod}
+                        </span>
+                      )}
+                      <span>
+                        <small>Sidereal rotation</small>
+                        {selectedBodyDetail.rotationHours.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 2 },
+                        )}{" "}
+                        h
+                      </span>
+                      <span>
+                        <small>Rotation angle</small>
+                        {selectedBodyDetail.primeMeridianDeg.toLocaleString(
+                          undefined,
+                          { maximumFractionDigits: 1 },
+                        )}
+                        °
+                      </span>
+                      <span>
+                        <small>Surface map</small>
+                        {selectedBodyDetail.surfaceTechnical}
+                      </span>
+                    </div>
+                  </details>
+                )}
                 {selectedApolloSite === undefined ? null : (
                   <span className="apollo-mission-detail">
                     <small>Mission record</small>
