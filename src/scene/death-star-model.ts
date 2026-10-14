@@ -14,6 +14,7 @@ import {
   TorusGeometry,
   Vector3,
 } from "three";
+import type { Texture } from "three";
 
 import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
 import type { FictionalOrbiter } from "./fictional-orbiters";
@@ -30,9 +31,21 @@ function selectableMesh(
   return mesh;
 }
 
-function createPanelledHullMaterial(): MeshPhysicalMaterial {
-  const hullTexture = new TextureLoader().load(
+function loadFictionalTexture(
+  url: string,
+  onTextureError: (url: string) => void,
+): Texture {
+  return new TextureLoader().load(url, undefined, undefined, () => {
+    onTextureError(url);
+  });
+}
+
+function createPanelledHullMaterial(
+  onTextureError: (url: string) => void,
+): MeshPhysicalMaterial {
+  const hullTexture = loadFictionalTexture(
     "/textures/fictional/death-star-hull-v2.webp",
+    onTextureError,
   );
   hullTexture.name =
     "Original equirectangular fictional battle-station hull texture";
@@ -53,9 +66,12 @@ function createPanelledHullMaterial(): MeshPhysicalMaterial {
   });
 }
 
-function createInteriorMaterial(): MeshPhysicalMaterial {
-  const interiorTexture = new TextureLoader().load(
+function createInteriorMaterial(
+  onTextureError: (url: string) => void,
+): MeshPhysicalMaterial {
+  const interiorTexture = loadFictionalTexture(
     "/textures/fictional/death-star-interior.webp",
+    onTextureError,
   );
   interiorTexture.name =
     "Original fictional unfinished battle-station interior texture";
@@ -297,7 +313,12 @@ function addIncompleteSuperstructure(
 export const DEATH_STAR_MODEL_VISUAL_SOURCE =
   "original-integrated-pbr-hull-recessed-dish-and-dense-interior-v3";
 
-export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
+// onTextureError receives the URL of a texture that failed to load, so the
+// caller can show the failure instead of an untextured model.
+export function createDeathStarModel(
+  orbiter: FictionalOrbiter,
+  onTextureError: (url: string) => void,
+): Group {
   const group = new Group();
   group.name = `${orbiter.name} detailed physical-scale visualization`;
   group.userData["bodyId"] = orbiter.id;
@@ -308,7 +329,7 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
   modelRoot.userData["bodyId"] = orbiter.id;
   group.add(modelRoot);
 
-  const hull = createPanelledHullMaterial();
+  const hull = createPanelledHullMaterial(onTextureError);
   const structure = new MeshStandardMaterial({
     name: "Fictional exposed construction interior",
     color: 0x303638,
@@ -317,7 +338,7 @@ export function createDeathStarModel(orbiter: FictionalOrbiter): Group {
     metalness: 0.56,
     roughness: 0.74,
   });
-  const interior = createInteriorMaterial();
+  const interior = createInteriorMaterial(onTextureError);
   const dishStructure = structure.clone();
   dishStructure.name = "Fictional superlaser support structure";
   dishStructure.depthTest = false;
