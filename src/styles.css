@@ -3401,7 +3401,10 @@ h1 {
   background: var(--surface-strong);
 }
 
-.size-lineup [aria-current="true"] {
+/* A guessed choice keeps its mark under the pointer that just tapped it. */
+.size-lineup [aria-current="true"],
+.size-duel-choice.is-right-guess,
+.size-duel-choice.is-right-guess:hover {
   border-color: var(--accent);
   background: rgb(127 199 255 / 14%);
 }
@@ -3444,4 +3447,68 @@ h1 {
   color: var(--danger);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.size-lineup .panel-heading button {
+  min-height: 2.75rem;
+}
+
+.size-lineup-mode {
+  margin-left: auto;
+}
+
+/* Room for two lines, so the globes do not jump when the result appears. */
+.size-duel-status {
+  min-height: calc(2lh + 0.7rem);
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+/* The wider globe is drawn at Jupiter's lineup size; a smaller floor keeps
+   Saturn's rings and Jupiter side by side on a phone. */
+.size-duel-row {
+  --lineup-largest: clamp(5rem, 22vw, 12rem);
+
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.6rem 1.2rem;
+  padding: 0.6rem 0.9rem;
+}
+
+.size-duel-row .size-lineup-disc {
+  transition: width 0.9s ease-in-out;
+}
+
+/* A wrong guess stays marked, but not in the right answer's accent. */
+.size-duel-choice.is-wrong-guess,
+.size-duel-choice.is-wrong-guess:hover {
+  border-style: dashed;
+  border-color: var(--muted);
+  background: transparent;
+}
+
+.size-duel-choice[aria-disabled="true"] {
+  cursor: default;
+}
+
+.size-duel-wider {
+  padding: 0.05rem 0.5rem;
+  border-radius: 0.4rem;
+  background: var(--accent);
+  color: #04121f;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.size-duel-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0.9rem 0.8rem;
+}
+
+.size-lineup-action {
+  min-height: 2.75rem;
+  padding: 0.35rem 0.9rem;
 }

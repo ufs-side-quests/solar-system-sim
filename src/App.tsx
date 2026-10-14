@@ -2780,11 +2780,11 @@ export function App() {
       onClickCapture={(event) => {
         const target = event.target;
         // A hidden-surprise label is an unfound easter egg: its discovery
-        // chime replaces the button sound.
+        // chime replaces the button sound. A size-duel guess plays its own.
         if (
           target instanceof Element &&
           target.closest("button:not(:disabled), summary") !== null &&
-          target.closest(".is-hidden-surprise") === null
+          target.closest(".is-hidden-surprise, .size-duel-choice") === null
         ) {
           audio.interact("button");
         }
@@ -3482,6 +3482,9 @@ export function App() {
               setSurfaceObserverEnabled(false);
               navigateToFocus(bodyId);
             }}
+            onGuess={(correct) =>
+              audio.interact(correct ? "discovery" : "button")
+            }
             onClose={() => setSizeLineupOpen(false)}
           />
         ) : null}
