@@ -311,7 +311,14 @@ test("running the clock backward ends the planets race", async ({ page }) => {
 
   await expect(racingButton).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator(".cinematic-shot-caption")).toHaveCount(0);
+  // The end of the shot brings back the rate from before it.
+  await expect(page.locator(".playback-rate-control output")).toHaveText(
+    "1 hour / second",
+  );
+  const daysAtBackwardStart = await simulationDays();
+  await expect.poll(simulationDays).toBeLessThan(daysAtBackwardStart);
   // The clock keeps running backward, below the epoch, as without the shot.
+  await page.getByRole("slider", { name: "Playback rate" }).fill("5");
   await expect.poll(simulationDays, { timeout: 20_000 }).toBeLessThan(-10);
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
 });

@@ -964,6 +964,12 @@ export function App() {
   const [activeCinematicShotId, setActiveCinematicShotId] = useState<
     string | null
   >(null);
+  // The playback rate and direction from before the active cool shot, or null
+  // when no shot runs or the child chose a rate during the shot.
+  const playbackBeforeShotRef = useRef<{
+    direction: -1 | 1;
+    timeRateIndex: number;
+  } | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -1153,6 +1159,7 @@ export function App() {
     const run = async (): Promise<void> => {
       try {
         const rawInitialState = await client.api.initialize(majorBodySystem);
+        const epochTimeSeconds = rawInitialState.timeSeconds;
         let previousState = withKnownSatellites(rawInitialState);
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
@@ -1167,6 +1174,15 @@ export function App() {
           const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
           if (directSeekTimeSeconds !== undefined) {
             directSeekTimeSecondsRef.current = undefined;
+            // A seek nearer the epoch than the clock starts again from the
+            // epoch state, the same state a fresh run starts from, instead
+            // of integrating across years.
+            if (
+              Math.abs(directSeekTimeSeconds - epochTimeSeconds) <
+              Math.abs(directSeekTimeSeconds - solverTime)
+            ) {
+              await client.api.initialize(majorBodySystem);
+            }
             const rawNextState = await client.api.integrateTo(
               directSeekTimeSeconds,
             );
@@ -1385,6 +1401,31 @@ export function App() {
     [],
   );
 
+  // A fresh worker initialised with the epoch state, so the clock returns to
+  // the snapshot epoch at once instead of integrating back to it.
+  const restartSimulation = useCallback((): void => {
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = undefined;
+    setSeeking(false);
+    setPlaybackBuffered(false);
+    setError(undefined);
+    setClearTrailsToken((current) => current + 1);
+    setSimulationRunToken((current) => current + 1);
+  }, []);
+
+  // Ends the active cool shot. A shot sets its own playback rate, so the rate
+  // and direction from before it come back, unless the child chose a rate
+  // during the shot.
+  const endCinematicShot = useCallback((): void => {
+    const before = playbackBeforeShotRef.current;
+    playbackBeforeShotRef.current = null;
+    setActiveCinematicShotId(null);
+    if (before !== null) {
+      setDirection(before.direction);
+      setTimeRateIndex(before.timeRateIndex);
+    }
+  }, []);
+
   const requestResetView = useCallback((): void => {
     tourCameraMovedRef.current = true;
     setSurfaceObserverEnabled(false);
@@ -1483,10 +1524,10 @@ export function App() {
       if (preset === "custom") {
         tourCameraMovedRef.current = true;
         setTourPlaying(false);
-        setActiveCinematicShotId(null);
+        endCinematicShot();
       }
     },
-    [],
+    [endCinematicShot],
   );
 
   const handleOrbitViewChange = useCallback((enabled: boolean): void => {
@@ -1542,7 +1583,7 @@ export function App() {
 
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
-      setActiveCinematicShotId(null);
+      endCinematicShot();
       setApolloInspectionSiteId(null);
       endTour();
       if (tourStepIndex !== null) {
@@ -1611,12 +1652,12 @@ export function App() {
         );
       }
     },
-    [endTour, issueCameraNavigation, tourStepIndex],
+    [endCinematicShot, endTour, issueCameraNavigation, tourStepIndex],
   );
 
   const navigateBack = (): void => {
     setSurfaceObserverEnabled(false);
-    setActiveCinematicShotId(null);
+    endCinematicShot();
     endTour();
     setPlaying(false);
     const previousBodyId = focusHistoryRef.current.pop();
@@ -1740,18 +1781,28 @@ export function App() {
       surfaceObserverTargetBodyId,
       surfaceObserverLatitudeDeg,
       surfaceObserverLongitudeDeg,
-      direction,
-      timeRateIndex,
+      // A cool shot's own rate is not the child's: the tour returns to the
+      // rate from before the shot.
+      ...(playbackBeforeShotRef.current ?? { direction, timeRateIndex }),
     };
   };
 
   const startScaleTour = (): void => {
     rememberDisplaySettingsBeforeTour();
+    // Scale steps set no time: they run on from the clock, so a clock outside
+    // the validated window starts again from the epoch first.
+    const currentTimeSeconds = displayedStateRef.current?.timeSeconds;
+    if (
+      currentTimeSeconds !== undefined &&
+      Math.abs(currentTimeSeconds) > VALIDATED_WINDOW_SECONDS
+    ) {
+      restartSimulation();
+    }
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
-    setActiveCinematicShotId(null);
+    endCinematicShot();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
@@ -1770,7 +1821,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
-    setActiveCinematicShotId(null);
+    endCinematicShot();
     setOrbitViewEnabled(false);
     setTourMinimised(false);
     setTourPlaying(!reducedMotion);
@@ -1971,8 +2022,11 @@ export function App() {
     }
   }, [tourCameraSettled, tourPlaying, tourStepIndex]);
 
+  // A step's time on screen starts once its clock has landed and its camera
+  // has arrived, so a long seek or flight never eats the step.
+  const tourStepTimerRunning = tourPlaying && !seeking && tourCameraSettled;
   useEffect(() => {
-    if (tourStepIndex === null || !tourPlaying) {
+    if (tourStepIndex === null || !tourStepTimerRunning) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -1986,8 +2040,8 @@ export function App() {
   }, [
     activeTourStepDurationMs,
     activeTourSteps.length,
-    tourPlaying,
     tourStepIndex,
+    tourStepTimerRunning,
   ]);
 
   const activeTourStep =
@@ -2005,18 +2059,6 @@ export function App() {
         ? activeCinematicShot.cameraTargetBodyId
         : undefined;
 
-  // A fresh worker initialised with the epoch state, so the clock returns to
-  // the snapshot epoch at once instead of integrating back to it.
-  const restartSimulation = useCallback((): void => {
-    manualDeltaSecondsRef.current = 0;
-    directSeekTimeSecondsRef.current = undefined;
-    setSeeking(false);
-    setPlaybackBuffered(false);
-    setError(undefined);
-    setClearTrailsToken((current) => current + 1);
-    setSimulationRunToken((current) => current + 1);
-  }, []);
-
   const presentCinematicShot = (shot: CinematicShot): void => {
     const requestedRateIndex = TIME_RATES.findIndex(
       (rate) => rate.secondsPerSecond === shot.timeRateSecondsPerSecond,
@@ -2024,7 +2066,11 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    endTour();
+    // A shot after a shot keeps the rate from before the first one.
+    playbackBeforeShotRef.current ??= endTour() ?? {
+      direction,
+      timeRateIndex,
+    };
     if (shot.loopEndTimeSeconds !== null) {
       restartSimulation();
     }
@@ -2164,7 +2210,7 @@ export function App() {
       epochTimeSeconds: state?.timeSeconds ?? 0,
     });
     setOrbitViewEnabled(true);
-    setActiveCinematicShotId(null);
+    endCinematicShot();
     setTourPlaying(false);
     setSurfaceObserverEnabled(false);
     setViewMode("reality");
@@ -2620,7 +2666,7 @@ export function App() {
   // A looping shot only runs forward from the epoch: going backward ends it.
   const startPlaying = (nextDirection: -1 | 1): void => {
     if (nextDirection === -1) {
-      setActiveCinematicShotId(null);
+      endCinematicShot();
     }
     setDirection(nextDirection);
     setPlaying(true);
@@ -2628,7 +2674,7 @@ export function App() {
 
   const queueStep = (stepDirection: -1 | 1): void => {
     if (stepDirection === -1) {
-      setActiveCinematicShotId(null);
+      endCinematicShot();
     }
     setPlaying(false);
     manualDeltaSecondsRef.current +=
@@ -2741,7 +2787,7 @@ export function App() {
                   aria-pressed={viewMode === mode}
                   aria-describedby={tooltipId}
                   onClick={() => {
-                    setActiveCinematicShotId(null);
+                    endCinematicShot();
                     endTour();
                     setSurfaceObserverEnabled(false);
                     if (mode === "schematic") {
@@ -3284,8 +3330,8 @@ export function App() {
             </div>
             <div className="tour-progress" aria-hidden="true">
               <span
-                key={`${activeTourStep.id}-${String(tourPlaying)}`}
-                className={tourPlaying ? "is-playing" : undefined}
+                key={`${activeTourStep.id}-${String(tourStepTimerRunning)}`}
+                className={tourStepTimerRunning ? "is-playing" : undefined}
                 style={{
                   animationDuration: `${String(activeTourStepDurationMs)}ms`,
                 }}
@@ -3296,12 +3342,26 @@ export function App() {
               <h2>{activeTourStep.title}</h2>
               <strong>{activeTourStep.scale}</strong>
               <p>{activeTourStep.description}</p>
-              {activeTourStep.timeUtc !== undefined ? (
+              {activeTourStep.timeSeconds !== undefined && seeking ? (
+                <p className="tour-seeking" role="status">
+                  Moving the clock to{" "}
+                  {simulationDateUtc(
+                    activeTourStep.timeSeconds,
+                  ).toLocaleDateString("en-GB", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                  …
+                </p>
+              ) : activeTourStep.timeUtc !== undefined ? (
                 <time dateTime={activeTourStep.timeUtc}>
                   12 August 2026 · exact model time
                 </time>
               ) : null}
               {tourKind === "eclipse" &&
+              !seeking &&
               surfaceObservation?.solarEclipse !== undefined ? (
                 <div
                   className="eclipse-live-metrics"
@@ -4710,6 +4770,8 @@ export function App() {
                 if (selectedIndex === undefined) {
                   throw new Error("Selected playback rate is unavailable");
                 }
+                // The child's own rate outlasts the end of a cool shot.
+                playbackBeforeShotRef.current = null;
                 setTimeRateIndex(selectedIndex);
               }}
             />

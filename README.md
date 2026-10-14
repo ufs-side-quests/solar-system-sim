@@ -51,6 +51,7 @@ In a portrait view, cool shots move the camera out by the scene aspect ratio, be
 The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
 While a cool shot is active, the clock runs, and no discovery message shows, a caption names it and says what to watch; a tour, a new focus, a view-mode change, or running or stepping the clock backward ends the shot.
+When a shot ends, the playback rate and direction from before the shot come back, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
 Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
@@ -267,6 +268,10 @@ Each step owns its camera distance, orientation, view mode, body-size treatment,
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
 While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
 The Scale tour clock waits at the time the step began, because Scale steps set no time; the Eclipse story clock waits at the step's time.
+A Scale tour that starts with the clock outside the validated ±1 year window first restarts the simulation from the epoch.
+A step's time on screen starts only when its clock has landed and its camera has settled, so a long seek or flight never shortens the step.
+While an Eclipse story step moves the clock, the card says "Moving the clock to 12 Aug 2026…" and hides the live eclipse readouts until the clock lands.
+A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Finish, Escape, or choosing another object, view, or shot) restores the display, surface observer, playback rate, and direction settings from before the tour.
 Exit, Finish, and Escape also reset the view of the current object at 1x and run the clock, even if it was paused before the tour, so a child never comes back to a frozen screen.

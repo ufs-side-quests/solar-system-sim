@@ -435,3 +435,182 @@ test("a view change during a tour keeps the settings from before it", async ({
     page.getByRole("region", { name: "Time controls" }).locator(".run-status"),
   ).toContainText("1 day/s requested");
 });
+
+const DAY_SECONDS = 86_400;
+const VALIDATED_WINDOW_SECONDS = 365 * DAY_SECONDS;
+
+async function outsideValidatedWindow(page: Page): Promise<string | null> {
+  return page
+    .locator(".model-validity")
+    .getAttribute("data-outside-validated-window");
+}
+
+// Runs the clock at 1 year per second until it passes the given day, then
+// pauses it there.
+async function pushClockPast(page: Page, days: number): Promise<void> {
+  await page.getByRole("slider", { name: "Playback rate" }).fill("6");
+  await expect(
+    page.getByText("1 year / second", { exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => clockSeconds(page), { timeout: 30_000 })
+    .toBeGreaterThan(days * DAY_SECONDS);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Run forward" })).toBeVisible();
+}
+
+test("a focus after the planets race brings back the rate from before it", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "no-preference");
+  const rate = page.locator(".playback-rate-control output");
+  await expect(rate).toHaveText("1 hour / second");
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+  await expect(rate).toHaveText("30 days / second");
+  await page.waitForTimeout(3_000);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Jupiter");
+  await focus.press("Enter");
+  await expect(rate).toHaveText("1 hour / second");
+  // At 30 days per second the clock would leave the one-year window in 15 s.
+  await page.waitForTimeout(15_000);
+  await expect(rate).toHaveText("1 hour / second");
+  expect(await outsideValidatedWindow(page)).toBe("false");
+});
+
+test("the scale tour starts inside the validated window", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openApp(page, "no-preference");
+  await pushClockPast(page, 730);
+  expect(await outsideValidatedWindow(page)).toBe("true");
+
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  await expect
+    .poll(async () => Math.abs(await clockSeconds(page)), { timeout: 10_000 })
+    .toBeLessThan(VALIDATED_WINDOW_SECONDS);
+  expect(await outsideValidatedWindow(page)).toBe("false");
+});
+
+test("the eclipse maximum stays on screen after a long seek lands", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openApp(page, "no-preference");
+  await pushClockPast(page, 3 * 365);
+
+  // Record, on every animation frame, whether the card says it moves the clock.
+  await page.evaluate(() => {
+    const seen = { movingClock: false };
+    (window as unknown as { seekSeen: typeof seen }).seekSeen = seen;
+    const sample = (): void => {
+      if (
+        document
+          .querySelector(".tour-seeking")
+          ?.textContent.startsWith("Moving the clock to 12 Aug 2026") === true
+      ) {
+        seen.movingClock = true;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  for (const stepId of ["london-before-contact", "london-first-contact"]) {
+    await story.getByRole("button", { name: "Next" }).click();
+    await expect(story).toHaveAttribute("data-tour-step", stepId);
+  }
+  const sequenceBeforeMaximum = await cameraSequence(page);
+  await story.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "london-maximum");
+  await page.waitForFunction(
+    () => {
+      const obscuration = Number(
+        document.querySelector<HTMLElement>(
+          '[aria-label^="Physics-driven Solar System"]',
+        )?.dataset.solarEclipseObscuration,
+      );
+      return Math.abs(obscuration - 0.913) <= 0.01;
+    },
+    undefined,
+    { polling: "raf", timeout: 40_000 },
+  );
+  const maximumShownAt = Date.now();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { seekSeen: { movingClock: boolean } }).seekSeen
+          .movingClock,
+    ),
+  ).toBe(true);
+  await expect(story.getByText("exact model time")).toBeVisible();
+  await expect(story.locator(".tour-seeking")).toHaveCount(0);
+  await clockAtSettle(page, sequenceBeforeMaximum);
+  const cameraSettledAt = Date.now();
+  await expect(story).not.toHaveAttribute("data-tour-step", "london-maximum", {
+    timeout: 40_000,
+  });
+  const leftAt = Date.now();
+  expect(leftAt - maximumShownAt).toBeGreaterThanOrEqual(20_000);
+  // The step's full 24 s count from the moment the camera arrives.
+  expect(leftAt - cameraSettledAt).toBeGreaterThanOrEqual(23_000);
+});
+
+test("a seek back from years away starts again from the epoch", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openApp(page, "no-preference");
+  await pushClockPast(page, 5 * 365);
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const clickedAt = Date.now();
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  const stepSeconds = Number(
+    await story.getAttribute("data-tour-time-seconds"),
+  );
+  await page.waitForFunction(
+    (requestedSeconds) =>
+      Math.abs(
+        Number(
+          document.querySelector<HTMLElement>("time.global-simulation-clock")
+            ?.dataset.timeSeconds,
+        ) - requestedSeconds,
+      ) < 1,
+    stepSeconds,
+    { polling: "raf", timeout: 30_000 },
+  );
+  expect(Date.now() - clickedAt).toBeLessThan(3_000);
+});
+
+test("a scale step's time on screen starts when the camera arrives", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openApp(page, "no-preference");
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  const sequenceBeforeMoonGap = await cameraSequence(page);
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour).toHaveAttribute("data-tour-step", "moon-gap");
+  // Step 2 flies for 12 s, then shows for its 28 s.
+  await clockAtSettle(page, sequenceBeforeMoonGap);
+  const cameraSettledAt = Date.now();
+  await expect(tour).not.toHaveAttribute("data-tour-step", "moon-gap", {
+    timeout: 40_000,
+  });
+  expect(Date.now() - cameraSettledAt).toBeGreaterThanOrEqual(27_000);
+});
