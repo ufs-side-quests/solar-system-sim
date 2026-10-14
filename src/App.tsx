@@ -219,6 +219,17 @@ const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
 const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
+// A modifier pressed alone (Shift, or the Cmd of Cmd+Tab) leaves the
+// blank-screen cover in place.
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "Control",
+  "Fn",
+  "Meta",
+  "Shift",
+]);
 type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
 type GuidedTourKind = "scale" | "eclipse";
 // The settings a tour step overrides, restored when the tour ends.
@@ -1089,8 +1100,13 @@ export function App() {
     mode: "auto" as ExposureMode,
   });
   const [immersiveMode, setImmersiveMode] = useState(false);
-  // A teacher's clicker "blank screen" key (b or .) covers the window.
-  const [screenBlanked, setScreenBlanked] = useState(false);
+  // A teacher's clicker "blank screen" key (b or .) covers the window and
+  // pauses what plays behind it: the tour (with its narration and clock), or
+  // the clock outside a tour. The cover keeps what it paused to restore it.
+  const [blackout, setBlackout] = useState<{
+    readonly paused: "tour" | "clock";
+    readonly wasPlaying: boolean;
+  } | null>(null);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
     useState(false);
   const [fullscreenError, setFullscreenError] = useState<string>();
@@ -1595,10 +1611,12 @@ export function App() {
 
   const startFresh = (): void => {
     const count = foundEasterEggIds.size;
+    const surprises =
+      count === 0
+        ? ""
+        : `the ${String(count)} ${count === 1 ? "surprise" : "surprises"} found and `;
     if (
-      !window.confirm(
-        `Forget the ${String(count)} ${count === 1 ? "surprise" : "surprises"} found and the sound settings on this computer?`,
-      )
+      !window.confirm(`Forget ${surprises}the sound settings on this computer?`)
     ) {
       return;
     }
@@ -2042,11 +2060,52 @@ export function App() {
     [activeTourSteps, showTourEnding, tourStepIndex],
   );
 
+  const blankScreen = useCallback((): void => {
+    if (tourStepIndex === null) {
+      setBlackout({ paused: "clock", wasPlaying: playing });
+      setPlaying(false);
+      return;
+    }
+    setBlackout({ paused: "tour", wasPlaying: tourPlaying });
+    setTourPlaying(false);
+  }, [playing, tourPlaying, tourStepIndex]);
+
+  const showScreen = useCallback((): void => {
+    if (blackout === null) {
+      throw new Error("The screen is not blanked");
+    }
+    if (blackout.paused === "tour") {
+      setTourPlaying(blackout.wasPlaying);
+    } else {
+      setPlaying(blackout.wasPlaying);
+    }
+    setBlackout(null);
+  }, [blackout]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (screenBlanked) {
+      if (blackout !== null) {
+        // A held key, a modifier alone (Cmd of Cmd+Tab), a browser shortcut
+        // or a media key does not bring the picture back.
+        if (event.repeat || MODIFIER_KEYS.has(event.key)) {
+          event.preventDefault();
+          return;
+        }
+        if (
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          /^(Media|Audio)/u.test(event.key)
+        ) {
+          return;
+        }
+        // Also stops a Space or Enter from pressing the focused button.
         event.preventDefault();
-        setScreenBlanked(false);
+        showScreen();
+        return;
+      }
+      // A control that took the key (Escape closes the Display panel) keeps it.
+      if (event.defaultPrevented) {
         return;
       }
       if (event.key === "Escape" && tourStepIndex !== null) {
@@ -2058,8 +2117,12 @@ export function App() {
       // A clicker sends Page Down and Page Up. They step the tour even from
       // the playback slider, which would otherwise take them; only a text box
       // or a list keeps them.
+      // Ctrl+Page Down and Ctrl+Page Up stay with the browser to switch tabs.
       if (
         (event.key === "PageDown" || event.key === "PageUp") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
         tourStepIndex !== null &&
         !tourEnded &&
         !(target instanceof HTMLSelectElement) &&
@@ -2070,7 +2133,10 @@ export function App() {
         )
       ) {
         event.preventDefault();
-        advanceScaleTour(event.key === "PageDown" ? 1 : -1);
+        // A held key would race through the steps to the ending.
+        if (!event.repeat) {
+          advanceScaleTour(event.key === "PageDown" ? 1 : -1);
+        }
         return;
       }
       if (
@@ -2097,20 +2163,22 @@ export function App() {
         }
         return;
       }
-      if (key === "b" || key === ".") {
+      if ((key === "b" || key === ".") && !event.repeat) {
         event.preventDefault();
-        setScreenBlanked(true);
+        blankScreen();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     advanceScaleTour,
+    blackout,
+    blankScreen,
     enterImmersiveMode,
     exitImmersiveMode,
     exitTour,
     requestResetView,
-    screenBlanked,
+    showScreen,
     tourEnded,
     tourStepIndex,
   ]);
@@ -3024,14 +3092,14 @@ export function App() {
         </div>
       </header>
 
-      {screenBlanked ? (
+      {blackout === null ? null : (
         <div
           className="blackout-cover"
           // Only the picture is blanked; any key brings it back.
           aria-hidden="true"
-          onClick={() => setScreenBlanked(false)}
+          onClick={showScreen}
         />
-      ) : null}
+      )}
 
       {immersiveMode ? (
         <button
