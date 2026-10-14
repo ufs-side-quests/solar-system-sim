@@ -645,6 +645,8 @@ type SolarSystemSceneProps = Readonly<{
   onOrbitViewChange(enabled: boolean): void;
   onSemanticZoomChange(level: SemanticZoomLevel): void;
   onViewZoomChange(zoom: number): void;
+  /** The camera transition with this sequence has settled or was interrupted. */
+  onCameraTransitionSettled(sequence: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
   onGpuError(message: string): void;
   onExposureStatusChange(status: {
@@ -707,6 +709,7 @@ export function SolarSystemScene({
   onOrbitViewChange,
   onSemanticZoomChange,
   onViewZoomChange,
+  onCameraTransitionSettled,
   onGpuStatus,
   onGpuError,
   onExposureStatusChange,
@@ -760,6 +763,7 @@ export function SolarSystemScene({
   const manualExposureEvRef = useRef(manualExposureEv);
   const deepSpacePresentationRef = useRef(deepSpacePresentation);
   const onViewZoomChangeRef = useRef(onViewZoomChange);
+  const onCameraTransitionSettledRef = useRef(onCameraTransitionSettled);
   const onOrbitViewChangeRef = useRef(onOrbitViewChange);
   const onExposureStatusChangeRef = useRef(onExposureStatusChange);
   frameRef.current = frame;
@@ -808,6 +812,7 @@ export function SolarSystemScene({
   manualExposureEvRef.current = manualExposureEv;
   deepSpacePresentationRef.current = deepSpacePresentation;
   onViewZoomChangeRef.current = onViewZoomChange;
+  onCameraTransitionSettledRef.current = onCameraTransitionSettled;
   onOrbitViewChangeRef.current = onOrbitViewChange;
   onExposureStatusChangeRef.current = onExposureStatusChange;
 
@@ -4036,6 +4041,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastCameraNavigationSequence =
       cameraNavigationCommandRef.current.sequence;
     let lastCameraTransitionSequence = cameraTransitionSequenceRef.current;
+    // The scene mounts with no flight for the current sequence to wait for.
+    onCameraTransitionSettledRef.current(lastCameraTransitionSequence);
     let activeCameraTransition:
       | {
           sequence: number;
@@ -4981,6 +4988,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraTransitionSequence"] = String(
         transition.sequence,
       );
+      onCameraTransitionSettledRef.current(transition.sequence);
     };
 
     interruptCameraTransition = (): void => {
@@ -4996,6 +5004,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       container.dataset["cameraTransitionPhase"] = "settled";
       container.dataset["cameraTransitionSpeedMps"] = "0.000";
       container.dataset["cameraTransitionInterrupted"] = String(sequence);
+      onCameraTransitionSettledRef.current(sequence);
     };
 
     const beginCameraTransition = (

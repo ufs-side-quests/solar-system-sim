@@ -198,6 +198,20 @@ const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
 type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
 type GuidedTourKind = "scale" | "eclipse";
+// The display settings a tour step overrides, restored when the tour ends.
+type DisplaySettingsBeforeTour = Readonly<{
+  viewMode: ViewMode;
+  bodyVisibilityPercent: number;
+  showLabels: boolean;
+  showOrbitGuides: boolean;
+  showTacticalOverlay: boolean;
+  showEclipticPlane: boolean;
+  showPlanetTrails: boolean;
+  showMoonTrail: boolean;
+  showMinorBodyTrails: boolean;
+  gravityWellMode: GravityWellMode;
+  referenceFrame: ReferenceFrame;
+}>;
 type GuidedTourStep = ScaleTourStep | EclipseStoryStep;
 
 const CAMERA_ZOOM_PRESETS = [
@@ -310,6 +324,8 @@ const TIME_RATES = [
   { label: "1 year / second", secondsPerSecond: 365.25 * DAY_SECONDS },
 ] as const;
 const USER_TIME_RATE_INDEXES = [0, 1, 4, 5, 6, 7, 8] as const;
+// 1 hour per second: the rate the app starts at and returns to after a tour.
+const START_TIME_RATE_INDEX = 4;
 const PLANET_FOCUS_ORDER = [
   "mercury",
   "venus",
@@ -791,7 +807,7 @@ export function App() {
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
-  const [timeRateIndex, setTimeRateIndex] = useState(4);
+  const [timeRateIndex, setTimeRateIndex] = useState(START_TIME_RATE_INDEX);
   const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
@@ -856,6 +872,9 @@ export function App() {
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
   const [tourTransitionDurationMs, setTourTransitionDurationMs] = useState(0);
+  const [settledCameraTransitionSequence, setSettledCameraTransitionSequence] =
+    useState(0);
+  const displaySettingsBeforeTourRef = useRef<DisplaySettingsBeforeTour>(null);
   const [activeCinematicShotId, setActiveCinematicShotId] = useState<
     string | null
   >(null);
@@ -1265,14 +1284,37 @@ export function App() {
     setResetViewToken((current) => current + 1);
   }, []);
 
+  const exitTour = useCallback((): void => {
+    const before = displaySettingsBeforeTourRef.current;
+    if (before === null) {
+      throw new Error("The display settings from before the tour are missing");
+    }
+    displaySettingsBeforeTourRef.current = null;
+    setTourKind(null);
+    setTourStepIndex(null);
+    setTourMinimised(false);
+    setViewMode(before.viewMode);
+    setBodyVisibilityPercent(before.bodyVisibilityPercent);
+    setShowLabels(before.showLabels);
+    setShowOrbitGuides(before.showOrbitGuides);
+    setShowTacticalOverlay(before.showTacticalOverlay);
+    setShowEclipticPlane(before.showEclipticPlane);
+    setShowPlanetTrails(before.showPlanetTrails);
+    setShowMoonTrail(before.showMoonTrail);
+    setShowMinorBodyTrails(before.showMinorBodyTrails);
+    setGravityWellMode(before.gravityWellMode);
+    setReferenceFrame(before.referenceFrame);
+    setDirection(1);
+    setTimeRateIndex(START_TIME_RATE_INDEX);
+    setPlaying(true);
+    requestResetView();
+  }, [requestResetView]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape" && tourStepIndex !== null) {
         event.preventDefault();
-        setTourPlaying(false);
-        setTourKind(null);
-        setTourStepIndex(null);
-        setPlaying(false);
+        exitTour();
         return;
       }
       if (event.key.toLowerCase() !== "r") {
@@ -1290,7 +1332,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [requestResetView, tourStepIndex]);
+  }, [exitTour, requestResetView, tourStepIndex]);
 
   const applyOrientationPreset = (
     preset: Exclude<CameraOrientationPreset, "custom">,
@@ -1527,7 +1569,27 @@ export function App() {
     issueCameraNavigation(action);
   };
 
+  const rememberDisplaySettingsBeforeTour = (): void => {
+    if (tourStepIndex !== null) {
+      return;
+    }
+    displaySettingsBeforeTourRef.current = {
+      viewMode,
+      bodyVisibilityPercent,
+      showLabels,
+      showOrbitGuides,
+      showTacticalOverlay,
+      showEclipticPlane,
+      showPlanetTrails,
+      showMoonTrail,
+      showMinorBodyTrails,
+      gravityWellMode,
+      referenceFrame,
+    };
+  };
+
   const startScaleTour = (): void => {
+    rememberDisplaySettingsBeforeTour();
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -1545,6 +1607,7 @@ export function App() {
   };
 
   const startEclipseStory = (): void => {
+    rememberDisplaySettingsBeforeTour();
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -1558,15 +1621,6 @@ export function App() {
     setTourKind("eclipse");
     setTourStepIndex(0);
     setTourPresentationToken((current) => current + 1);
-  };
-
-  const exitScaleTour = (): void => {
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
-    setTourMinimised(false);
-    setSurfaceObserverEnabled(false);
-    setPlaying(false);
   };
 
   const enterSurfaceObserver = (): void => {
@@ -1657,7 +1711,7 @@ export function App() {
       return;
     }
     if (next >= activeTourSteps.length) {
-      exitScaleTour();
+      exitTour();
       return;
     }
     setTourStepIndex(next);
@@ -1727,11 +1781,16 @@ export function App() {
     setTourTransitionSequence((current) => current + 1);
   }, [tourKind, tourPresentationToken, tourStepIndex]);
 
+  // A step's clock holds at the step's time while the camera flies there,
+  // so the event the step names happens in front of the settled camera.
+  const tourCameraSettled =
+    tourTransitionDurationMs <= 0 ||
+    settledCameraTransitionSequence >= tourTransitionSequence;
   useEffect(() => {
     if (tourStepIndex !== null) {
-      setPlaying(tourPlaying);
+      setPlaying(tourPlaying && tourCameraSettled);
     }
-  }, [tourPlaying, tourStepIndex]);
+  }, [tourCameraSettled, tourPlaying, tourStepIndex]);
 
   useEffect(() => {
     if (tourStepIndex === null || !tourPlaying) {
@@ -2715,6 +2774,7 @@ export function App() {
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
               onViewZoomChange={setViewMagnification}
+              onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
               onExposureStatusChange={setExposureStatus}
@@ -2969,7 +3029,7 @@ export function App() {
                 >
                   {tourMinimised ? "Restore" : "Minimise"}
                 </button>
-                <button type="button" onClick={exitScaleTour}>
+                <button type="button" onClick={exitTour}>
                   Exit
                 </button>
               </div>

@@ -242,6 +242,8 @@ The camera dock remains visible at narrow widths, and Re-centre always restores 
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
+In both the Scale tour and the Eclipse story, the clock waits at each step's time while the camera flies there, and starts at the step's rate when the camera settles.
+Exit, Finish, or Escape restores the display settings from before the tour, resets the view of the current object at 1x, and runs the clock forward at 1 hour per second.
 The heliosphere diagram explains the solar wind, termination shock, heliopause, measured Voyager crossings, and the boundary's directional and time-varying nature.
 The following Oort Cloud diagram uses NASA's estimated 2,000-5,000 AU inner edge and 10,000-100,000 AU outer range while identifying every displayed particle as illustrative rather than catalogued.
 The Alpha Centauri scene is an explicitly labelled distance diagram rather than an extension of the live Solar System N-body calculation.
