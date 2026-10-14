@@ -191,7 +191,7 @@ pnpm dev
 The data commands refresh authority snapshots and therefore require network access.
 They are not required for an ordinary build because validated snapshots and assets are committed locally.
 `pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
-It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light and sample count, so a rerun on the same Blender build writes identical files), and records each picture's source hash, output hash, byte length and render settings in `src/data/lineup-globes.snapshot.json`.
+It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light, sample count and seed, without adaptive sampling or denoising, so a rerun on the same Blender build and platform writes identical files), and records each picture's source hash, output hash, byte length, render settings and platform in `src/data/lineup-globes.snapshot.json`.
 
 Open the URL printed by Vite.
 
@@ -211,7 +211,8 @@ It verifies London contact geometry, apparent solar and lunar diameters, live di
 The gravity-field journey verifies positive-GM superposition, sourced-radius surface capping, physical joules-per-kilogram diagnostics, contour and surface rendering, local-detail and absolute-comparison scaling, and synchronization with simulation time.
 The photographic-rendering journey verifies the three rendering profiles, bounded device-pixel ratios, inverse-square illumination metadata, smooth auto-exposure, Sun-facing close-view framing, live atmosphere and Saturn-ring lighting models, and measured browser frame diagnostics before capturing Earth, Saturn, and the close Sun.
 The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
-The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings, tap targets, the camera dock's 44 px buttons, and a visible error for a picture that fails to load.
+It also decodes each picture and measures the opaque globe across and down against the frame half width and the sourced radii within 2 px, so a render with a wrong camera scale fails.
+The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.
 The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.

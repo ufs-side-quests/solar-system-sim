@@ -45,8 +45,12 @@ const lineupGlobePictureSchema = z
       sunAngleDeg: z.number().positive(),
       ambientStrength: z.number().nonnegative(),
       samples: z.number().int().positive(),
+      seed: z.number().int().nonnegative(),
+      adaptiveSampling: z.literal(false),
+      denoising: z.literal(false),
       transparentBounces: z.number().int().nonnegative(),
       webpQuality: z.number().int().min(1).max(100),
+      platform: z.string().min(1),
     }),
     limitations: z.literal(
       "Rendered globe view from the authority map; lighting is illustrative.",
