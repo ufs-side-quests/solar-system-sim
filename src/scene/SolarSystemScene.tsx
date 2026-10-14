@@ -6523,6 +6523,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             group.up.copy(normal);
             group.lookAt(position.clone().add(relativeVelocity));
           } else {
+            // Model +y lies along the orbit normal, so Deep Space Nine stands
+            // upright on its orbit plane with Ops on the north side.
             group.quaternion.setFromRotationMatrix(
               new Matrix4().makeBasis(relativeVelocity, normal, radial),
             );

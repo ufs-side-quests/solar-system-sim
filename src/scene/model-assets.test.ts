@@ -23,7 +23,10 @@ type GltfJson = Readonly<{
     matrix?: readonly number[];
   }[];
   meshes: readonly {
-    primitives: readonly { attributes: Record<string, number> }[];
+    primitives: readonly {
+      attributes: Record<string, number>;
+      material?: number;
+    }[];
   }[];
   accessors: readonly {
     min?: readonly number[];
@@ -99,9 +102,8 @@ describe("installed 3D model files", () => {
 
   it("holds Deep Space Nine upright in mesh space", () => {
     const gltf = gltfJson("/models/community/deep-space-nine.glb");
-    const meshNodes = gltf.nodes.filter((node) => node.mesh !== undefined);
-    expect(meshNodes.length).toBeGreaterThan(0);
-    for (const node of meshNodes) {
+    expect(gltf.nodes.length).toBeGreaterThan(0);
+    for (const node of gltf.nodes) {
       expect(node.rotation).toBeUndefined();
       expect(node.scale).toBeUndefined();
       expect(node.matrix).toBeUndefined();
@@ -121,6 +123,20 @@ describe("installed 3D model files", () => {
     expect(Math.abs(x / z - 1)).toBeLessThan(0.02);
     expect(y / x).toBeGreaterThan(0.6);
     expect(y / x).toBeLessThan(0.75);
+    // The lit habitat ring sits above the middle: Ops is up, not down.
+    const windowMaterial = gltf.materials.findIndex((material) =>
+      material.name?.endsWith(" windows"),
+    );
+    const windowPositions = gltf.meshes
+      .flatMap((mesh) => mesh.primitives)
+      .filter((primitive) => primitive.material === windowMaterial)
+      .map(
+        (primitive) => gltf.accessors[primitive.attributes["POSITION"] ?? -1],
+      );
+    expect(windowPositions).toHaveLength(1);
+    const [windowBounds] = windowPositions;
+    expect(windowBounds?.max?.[1]).toBeGreaterThan(0.9);
+    expect(windowBounds?.min?.[1]).toBeGreaterThan(-0.6);
   });
 
   it("lights Deep Space Nine's windows at the calibrated level only", () => {

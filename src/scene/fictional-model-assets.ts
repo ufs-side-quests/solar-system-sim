@@ -55,7 +55,8 @@ export const fictionalModelAssets = fictionalModelAssetSchema.array().parse([
     sha256: "e4a63c9f355bda8dfb9fd81a00afb5b1ea391ea98437297e5749a7ac8c2881de",
     byteLength: 555_180,
     maximumDimensionM: 1_451.82,
-    credit: "Deep Space Nine by rossrobotics · CC BY 4.0 · Sketchfab",
+    credit:
+      "Deep Space Nine - Star Trek by rossrobotics · CC BY 4.0 · modified · Sketchfab",
   },
   {
     bodyId: "uss-defiant",
