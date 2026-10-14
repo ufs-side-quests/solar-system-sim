@@ -228,9 +228,7 @@ test("guess first shows two equal globes, then their true sizes", async ({
     dialog.locator('[data-lineup-body="moon"] .size-duel-wider'),
   ).toHaveText("Wider");
   await expect(pluto.locator(".size-duel-wider")).toHaveCount(0);
-  expect(
-    await pluto.evaluate((element) => getComputedStyle(element).borderStyle),
-  ).toBe("dashed");
+  await expect(pluto).toHaveCSS("border-top-style", "dashed");
   await dialog.evaluate((element) =>
     Promise.all(
       element
@@ -252,12 +250,9 @@ test("guess first shows two equal globes, then their true sizes", async ({
     "Yes! Mercury is about 1.4 times wider than the Moon.",
   );
   await expect(mercury.locator(".size-duel-wider")).toHaveText("Wider");
-  expect(
-    await mercury.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return [style.borderStyle, style.borderTopColor];
-    }),
-  ).toEqual(["solid", "rgb(127, 199, 255)"]);
+  // toHaveCSS retries through the 150 ms button transition.
+  await expect(mercury).toHaveCSS("border-top-style", "solid");
+  await expect(mercury).toHaveCSS("border-top-color", "rgb(127, 199, 255)");
 
   await mode.click();
   await expect(mode).toHaveText("Guess first");
