@@ -1,17 +1,34 @@
 import { expect, test } from "@playwright/test";
 
+// The scene's subject is the target's disc and rings. Saturn's main rings
+// reach 136,780 km (src/scene/ring-system.ts) from a planet of mean radius
+// 58,232 km (src/data/major-bodies.snapshot.json).
+const SATURN_RINGS_OVER_RADIUS = 136_780 / 58_232;
+
 const OBSERVER_STEPS = [
-  { id: "sun-from-mars", observerBodyId: "mars", targetBodyId: "sun" },
-  { id: "jupiter-from-io", observerBodyId: "io", targetBodyId: "jupiter" },
+  {
+    id: "sun-from-mars",
+    observerBodyId: "mars",
+    targetBodyId: "sun",
+    subjectOverDisc: 1,
+  },
+  {
+    id: "jupiter-from-io",
+    observerBodyId: "io",
+    targetBodyId: "jupiter",
+    subjectOverDisc: 1,
+  },
   {
     id: "earth-from-jupiter",
     observerBodyId: "jupiter",
     targetBodyId: "earth",
+    subjectOverDisc: 1,
   },
   {
     id: "saturn-from-titan",
     observerBodyId: "titan",
     targetBodyId: "saturn",
+    subjectOverDisc: SATURN_RINGS_OVER_RADIUS,
   },
 ] as const;
 
@@ -143,25 +160,69 @@ test("anchors every observer scene at its origin while centring its look-at targ
         )
         .toBeGreaterThan(0);
 
-      const targetPosition = {
-        x: Number(await scene.getAttribute("data-camera-target-screen-x")),
-        y: Number(await scene.getAttribute("data-camera-target-screen-y")),
-      };
       const sceneSize = await scene.evaluate((element) => ({
         width: element.clientWidth,
         height: element.clientHeight,
       }));
-      // A tour card that covers the centre moves the picture right, so the
-      // target sits in the middle of the open sky beside the card. The shift
-      // is reported to 0.1 px.
-      const lensShiftPx = Number(
-        await scene.getAttribute("data-lens-shift-px"),
+      // The tour card moves the picture right when it covers the target:
+      // when it crosses the rows of the target and its label, and reaches
+      // past 40% of the width and the target's left edge. The target then
+      // sits in the middle of the open sky beside the card, which is wide
+      // enough at 1280 x 720 for every target here. The expected shift comes
+      // from the card's box and the target's drawn size, not from the
+      // reported shift.
+      const subjectRadiusPx = Number(
+        await scene.getAttribute("data-lens-subject-radius-px"),
       );
-      expect(lensShiftPx).toBeGreaterThanOrEqual(0);
-      const openSkyCentreX = sceneSize.width / 2 + lensShiftPx;
-      expect(Math.abs(targetPosition.x - openSkyCentreX)).toBeLessThanOrEqual(
-        0.051,
+      const targetLabelRadiusPx = Number(
+        await page
+          .locator(`.body-label[data-body-id="${step.targetBodyId}"]`)
+          .getAttribute("data-radius-pixels"),
       );
+      // The scene's subject is the target's drawn disc and rings (an outline
+      // a little wider than the label's small-angle radius).
+      const discAndRingsPx = targetLabelRadiusPx * step.subjectOverDisc;
+      expect(subjectRadiusPx).toBeGreaterThanOrEqual(discAndRingsPx);
+      expect(subjectRadiusPx).toBeLessThanOrEqual(discAndRingsPx * 1.05);
+      const sceneBox = await scene.boundingBox();
+      const cardBox = await tour.boundingBox();
+      if (sceneBox === null || cardBox === null) {
+        throw new Error("The scene or the tour card has no box");
+      }
+      const cardRight = cardBox.x + cardBox.width - sceneBox.x;
+      const cardTop = cardBox.y - sceneBox.y;
+      // The target's label hangs 24 px plus half a label box (one font
+      // size) below or above it, so a card across those rows covers it.
+      const labelFontPx = await page
+        .locator(`.body-label[data-body-id="${step.targetBodyId}"]`)
+        .evaluate((label) =>
+          Number.parseFloat(getComputedStyle(label).fontSize),
+        );
+      const subjectRowsReachPx = Math.max(subjectRadiusPx, 24 + labelFontPx);
+      const cardCoversTarget =
+        cardTop < sceneSize.height / 2 + subjectRowsReachPx &&
+        cardRight > sceneSize.width * 0.4 &&
+        cardRight > sceneSize.width / 2 - subjectRadiusPx;
+      const expectedShiftPx = cardCoversTarget
+        ? (cardRight + sceneSize.width) / 2 - sceneSize.width / 2
+        : 0;
+      // The shift glides for about 300 ms after the flight lands. The
+      // attribute must be there: a missing one is not "no shift".
+      await expect
+        .poll(async () => {
+          const shift = await scene.getAttribute("data-lens-shift-px");
+          if (shift === null) {
+            throw new Error("The scene does not report data-lens-shift-px");
+          }
+          return Number(shift);
+        })
+        .toBeCloseTo(expectedShiftPx, 3);
+      const targetPosition = {
+        x: Number(await scene.getAttribute("data-camera-target-screen-x")),
+        y: Number(await scene.getAttribute("data-camera-target-screen-y")),
+      };
+      const openSkyCentreX = sceneSize.width / 2 + expectedShiftPx;
+      expect(targetPosition.x).toBeCloseTo(openSkyCentreX, 3);
       expect(targetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
       if (step.targetBodyId === "earth") {
         await expect(
@@ -182,9 +243,7 @@ test("anchors every observer scene at its origin while centring its look-at targ
         x: Number(await scene.getAttribute("data-camera-target-screen-x")),
         y: Number(await scene.getAttribute("data-camera-target-screen-y")),
       };
-      expect(
-        Math.abs(movingTargetPosition.x - openSkyCentreX),
-      ).toBeLessThanOrEqual(0.051);
+      expect(movingTargetPosition.x).toBeCloseTo(openSkyCentreX, 3);
       expect(movingTargetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
       await tour.getByRole("button", { name: "Pause tour" }).click();
       await page.screenshot({
