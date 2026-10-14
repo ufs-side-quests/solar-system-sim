@@ -1,7 +1,31 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+// countPressedPointerMoves sets the count; it is absent until then.
+type CountingWindow = Window & { pressedPointerMoves?: number };
+
 test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true });
+
+// OrbitControls follows a drag through pointermove listeners on the document,
+// so a bubbling document listener sees exactly the pressed moves it receives.
+async function countPressedPointerMoves(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const countingWindow: CountingWindow = window;
+    let count = 0;
+    countingWindow.pressedPointerMoves = count;
+    document.addEventListener("pointermove", (event) => {
+      if (event.buttons === 0) return;
+      count += 1;
+      countingWindow.pressedPointerMoves = count;
+    });
+  });
+}
+
+const pressedPointerMoves = async (page: Page): Promise<number | undefined> =>
+  page.evaluate(() => {
+    const countingWindow: CountingWindow = window;
+    return countingWindow.pressedPointerMoves;
+  });
 
 const sceneOf = (page: Page): Locator =>
   page.getByRole("img", { name: /Physics-driven Solar System/u });
@@ -71,9 +95,12 @@ test("a tap or small press on the sky during a flight does not stop the flight",
   await page.touchscreen.tap(sky.x, sky.y);
   // A mouse press that wobbles a few pixels is still a tap.
   await page.mouse.move(sky.x, sky.y);
+  await countPressedPointerMoves(page);
   await page.mouse.down();
   await page.mouse.move(sky.x + 4, sky.y + 3, { steps: 3 });
   await page.mouse.up();
+  // The wobble never reaches OrbitControls, so it adds no rotation.
+  expect(await pressedPointerMoves(page)).toBe(0);
   await expect(scene).not.toHaveAttribute(
     "data-camera-transition-phase",
     "settled",
@@ -118,11 +145,19 @@ test("a one-finger drag during a flight gives the child control", async ({
       touchPoints: type === "touchEnd" ? [] : [{ x, y: sky.y, id: 0 }],
     });
   };
+  await countPressedPointerMoves(page);
   await touch("touchStart", sky.x);
   for (let step = 1; step <= 6; step += 1) {
     await touch("touchMove", sky.x - step * 10);
   }
   await touch("touchEnd", sky.x - 60);
+  // OrbitControls got the drag: its moves reached the document, and damping
+  // keeps the camera turning after the finger lifts.
+  const directionAtLift = await scene.getAttribute("data-camera-direction");
+  expect(await pressedPointerMoves(page)).toBeGreaterThan(0);
+  await expect
+    .poll(async () => scene.getAttribute("data-camera-direction"))
+    .not.toBe(directionAtLift);
 
   await expect(scene).toHaveAttribute("data-camera-transition-interrupted");
   await expect(scene).toHaveAttribute(
