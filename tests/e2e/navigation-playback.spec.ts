@@ -33,7 +33,10 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
   await expect(
     page.locator(".selected-body-detail").getByText("Venus", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(scene).toHaveAttribute("data-focus-body", "venus");
   await expect(page.getByRole("combobox", { name: "Focus" })).toHaveValue(
     "Venus",
@@ -145,11 +148,17 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await page.getByRole("button", { name: "Next object" }).click();
   await expect(scene).toHaveAttribute("data-selected-body", "mars");
   await expect(focus).toHaveValue("Earth");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Mars");
   await page.getByRole("button", { name: "Parent" }).click();
   await expect(scene).toHaveAttribute("data-selected-body", "sun");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(focus).toHaveValue("Mars");
@@ -157,28 +166,52 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await expect(focus).toHaveValue("Earth");
   await selectFocus(focus, "Hubble Space Telescope");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("James Webb Space Telescope");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Jovian Monolith (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Discovery One (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Death Star I (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Death Star II (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Deep Space Nine (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("USS Defiant (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Home" }).click();
   await expect(focus).toHaveValue("Solar System");

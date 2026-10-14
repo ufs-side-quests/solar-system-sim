@@ -69,7 +69,10 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   await page.getByRole("button", { name: "Parent" }).click();
   await expect(scene).toHaveAttribute("data-selected-body", "earth");
   await expect(scene).toHaveAttribute("data-focus-body", "iss");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
   await expect(scene).toHaveAttribute(
     "data-camera-transition-phase",

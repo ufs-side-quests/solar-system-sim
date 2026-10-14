@@ -44,6 +44,19 @@ async function clockAtSettle(
   return (await handle.jsonValue()) as number;
 }
 
+// Selects the Sun by its guide label, then flies there, as a child's two
+// presses do. The guide label stays on screen in every tour step.
+async function pressSunGuideTwice(page: Page): Promise<void> {
+  const label = page.locator(".wayfinder-label.sun-guide-label");
+  await label.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(sceneSelector)).toHaveAttribute(
+    "data-selected-body",
+    "sun",
+  );
+  await page.keyboard.press("Enter");
+}
+
 async function openApp(page: Page, reducedMotion: "reduce" | "no-preference") {
   await page.emulateMedia({ reducedMotion });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -157,9 +170,8 @@ test("a pause during the flight lasts after the camera settles", async ({
   await page.waitForTimeout(1_500);
   expect(await clockSeconds(page)).toBe(settledSeconds);
   await expect(tour).toHaveAttribute("data-tour-playing", "false");
-  await expect(
-    page.getByRole("region", { name: "Time controls" }).locator(".run-status"),
-  ).toHaveText("Paused");
+  // The tour hides the time controls, so their status is read while hidden.
+  await expect(page.locator(".timeline-dock .run-status")).toHaveText("Paused");
 });
 
 async function pausedAtSettledMoonGap(page: Page) {
@@ -413,7 +425,9 @@ test("Finish of the eclipse story restores the settings from before it", async (
   await expectSettingsRestoredAfterTour(page, settings);
 });
 
-test("a view change during a tour keeps the settings from before it", async ({
+// A tour hides the view switcher; a second press on the Sun's guide label is
+// the child's own choice that a tour leaves on screen.
+test("a body chosen during a tour keeps the settings from before it", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -429,9 +443,17 @@ test("a view change during a tour keeps the settings from before it", async ({
     "reality",
   );
 
-  // The child's choice wins for the view; the rest comes back.
-  await page.getByRole("button", { name: "Orrery", exact: true }).click();
+  // The child's choice wins for the focus; the settings come back.
+  await pressSunGuideTwice(page);
   await expect(tour).toHaveCount(0);
+  await expect(page.locator(sceneSelector)).toHaveAttribute(
+    "data-focus-body",
+    "sun",
+  );
+  await expect(page.locator(sceneSelector)).toHaveAttribute(
+    "data-view-mode",
+    "orrery",
+  );
   await page.getByRole("button", { name: "Display" }).click();
   const display = page.getByRole("dialog", { name: "Display controls" });
   await display.getByRole("tab", { name: "View" }).click();
@@ -1068,7 +1090,9 @@ test("a camera drag during the planets race only moves the camera", async ({
   await expect(playbackRate(page)).toHaveText("30 days / second");
 });
 
-test("a tour from a shot started in a tour restores the settings from just before it", async ({
+// A tour hides the camera dock, so a shot no longer starts inside a tour; a
+// tour started from a shot ends it, and the shot's view is not the child's.
+test("a tour from a shot restores the settings from before the shot", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -1078,19 +1102,16 @@ test("a tour from a shot started in a tour restores the settings from just befor
   const tour = page.getByRole("dialog", {
     name: "Scale of the Solar System tour",
   });
-  await page.getByRole("button", { name: "Scale tour" }).click();
-  await expect(tour).toHaveAttribute("data-tour-step", "earth");
   await startRace(page);
-  await expect(tour).toHaveCount(0);
   await expect(scene).toHaveAttribute("data-view-mode", "orrery");
 
-  // Before this tour the screen showed the race's Orrery view.
   await page.getByRole("button", { name: "Scale tour" }).click();
   await expect(tour).toHaveAttribute("data-tour-step", "earth");
   await expect(scene).toHaveAttribute("data-view-mode", "reality");
   await tour.getByRole("button", { name: "Exit" }).click();
   await expect(tour).toHaveCount(0);
-  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+  await expect(scene).toHaveAttribute("data-view-mode", "reality");
+  await expect(scene).toHaveAttribute("data-planet-trails-visible", "false");
   await expect(playbackRate(page)).toHaveText("1 hour / second");
 });
 
@@ -1311,8 +1332,9 @@ test("a new playback rate during the planets race ends the race", async ({
   await expect(playbackRate(page)).toHaveText("1 second / second");
 });
 
-// Back is disabled during a tour: each step starts a fresh focus history.
-for (const way of ["Home", "Focus"] as const) {
+// A tour hides Home, Back and the Focus box: Escape and a second press on the
+// Sun's guide label are the ways out that stay on screen.
+for (const way of ["Escape", "The Sun guide label"] as const) {
   test(`${way} during a scale tour ends it with the clock running`, async ({
     page,
   }) => {
@@ -1323,12 +1345,10 @@ for (const way of ["Home", "Focus"] as const) {
     });
     await page.getByRole("button", { name: "Scale tour" }).click();
     await expect(tour).toHaveAttribute("data-tour-step", "earth");
-    if (way === "Focus") {
-      const focus = page.getByRole("combobox", { name: "Focus" });
-      await focus.fill("Jupiter");
-      await focus.press("Enter");
+    if (way === "The Sun guide label") {
+      await pressSunGuideTwice(page);
     } else {
-      await page.getByRole("button", { name: way, exact: true }).click();
+      await page.keyboard.press("Escape");
     }
     await expect(tour).toHaveCount(0);
     await expect(runStatus(page)).toContainText("1 hour/s requested");

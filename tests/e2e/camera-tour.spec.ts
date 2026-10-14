@@ -130,11 +130,20 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const fittedDistance = Number(
     await scene.getAttribute("data-camera-distance-au"),
   );
-  await page.getByRole("button", { name: "Zoom out" }).click();
-  await expect(scene).toHaveAttribute(
-    "data-camera-navigation-action",
-    "zoom-out",
+  // A tour hides the camera dock: the wheel zooms out and the R key
+  // re-centres, the same actions as the dock's Zoom out and Re-centre.
+  await expect(cameraNavigation).toBeHidden();
+  const canvasBounds = await page
+    .locator("canvas.major-body-layer")
+    .boundingBox();
+  if (canvasBounds === null) {
+    throw new Error("Solar System canvas has no screen bounds");
+  }
+  await page.mouse.move(
+    canvasBounds.x + canvasBounds.width / 2,
+    canvasBounds.y + canvasBounds.height / 2,
   );
+  await page.mouse.wheel(0, 600);
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-distance-au")),
@@ -144,7 +153,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const resetTokenBeforeRecenter = Number(
     await scene.getAttribute("data-reset-view-token"),
   );
-  await page.getByRole("button", { name: "Re-centre" }).click();
+  await page.keyboard.press("r");
   await expect
     .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
     .toBeGreaterThan(resetTokenBeforeRecenter);

@@ -37,7 +37,10 @@ test("chooses an AU map range and travels to an object", async ({
     .getByRole("combobox", { name: "Navigation destination" })
     .selectOption("saturn");
   await expect(scene).toHaveAttribute("data-selected-body", "saturn");
-  await page.getByRole("button", { name: "Travel" }).click();
+  await page
+    .locator(".reality-navigation-map")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(scene).toHaveAttribute(
     "data-camera-transition-interpolation",
     "orient-then-direct-flight",
@@ -73,7 +76,9 @@ test("keeps the facts card clear of the navigation map's controls", async ({
     .selectOption("saturn");
   const card = page.locator(".selected-body-detail");
   await expect(card).toBeVisible();
-  const travel = page.getByRole("button", { name: "Travel" });
+  const travel = page
+    .locator(".reality-navigation-map")
+    .getByRole("button", { name: "Fly there" });
 
   for (const viewport of [
     { width: 1024, height: 768 },

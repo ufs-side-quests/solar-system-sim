@@ -102,7 +102,9 @@ test("hints at hidden objects near Callisto and celebrates the first find", asyn
   const toastBox = await toast.boundingBox();
   expect(toastBox).not.toBeNull();
   for (const control of [
-    page.getByRole("button", { name: "Focus", exact: true }),
+    page
+      .locator(".selected-body-detail")
+      .getByRole("button", { name: "Fly there" }),
     page.getByRole("button", { name: "Parent" }),
     page.getByRole("button", { name: "Next object" }),
     page.getByRole("button", { name: "Collapse" }),

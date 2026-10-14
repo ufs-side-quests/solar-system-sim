@@ -1024,8 +1024,19 @@ h1 {
   line-height: 1.35;
 }
 
+.cinematic-shot-caption p {
+  display: grid;
+  margin: 0;
+  gap: 0.2rem;
+}
+
 .cinematic-shot-caption strong {
   color: var(--text);
+}
+
+.cinematic-shot-caption button {
+  justify-self: start;
+  margin-top: 0.25rem;
 }
 
 .global-simulation-clock {

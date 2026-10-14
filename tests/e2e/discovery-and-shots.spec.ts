@@ -473,7 +473,11 @@ test("a tour ends the planets racing shot", async ({ page }) => {
   await expect(racingButton).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Scale tour" }).click();
-  await expect(racingButton).toHaveAttribute("aria-pressed", "false");
+  // The tour hides the camera dock, so the button is read while hidden.
+  await expect(page.locator(".planets-racing-launch-button")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(caption).toHaveCount(0);
 
   // Exit restores the pre-tour playback, so the clock runs again at once;

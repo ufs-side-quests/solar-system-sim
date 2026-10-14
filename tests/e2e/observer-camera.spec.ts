@@ -158,17 +158,23 @@ test("anchors every observer scene at its origin while centring its look-at targ
           page.getByRole("button", { name: "Earth", exact: true }),
         ).toBeVisible();
       }
-      await page
-        .getByRole("button", { name: "Run forward", exact: true })
-        .click();
+      // A tour hides the time controls: its own Resume runs the clock.
+      const clock = page.locator("time.global-simulation-clock");
+      const secondsBeforeResume = Number(
+        await clock.getAttribute("data-time-seconds"),
+      );
+      await tour.getByRole("button", { name: "Resume tour" }).click();
       await page.waitForTimeout(500);
+      expect(Number(await clock.getAttribute("data-time-seconds"))).not.toBe(
+        secondsBeforeResume,
+      );
       const movingTargetPosition = {
         x: Number(await scene.getAttribute("data-camera-target-screen-x")),
         y: Number(await scene.getAttribute("data-camera-target-screen-y")),
       };
       expect(movingTargetPosition.x).toBeCloseTo(sceneSize.width / 2, 3);
       expect(movingTargetPosition.y).toBeCloseTo(sceneSize.height / 2, 3);
-      await page.getByRole("button", { name: "Pause", exact: true }).click();
+      await tour.getByRole("button", { name: "Pause tour" }).click();
       await page.screenshot({
         path: testInfo.outputPath(`${step.id}.png`),
         animations: "disabled",

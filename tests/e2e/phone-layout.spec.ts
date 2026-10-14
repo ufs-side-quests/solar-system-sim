@@ -215,7 +215,9 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await expect(chip).toHaveText("Mini map");
       await expect(chip).toBeVisible();
       await expect(map).toHaveJSProperty("open", false);
-      const travel = page.getByRole("button", { name: "Travel" });
+      const travel = page
+        .locator(".reality-navigation-map")
+        .getByRole("button", { name: "Fly there" });
       await expect(travel).toBeHidden();
       await chip.tap();
       await expect(map).toHaveJSProperty("open", true);
@@ -258,7 +260,9 @@ test.describe("a window that resizes across the phone layout", () => {
     test.setTimeout(90_000);
     await openExplorer(page);
     const map = page.locator(".reality-navigation-map");
-    const travel = page.getByRole("button", { name: "Travel" });
+    const travel = page
+      .locator(".reality-navigation-map")
+      .getByRole("button", { name: "Fly there" });
     await expect(map).toHaveJSProperty("open", false);
     await expect(travel).toBeHidden();
     await page.setViewportSize({ width: 1440, height: 900 });

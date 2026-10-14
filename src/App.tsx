@@ -241,6 +241,17 @@ type DisplaySettingsBeforeTour = Readonly<{
   direction: -1 | 1;
   timeRateIndex: number;
 }>;
+// The view settings a cool shot overrides, restored when the shot ends.
+type ViewSettingsBeforeShot = Pick<
+  DisplaySettingsBeforeTour,
+  | "viewMode"
+  | "bodyVisibilityPercent"
+  | "showLabels"
+  | "showOrbitGuides"
+  | "showTacticalOverlay"
+  | "showEclipticPlane"
+  | "showPlanetTrails"
+>;
 type GuidedTourStep = ScaleTourStep | EclipseStoryStep;
 
 const CAMERA_ZOOM_PRESETS = [
@@ -1083,6 +1094,9 @@ export function App() {
     direction: -1 | 1;
     timeRateIndex: number;
   } | null>(null);
+  // The view settings from before the active cool shot, or null when no shot
+  // runs.
+  const viewBeforeShotRef = useRef<ViewSettingsBeforeShot | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -1613,11 +1627,22 @@ export function App() {
     setSimulationRunToken((current) => current + 1);
   }, []);
 
-  // Ends the active cool shot. A shot sets its own playback rate, so the rate
-  // and direction from before it come back, unless the child chose a rate
-  // during the shot. Returns the restored rate index, or null when the rate
-  // stays.
+  // Ends the active cool shot. The view settings from before it come back. A
+  // shot sets its own playback rate, so the rate and direction from before it
+  // come back too, unless the child chose a rate during the shot. Returns the
+  // restored rate index, or null when the rate stays.
   const endCinematicShot = useCallback((): number | null => {
+    const view = viewBeforeShotRef.current;
+    viewBeforeShotRef.current = null;
+    if (view !== null) {
+      setViewMode(view.viewMode);
+      setBodyVisibilityPercent(view.bodyVisibilityPercent);
+      setShowLabels(view.showLabels);
+      setShowOrbitGuides(view.showOrbitGuides);
+      setShowTacticalOverlay(view.showTacticalOverlay);
+      setShowEclipticPlane(view.showEclipticPlane);
+      setShowPlanetTrails(view.showPlanetTrails);
+    }
     const before = playbackBeforeShotRef.current;
     playbackBeforeShotRef.current = null;
     setActiveCinematicShotId(null);
@@ -1983,7 +2008,11 @@ export function App() {
     }
   };
 
+  // Home, the breadcrumb's Solar System and a tour's Fly home all end at the
+  // Solar System overview.
   const navigateHome = (): void => {
+    endCinematicShot();
+    endTour();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourPlaying(false);
@@ -2032,8 +2061,9 @@ export function App() {
       surfaceObserverTargetBodyId,
       surfaceObserverLatitudeDeg,
       surfaceObserverLongitudeDeg,
-      // A cool shot's own rate is not the child's: the tour returns to the
-      // rate from before the shot.
+      // A cool shot's own view and rate are not the child's: the tour
+      // returns to those from before the shot.
+      ...viewBeforeShotRef.current,
       ...(playbackBeforeShotRef.current ?? { direction, timeRateIndex }),
     };
   };
@@ -2351,6 +2381,24 @@ export function App() {
     // The tour's saved rate is the one from before this shot, and a shot
     // after a shot keeps the rate from before the first one.
     const beforeTour = endTour();
+    const viewBefore = beforeTour ?? {
+      viewMode,
+      bodyVisibilityPercent,
+      showLabels,
+      showOrbitGuides,
+      showTacticalOverlay,
+      showEclipticPlane,
+      showPlanetTrails,
+    };
+    viewBeforeShotRef.current ??= {
+      viewMode: viewBefore.viewMode,
+      bodyVisibilityPercent: viewBefore.bodyVisibilityPercent,
+      showLabels: viewBefore.showLabels,
+      showOrbitGuides: viewBefore.showOrbitGuides,
+      showTacticalOverlay: viewBefore.showTacticalOverlay,
+      showEclipticPlane: viewBefore.showEclipticPlane,
+      showPlanetTrails: viewBefore.showPlanetTrails,
+    };
     playbackBeforeShotRef.current ??= {
       direction: beforeTour?.direction ?? direction,
       timeRateIndex: beforeTour?.timeRateIndex ?? timeRateIndex,
@@ -3024,7 +3072,7 @@ export function App() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === "eclipse" || (tourKind !== null && phoneLayout) ? " is-tour-story" : ""}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === null ? "" : " is-tour-story"}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -3118,9 +3166,6 @@ export function App() {
           }}
         />
         <div className="command-actions">
-          <button type="button" onClick={requestResetView}>
-            Reset
-          </button>
           <button
             ref={fullscreenButtonRef}
             type="button"
@@ -3221,10 +3266,21 @@ export function App() {
         {activeCinematicShot === undefined ||
         !playing ||
         discoveredEasterEggId !== null ? null : (
-          <p className="cinematic-shot-caption" role="status">
-            <strong>{activeCinematicShot.name}</strong>
-            <span>{activeCinematicShot.description}</span>
-          </p>
+          <div className="cinematic-shot-caption">
+            <p role="status">
+              <strong>{activeCinematicShot.name}</strong>
+              <span>{activeCinematicShot.description}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                endCinematicShot();
+                requestResetView();
+              }}
+            >
+              Stop
+            </button>
+          </div>
         )}
 
         <time
@@ -3744,7 +3800,7 @@ export function App() {
                   ref={tourFlyHomeRef}
                   type="button"
                   className="primary-action"
-                  onClick={exitTour}
+                  onClick={navigateHome}
                 >
                   Fly home
                 </button>
@@ -3880,7 +3936,7 @@ export function App() {
                     }
                   >
                     {selectedApolloSite === undefined
-                      ? "Focus"
+                      ? "Fly there"
                       : "Show on Moon"}
                   </button>
                 )}

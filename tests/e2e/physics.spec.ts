@@ -506,7 +506,7 @@ test("renders solver state and advances time through the physics worker", async 
   const resetTokenBefore = Number(
     await scene.getAttribute("data-reset-view-token"),
   );
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page.getByRole("button", { name: "Re-centre", exact: true }).click();
   await expect
     .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
     .toBe(resetTokenBefore + 1);
