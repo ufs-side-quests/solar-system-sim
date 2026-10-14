@@ -140,13 +140,14 @@ Each SHA-256 value identifies the exact derived file in this repository.
 
 ### Deep Space Nine
 
-- Creator: neilken
+- Creator: rossrobotics (<https://sketchfab.com/rossrobotics>)
+- Title: Deep Space Nine - Star Trek
 - Licence: Creative Commons Attribution 4.0
-- Source: <https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa>
-- Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `fe6995519797e99414b5f3a7518d3485e8881b9f1d1421394693ba3fb4cb1cc9`
-- Modified from the original: `scripts/repair-model-assets.mjs` removes emissive texture bindings that had no emissive factor, and adds lit windows on the habitat ring walls and the Promenade (window triangles with their own materials, a second UV set and a repeating window texture).
-  The original's SHA-256 is `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`.
+- Source: <https://sketchfab.com/3d-models/deep-space-nine-star-trek-3e1743fc00be4d83848c7d890b8a5988>
+- Archive: <https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-121/3e1743fc00be4d83848c7d890b8a5988.glb>
+- Installed SHA-256: `e4a63c9f355bda8dfb9fd81a00afb5b1ea391ea98437297e5749a7ac8c2881de`
+- Modified from the original: `scripts/repair-model-assets.mjs` applies the node transforms to the vertices, joins, welds and simplifies the meshes (about 410,000 triangles to about 130,000), gives the hull one painted grey material, adds lit windows on the habitat ring walls and the Promenade (window triangles with their own material, texture coordinates and a repeating window texture), and compresses the file with Draco.
+  The original's SHA-256 is `bd81edfcfb06c9871b30d345d9540d252b703c03fd3c7fb135e6a9831650947b`.
 
 ### USS Defiant
 

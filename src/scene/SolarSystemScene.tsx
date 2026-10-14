@@ -87,7 +87,12 @@ import {
   focusDistanceAu,
   focusNearPlaneAu,
   portraitFitDistanceAu,
+  sunlitModelViewDirection,
 } from "./camera-focus";
+import {
+  applyCameraRelativeDirectionalShadows,
+  applyMetreLogDepth,
+} from "./au-scale-precision";
 import {
   GravityWellLayer,
   type GravityWellDiagnostics,
@@ -254,6 +259,13 @@ import {
   TROPICAL_ZODIAC_SIGNS,
 } from "./zodiac";
 
+// The focused model's shadow light stays on while the camera is within this
+// many model radii: farther out the model is about 2 pixels wide.
+const LOCAL_MODEL_SUNLIGHT_RANGE_RADII = 1_000;
+const LOCAL_SHADOW_MAP_SIZE = 2048;
+// The shadow box spans 2.8 model radii; a lookup offset of 1.5 texels along the
+// normal removes acne stripes on sunlit faces.
+const LOCAL_SHADOW_NORMAL_BIAS_RADII = (2.8 * 1.5) / LOCAL_SHADOW_MAP_SIZE;
 const ECLIPTIC_NORTH = j2000EclipticToScene({ x: 0, y: 0, z: 1 }).normalize();
 const ECLIPTIC_FORWARD = j2000EclipticToScene({ x: 0, y: 1, z: 0 }).normalize();
 const ECLIPTIC_RIGHT = ECLIPTIC_FORWARD.clone()
@@ -324,6 +336,7 @@ const LABEL_TITLE = "Select to see facts, select again to fly there";
 const FLY_HINT_ID = "body-label-fly-hint";
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
+// Fixed: applyMetreLogDepth maps this far plane to depth 1 in the shaders.
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
 const ORIENTATION_PRESET_TRANSITION_DURATION_MS = 1_200;
 // Scratch values for the per-frame camera moves, so a frame allocates none.
@@ -932,6 +945,7 @@ export function SolarSystemScene({
       DEFAULT_CAMERA_FAR_AU,
     );
     camera.position.copy(SOLAR_SYSTEM_CAMERA_POSITION);
+    applyMetreLogDepth(ASTRONOMICAL_UNIT_M, DEFAULT_CAMERA_FAR_AU);
     const renderer = new WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -1324,6 +1338,9 @@ export function SolarSystemScene({
       container.dataset["cameraOrientation"] = "custom";
     };
     controls.addEventListener("start", handleControlStart);
+    // One sunlight at a time: three culls lights by camera layers only, never
+    // per mesh, so each light reaches every lit surface. The frame loop turns
+    // the point light off while the focused model's shadow light is on.
     const sunlight = new PointLight(
       SUNLIGHT_COLOR,
       SOLAR_IRRADIANCE_AT_1_AU,
@@ -1338,14 +1355,15 @@ export function SolarSystemScene({
     );
     localModelSunlight.name = "Focused model solar shadow light";
     localModelSunlight.castShadow = true;
-    localModelSunlight.layers.set(2);
-    localModelSunlight.shadow.mapSize.set(2048, 2048);
+    localModelSunlight.shadow.mapSize.set(
+      LOCAL_SHADOW_MAP_SIZE,
+      LOCAL_SHADOW_MAP_SIZE,
+    );
     localModelSunlight.shadow.bias = -0.00002;
-    localModelSunlight.shadow.normalBias = 0;
+    applyCameraRelativeDirectionalShadows(localModelSunlight, camera);
     localModelSunlight.visible = false;
     scene.add(localModelSunlight);
     scene.add(localModelSunlight.target);
-    camera.layers.enable(2);
     container.dataset["solarIlluminationModel"] = "inverse-square";
 
     const starGeometry = new BufferGeometry();
@@ -3097,7 +3115,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
     container.dataset["apolloTraverseAuthority"] = "NASA-LROC-PDS";
 
     const sourcedModelGroups = new Map<string, Group>();
-    let activeLocalShadowGroup: Object3D | undefined;
     const sourcedModelSelectableMeshes: Mesh[] = [];
     const sourcedModelStatus = document.createElement("span");
     sourcedModelStatus.className = "scene-error";
@@ -4773,6 +4790,26 @@ float saturnRingTransmission(vec3 surfacePosition) {
         .normalize();
     };
 
+    // Spacecraft and fictional models turn off the Sun line so their shadows
+    // show the shape; planets and moons keep the near-full sunlit view.
+    const sunFacingCameraDirection = (
+      bodyId: string,
+      bodyPosition: Vector3,
+      sunPosition: Vector3,
+      elapsedSeconds: number,
+    ): Vector3 =>
+      spacecraftBoundingRadiusM(bodyId) === undefined
+        ? parentFacingCameraDirection(
+            bodyId,
+            bodyPosition,
+            sunPosition,
+            elapsedSeconds,
+          )
+        : sunlitModelViewDirection(
+            sunPosition.clone().sub(bodyPosition),
+            ECLIPTIC_NORTH,
+          );
+
     const apolloInspectionPose = (): Readonly<{
       siteId: string;
       position: Vector3;
@@ -4957,7 +4994,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const cameraDirection =
         requestedFocusBodyId === "sun" || sunState === undefined
           ? PERSPECTIVE_CAMERA_DIRECTION.clone()
-          : parentFacingCameraDirection(
+          : sunFacingCameraDirection(
               requestedFocusBodyId,
               focusPosition,
               scenePosition(sunState.positionM),
@@ -5090,7 +5127,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         focusState !== undefined &&
         sunState !== undefined
       ) {
-        direction = parentFacingCameraDirection(
+        direction = sunFacingCameraDirection(
           requestedFocusBodyId ?? "sun",
           target,
           scenePosition(sunState.positionM),
@@ -6486,6 +6523,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
             group.up.copy(normal);
             group.lookAt(position.clone().add(relativeVelocity));
           } else {
+            // Model +y lies along the orbit normal, so Deep Space Nine stands
+            // upright on its orbit plane with Ops on the north side.
             group.quaternion.setFromRotationMatrix(
               new Matrix4().makeBasis(relativeVelocity, normal, radial),
             );
@@ -6675,21 +6714,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
             localShadowBodyId === null
               ? undefined
               : spacecraftBoundingRadiusM(localShadowBodyId);
-          if (activeLocalShadowGroup !== localShadowGroup) {
-            activeLocalShadowGroup?.traverse((object) => {
-              if (object instanceof Mesh) {
-                object.layers.enable(0);
-                object.layers.disable(2);
-              }
-            });
-            activeLocalShadowGroup = localShadowGroup;
-            activeLocalShadowGroup?.traverse((object) => {
-              if (object instanceof Mesh) {
-                object.layers.disable(0);
-                object.layers.enable(2);
-              }
-            });
-          }
           if (
             localShadowGroup !== undefined &&
             localShadowState !== undefined &&
@@ -6718,11 +6742,25 @@ float saturnRingTransmission(vec3 surfacePosition) {
             localModelSunlight.shadow.camera.near = localShadowRadiusAu;
             localModelSunlight.shadow.camera.far = localShadowRadiusAu * 40;
             localModelSunlight.shadow.camera.updateProjectionMatrix();
+            localModelSunlight.shadow.normalBias =
+              localShadowRadiusAu * LOCAL_SHADOW_NORMAL_BIAS_RADII;
             const localDistanceAu =
               localShadowPosition.distanceTo(sunScenePosition);
-            localModelSunlight.intensity =
-              SOLAR_IRRADIANCE_AT_1_AU /
-              Math.max(localDistanceAu * localDistanceAu, 0.0016);
+            // The parallel light also reaches every other surface. Near the
+            // model it matches the point light: Callisto under Deep Space
+            // Nine differs by about 0.003%, and a body 0.05 AU from a model
+            // 1 AU from the Sun by about 3 degrees and 10%. Out of range the
+            // point light lights everything, the model too.
+            const localSunlightInRange =
+              camera.position.distanceTo(localShadowPosition) <=
+              localShadowRadiusAu * LOCAL_MODEL_SUNLIGHT_RANGE_RADII;
+            localModelSunlight.intensity = localSunlightInRange
+              ? SOLAR_IRRADIANCE_AT_1_AU /
+                Math.max(localDistanceAu * localDistanceAu, 0.0016)
+              : 0;
+            sunlight.intensity = localSunlightInRange
+              ? 0
+              : SOLAR_IRRADIANCE_AT_1_AU;
             localModelSunlight.visible = true;
             setData(
               container,
@@ -6732,6 +6770,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             setData(container, "localShadowMap", "pcf-2048");
           } else {
             localModelSunlight.visible = false;
+            sunlight.intensity = SOLAR_IRRADIANCE_AT_1_AU;
             delete container.dataset["localShadowBody"];
             setData(container, "localShadowMap", "inactive");
           }
@@ -9532,6 +9571,68 @@ float saturnRingTransmission(vec3 surfacePosition) {
           setData(container, "eclipseShadowScreenX", screenX.toFixed(2));
           setData(container, "eclipseShadowScreenY", screenY.toFixed(2));
         }
+      }
+      // The light this frame really gives the focused body and its parent, as
+      // a share of the Sun's inverse-square value there: three lights every
+      // surface with every visible light on a camera layer.
+      const reportFocusId = focusBodyIdRef.current;
+      const reportFocusState =
+        current === undefined || reportFocusId === null
+          ? undefined
+          : bodyStateById(current, reportFocusId);
+      const reportSunState =
+        current === undefined ? undefined : bodyStateById(current, "sun");
+      if (
+        current !== undefined &&
+        reportFocusId !== null &&
+        reportFocusId !== "sun" &&
+        reportFocusState !== undefined &&
+        reportSunState !== undefined
+      ) {
+        const reportSunPosition = scenePosition(reportSunState.positionM);
+        const reportFocusPosition = scenePosition(reportFocusState.positionM);
+        container.dataset["cameraPhaseAngleDeg"] = (
+          (camera.position
+            .clone()
+            .sub(reportFocusPosition)
+            .angleTo(reportSunPosition.clone().sub(reportFocusPosition)) *
+            180) /
+          Math.PI
+        ).toFixed(1);
+        const sunlightRatioAt = (position: Vector3): string => {
+          let irradiance = 0;
+          for (const light of [sunlight, localModelSunlight]) {
+            if (!light.visible || !light.layers.test(camera.layers)) continue;
+            // three clamps the point light falloff below 0.1 AU.
+            irradiance +=
+              light === sunlight
+                ? light.intensity /
+                  Math.max(light.position.distanceToSquared(position), 0.01)
+                : light.intensity;
+          }
+          return (
+            (irradiance * position.distanceToSquared(reportSunPosition)) /
+            SOLAR_IRRADIANCE_AT_1_AU
+          ).toFixed(3);
+        };
+        container.dataset["focusSunlightRatio"] =
+          sunlightRatioAt(reportFocusPosition);
+        const reportParentId = parentBodyId(reportFocusId);
+        const reportParentState =
+          reportParentId === undefined
+            ? undefined
+            : bodyStateById(current, reportParentId);
+        if (reportParentState === undefined) {
+          delete container.dataset["parentSunlightRatio"];
+        } else {
+          container.dataset["parentSunlightRatio"] = sunlightRatioAt(
+            scenePosition(reportParentState.positionM),
+          );
+        }
+      } else {
+        delete container.dataset["cameraPhaseAngleDeg"];
+        delete container.dataset["focusSunlightRatio"];
+        delete container.dataset["parentSunlightRatio"];
       }
       renderer.render(scene, camera);
       setData(

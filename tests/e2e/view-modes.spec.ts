@@ -169,10 +169,18 @@ test("switches between physical, orrery, and schematic views without changing ph
   const cameraDirectionBefore = await scene.getAttribute(
     "data-camera-direction",
   );
+  const timeBeforeStep = await timeOutput.getAttribute("data-time-seconds");
+  expect(timeBeforeStep).toMatch(/^-?\d/u);
   await page.getByRole("button", { name: "Step forward" }).click();
   await expect
     .poll(async () => scene.getAttribute("data-camera-direction"))
     .not.toBe(cameraDirectionBefore);
+  // The readout is published at most every 100 ms, so the camera can move
+  // before the stepped time reaches it.
+  await expect(timeOutput).not.toHaveAttribute(
+    "data-time-seconds",
+    timeBeforeStep ?? "",
+  );
   const trackedTime = await timeOutput.getAttribute("data-time-seconds");
 
   await page.getByRole("tab", { name: "Guides" }).click();
