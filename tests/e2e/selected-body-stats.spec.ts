@@ -27,7 +27,7 @@ test("selected body stats identify their source and velocity reference", async (
   await expect(page.getByText("Mass", { exact: true })).toBeVisible();
   await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
   await expect(
-    page.getByText("Speed relative to Sun", { exact: true }),
+    page.getByText("Speed relative to the Sun", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Composition", { exact: true })).toBeVisible();
   await expect(
@@ -99,7 +99,7 @@ test("selected body card answers how big and how long a year is", async ({
     card.locator("span", {
       has: page.getByText("One trip around the Sun", { exact: true }),
     }),
-  ).toContainText(/about 68[67] Earth days/u);
+  ).toContainText("about 687 Earth days (1.9 years)");
   await expect(card).toContainText(
     /times faster than a jet airliner \(900 km\/h\)/u,
   );
@@ -111,4 +111,104 @@ test("selected body card answers how big and how long a year is", async ({
   await card.getByText("More detail", { exact: true }).click();
   await expect(card.getByText("Rotation angle", { exact: true })).toBeVisible();
   await expect(card.getByText("observational-composite")).toBeVisible();
+});
+
+test("selected body card states sourced year lengths and planet spin", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const row = (label: string): Locator =>
+    card.locator("span", {
+      has: page.getByText(label, { exact: true }),
+    });
+  const timeOutput = page.locator(".time-readout output");
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  const expectSourcedYears = async (): Promise<void> => {
+    await selectFocus(focus, "Pluto");
+    await expect(scene).toHaveAttribute("data-focus-body", "pluto");
+    await expect(row("One trip around the Sun")).toHaveText(
+      "One trip around the Sunabout 248 years",
+    );
+    await selectFocus(focus, "Earth");
+    await expect(scene).toHaveAttribute("data-focus-body", "earth");
+    await expect(row("One trip around the Sun")).toHaveText(
+      "One trip around the Sunabout 365 Earth days (1 year)",
+    );
+  };
+
+  await expectSourcedYears();
+  await expect(row("One trip around the Sun")).toHaveAttribute(
+    "title",
+    "Sidereal orbital period · NASA NSSDC fact sheet",
+  );
+  await card.getByText("More detail", { exact: true }).click();
+  await expect(row("This moment's orbit (live)")).toBeVisible();
+  await expect(row("This moment's orbit (live)")).toContainText(
+    /^This moment's orbit \(live\)3\d\d(?:\.\d)? days$/u,
+  );
+  await card.getByText("More detail", { exact: true }).click();
+
+  const playbackRate = page.getByRole("slider", { name: "Playback rate" });
+  await playbackRate.fill("4");
+  await expect(page.locator(".playback-rate-control output")).toHaveText(
+    "1 week / second",
+  );
+  const startSeconds = Number(
+    await timeOutput.getAttribute("data-time-seconds"),
+  );
+  await page.getByRole("button", { name: "Step forward" }).click();
+  await page.getByRole("button", { name: "Step forward" }).click();
+  await expect
+    .poll(
+      async () =>
+        Number(await timeOutput.getAttribute("data-time-seconds")) -
+        startSeconds,
+      { timeout: 60_000 },
+    )
+    .toBeCloseTo(14 * 86_400, 0);
+  await expectSourcedYears();
+
+  await selectFocus(focus, "Moon");
+  await expect(scene).toHaveAttribute("data-focus-body", "moon");
+  await expect(row("One trip around Earth")).toHaveText(
+    "One trip around Earthabout 27 Earth days",
+  );
+  await expect(row("One spin")).toHaveText("One spinabout 27 Earth days");
+
+  await selectFocus(focus, "Venus");
+  await expect(scene).toHaveAttribute("data-focus-body", "venus");
+  await expect(row("One spin")).toHaveText(
+    "One spinabout 243 Earth days, spins backwards",
+  );
+  await expect(row("Surface")).toHaveText(
+    "SurfaceRadar map of the ground under the clouds",
+  );
+
+  await selectFocus(focus, "Uranus");
+  await expect(scene).toHaveAttribute("data-focus-body", "uranus");
+  await expect(row("One trip around the Sun")).toHaveText(
+    "One trip around the Sunabout 84 years",
+  );
+  await expect(row("One spin")).toHaveText(
+    "One spinabout 17.2 hours, spins on its side",
+  );
+
+  await selectFocus(focus, "Jupiter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(row("One spin")).toHaveText("One spinabout 9.9 hours");
+  await page.screenshot({
+    path: testInfo.outputPath("selected-body-sourced-years.png"),
+    animations: "disabled",
+  });
 });

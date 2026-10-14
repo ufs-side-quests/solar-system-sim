@@ -2,36 +2,171 @@ import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 const SURFACE_CASES = [
-  ["Mercury", "mercury", "observational-composite"],
-  ["Venus", "venus", "observational-composite"],
-  ["Earth", "earth", "observational-composite"],
-  ["Mars", "mars", "observational-composite"],
-  ["Jupiter", "jupiter", "observational-composite"],
-  ["Saturn", "saturn", "visualization"],
-  ["Uranus", "uranus", "observation-constrained-atmosphere"],
-  ["Neptune", "neptune", "visualization"],
-  ["Moon", "moon", "observational-composite"],
-  ["Phobos", "phobos", "observational-composite"],
-  ["Deimos", "deimos", "observational-composite"],
-  ["Io", "io", "observational-composite"],
-  ["Europa", "europa", "observational-composite"],
-  ["Ganymede", "ganymede", "observational-composite"],
-  ["Callisto", "callisto", "observational-composite"],
-  ["Mimas", "mimas", "observational-composite"],
-  ["Enceladus", "enceladus", "observational-composite"],
-  ["Tethys", "tethys", "observational-composite"],
-  ["Dione", "dione", "observational-composite"],
-  ["Rhea", "rhea", "observational-composite"],
-  ["Titan", "titan", "visualization"],
-  ["Iapetus", "iapetus", "observational-composite"],
-  ["Ariel", "ariel", "observational-composite"],
-  ["Umbriel", "umbriel", "observational-composite"],
-  ["Titania", "titania", "observational-composite"],
-  ["Oberon", "oberon", "observational-composite"],
-  ["Miranda", "miranda", "observational-composite"],
-  ["Triton", "triton", "observational-composite"],
-  ["Pluto", "pluto", "observational-composite"],
-  ["Charon", "charon", "observational-composite"],
+  [
+    "Mercury",
+    "mercury",
+    "Space camera pictures in boosted colours",
+    "observational-composite",
+  ],
+  [
+    "Venus",
+    "venus",
+    "Radar map of the ground under the clouds",
+    "observational-composite",
+  ],
+  [
+    "Earth",
+    "earth",
+    "Real space pictures, put together without clouds",
+    "observational-composite",
+  ],
+  [
+    "Mars",
+    "mars",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Jupiter",
+    "jupiter",
+    "Real space pictures of its clouds in 2000",
+    "observational-composite",
+  ],
+  ["Saturn", "saturn", "NASA artwork of its cloud tops", "visualization"],
+  [
+    "Uranus",
+    "uranus",
+    "Plain colour matched to real photos",
+    "observation-constrained-atmosphere",
+  ],
+  ["Neptune", "neptune", "NASA artwork of its clouds", "visualization"],
+  [
+    "Moon",
+    "moon",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Phobos",
+    "phobos",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Deimos",
+    "deimos",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Io",
+    "io",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Europa",
+    "europa",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Ganymede",
+    "ganymede",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Callisto",
+    "callisto",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Mimas",
+    "mimas",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Enceladus",
+    "enceladus",
+    "Real space pictures in boosted colours",
+    "observational-composite",
+  ],
+  [
+    "Tethys",
+    "tethys",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Dione",
+    "dione",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Rhea",
+    "rhea",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  ["Titan", "titan", "NASA artwork of its hazy sky", "visualization"],
+  [
+    "Iapetus",
+    "iapetus",
+    "Real space pictures joined together",
+    "observational-composite",
+  ],
+  [
+    "Ariel",
+    "ariel",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Umbriel",
+    "umbriel",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Titania",
+    "titania",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Oberon",
+    "oberon",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Miranda",
+    "miranda",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Triton",
+    "triton",
+    "Real space pictures, unseen parts filled in",
+    "observational-composite",
+  ],
+  [
+    "Pluto",
+    "pluto",
+    "Real black-and-white pictures, unseen parts left dark",
+    "observational-composite",
+  ],
+  [
+    "Charon",
+    "charon",
+    "Real black-and-white pictures, unseen parts left dark",
+    "observational-composite",
+  ],
 ] as const;
 
 const SPACECRAFT_CASES = [
@@ -133,12 +268,26 @@ test("captures every installed planet and moon surface presentation", async ({
     { timeout: 30_000 },
   );
 
-  for (const [name, bodyId, classification] of SURFACE_CASES) {
+  const surfaceRow = selectedDetail.locator("span", {
+    has: page.getByText("Surface", { exact: true }),
+  });
+  const technicalRow = selectedDetail.locator("span", {
+    has: page.getByText("Surface map", { exact: true }),
+  });
+  const moreDetail = selectedDetail.getByText("More detail", { exact: true });
+  for (const [name, bodyId, plainSurface, classification] of SURFACE_CASES) {
     await focus.fill(name);
     await focus.press("Enter");
     await expect(focus).toHaveValue(name);
     await expect(scene).toHaveAttribute("data-focus-body", bodyId);
-    await expect(selectedDetail).toContainText(classification);
+    await expect(surfaceRow).toBeVisible();
+    await expect(surfaceRow).toHaveText(`Surface${plainSurface}`);
+    await expect(technicalRow).toBeHidden();
+    await moreDetail.click();
+    await expect(technicalRow).toBeVisible();
+    await expect(technicalRow).toHaveText(`Surface map${classification}`);
+    await moreDetail.click();
+    await expect(technicalRow).toBeHidden();
     const surfaceLabel = page.locator(`.body-label[data-body-id="${bodyId}"]`);
     await dollyToInspectSurface(page, surfaceLabel);
     await expect(surfaceLabel).toHaveAttribute(

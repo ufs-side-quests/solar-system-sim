@@ -30,6 +30,7 @@ import {
   ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
   majorBodySystem,
+  type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
   formatSimulationDateUtc,
@@ -50,11 +51,13 @@ import { PARENT_BODY_ID } from "./scene/body-facts";
 import {
   BODY_COMPOSITION_BY_ID,
   formatMassKg,
-  formatOrbitalPeriod,
+  formatLiveOrbitalPeriod,
+  formatSourcedOrbitalPeriod,
   formatSpeedWithJetComparison,
   formatSpinPeriod,
   formatWidthComparedToEarth,
-  PLAIN_SURFACE_SOURCE,
+  PLAIN_SURFACE_BY_BODY_ID,
+  SIDEREAL_ORBITAL_PERIOD_BY_ID,
 } from "./scene/body-physical-facts";
 import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
@@ -98,6 +101,7 @@ import {
 } from "./scene/lunar-landing-sites";
 import {
   bodyOrientationAngles,
+  planetSpinNote,
   siderealRotationRateRadPerSecond,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
@@ -688,6 +692,11 @@ const EARTH_MEAN_RADIUS_M = (() => {
   }
   return earth.meanRadiusM;
 })();
+
+/** "the Sun" reads as a name; every other parent keeps its own name. */
+function parentPhrase(parent: MajorBodyDefinition): string {
+  return parent.id === "sun" ? "the Sun" : parent.name;
+}
 
 function normalizedDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
@@ -1953,7 +1962,7 @@ export function App() {
     const speedLabel =
       parentDefinition === undefined
         ? undefined
-        : `Speed relative to ${parentDefinition.name}`;
+        : `Speed relative to ${parentPhrase(parentDefinition)}`;
     if (isJovianMonolith) {
       return {
         name: JOVIAN_MONOLITH_NAME,
@@ -2046,10 +2055,7 @@ export function App() {
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-        speedLabel:
-          parentDefinition === undefined
-            ? undefined
-            : `Speed relative to ${parentDefinition.name}`,
+        speedLabel,
         mass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
@@ -2142,10 +2148,7 @@ export function App() {
             parentState === undefined
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-          speedLabel:
-            parentDefinition === undefined
-              ? undefined
-              : `Speed relative to ${parentDefinition.name}`,
+          speedLabel,
           mass:
             bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
@@ -2242,10 +2245,11 @@ export function App() {
       nasaTextureByBodyId.get(definition.id)?.classification ??
       nasaMaterialPresentationByBodyId.get(definition.id)?.classification;
     const diameterKm = (definition.meanRadiusM * 2) / 1_000;
-    const orbitalPeriodSeconds =
+    const liveOrbitalPeriodSeconds =
       parentState === undefined
         ? undefined
         : osculatingOrbitalPeriodSeconds(bodyState, parentState);
+    const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
     return {
       name: definition.name,
       size:
@@ -2258,15 +2262,18 @@ export function App() {
       orbitLabel:
         parentDefinition === undefined
           ? undefined
-          : `One trip around ${parentDefinition.id === "sun" ? "the Sun" : parentDefinition.name}`,
-      orbitalPeriod:
-        orbitalPeriodSeconds === undefined
+          : `One trip around ${parentPhrase(parentDefinition)}`,
+      orbitalPeriod: formatSourcedOrbitalPeriod(definition.id),
+      orbitalPeriodSource:
+        sourcedOrbitalPeriod === undefined
           ? undefined
-          : formatOrbitalPeriod(orbitalPeriodSeconds),
-      surface:
-        surfaceClassification === undefined
-          ? "Plain colour"
-          : PLAIN_SURFACE_SOURCE[surfaceClassification],
+          : `Sidereal orbital period · ${sourcedOrbitalPeriod.authority}`,
+      liveOrbitalPeriod:
+        liveOrbitalPeriodSeconds === undefined
+          ? undefined
+          : formatLiveOrbitalPeriod(liveOrbitalPeriodSeconds),
+      spinNote: planetSpinNote(definition),
+      surface: PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour",
       surfaceTechnical:
         surfaceClassification ??
         "Neutral - no installed authoritative surface asset",
@@ -3128,7 +3135,7 @@ export function App() {
                 )}
                 {selectedBodyDetail.orbitLabel === undefined ||
                 selectedBodyDetail.orbitalPeriod === undefined ? null : (
-                  <span title="Osculating period from the live position and speed">
+                  <span title={selectedBodyDetail.orbitalPeriodSource}>
                     <small>{selectedBodyDetail.orbitLabel}</small>
                     {selectedBodyDetail.orbitalPeriod}
                   </span>
@@ -3137,6 +3144,9 @@ export function App() {
                   <span title="Sidereal rotation: one full turn measured against the stars">
                     <small>One spin</small>
                     {formatSpinPeriod(selectedBodyDetail.rotationHours)}
+                    {selectedBodyDetail.spinNote === undefined
+                      ? null
+                      : `, ${selectedBodyDetail.spinNote}`}
                   </span>
                 )}
                 {selectedBodyDetail.distance === undefined ? null : (
@@ -3220,6 +3230,13 @@ export function App() {
                         )}{" "}
                         km
                       </span>
+                      {selectedBodyDetail.liveOrbitalPeriod ===
+                      undefined ? null : (
+                        <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
+                          <small>{"This moment's orbit (live)"}</small>
+                          {selectedBodyDetail.liveOrbitalPeriod}
+                        </span>
+                      )}
                       <span>
                         <small>Sidereal rotation</small>
                         {selectedBodyDetail.rotationHours.toLocaleString(

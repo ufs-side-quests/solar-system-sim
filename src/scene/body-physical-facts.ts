@@ -1,4 +1,9 @@
-import type { nasaTextureSnapshot } from "./visual-assets";
+import { majorBodySnapshot } from "../physics/solar-system-data";
+import { PARENT_BODY_ID } from "./body-facts";
+import {
+  nasaMaterialPresentationByBodyId,
+  nasaTextureByBodyId,
+} from "./visual-assets";
 
 export type BodyCompositionFact = {
   readonly summary: string;
@@ -253,19 +258,173 @@ export function formatMassKg(massKg: number | undefined): string {
   })} × 10${superscript(exponent)} kg`;
 }
 
-type SurfaceClassification =
-  | (typeof nasaTextureSnapshot.assets)[number]["classification"]
-  | (typeof nasaTextureSnapshot.materialPresentations)[number]["classification"];
-
-export const PLAIN_SURFACE_SOURCE: Readonly<
-  Record<SurfaceClassification, string>
-> = {
-  "observational-composite": "Real space pictures",
-  "measured-topography": "Real height measurements",
-  visualization: "NASA artwork",
-  "authority-derived-material": "Made from real measurements",
-  "observation-constrained-atmosphere": "Colour from real photos",
+/**
+ * Plain words for each installed surface presentation, keyed by body id, so
+ * every asset says what it really is (radar map, boosted colour, filled-in
+ * gaps). The installed-asset check below fails the load when one is missing.
+ */
+export const PLAIN_SURFACE_BY_BODY_ID: Readonly<Record<string, string>> = {
+  mercury: "Space camera pictures in boosted colours",
+  venus: "Radar map of the ground under the clouds",
+  earth: "Real space pictures, put together without clouds",
+  mars: "Real space pictures joined together",
+  jupiter: "Real space pictures of its clouds in 2000",
+  saturn: "NASA artwork of its cloud tops",
+  uranus: "Plain colour matched to real photos",
+  neptune: "NASA artwork of its clouds",
+  moon: "Real space pictures joined together",
+  phobos: "Real space pictures joined together",
+  deimos: "Real space pictures joined together",
+  io: "Real space pictures joined together",
+  europa: "Real space pictures joined together",
+  ganymede: "Real space pictures joined together",
+  callisto: "Real space pictures joined together",
+  mimas: "Real space pictures joined together",
+  enceladus: "Real space pictures in boosted colours",
+  tethys: "Real space pictures joined together",
+  dione: "Real space pictures joined together",
+  rhea: "Real space pictures joined together",
+  titan: "NASA artwork of its hazy sky",
+  iapetus: "Real space pictures joined together",
+  ariel: "Real space pictures, unseen parts filled in",
+  umbriel: "Real space pictures, unseen parts filled in",
+  titania: "Real space pictures, unseen parts filled in",
+  oberon: "Real space pictures, unseen parts filled in",
+  miranda: "Real space pictures, unseen parts filled in",
+  triton: "Real space pictures, unseen parts filled in",
+  pluto: "Real black-and-white pictures, unseen parts left dark",
+  charon: "Real black-and-white pictures, unseen parts left dark",
 };
+
+/** Throws unless every installed surface presentation has exactly one wording. */
+export function validatePlainSurfaceWording(
+  wordingByBodyId: Readonly<Record<string, string>>,
+  installedBodyIds: Iterable<string>,
+): void {
+  const installed = new Set(installedBodyIds);
+  for (const bodyId of installed) {
+    if ((wordingByBodyId[bodyId] ?? "").trim() === "") {
+      throw new Error(`Surface asset ${bodyId} has no plain wording`);
+    }
+  }
+  for (const bodyId of Object.keys(wordingByBodyId)) {
+    if (!installed.has(bodyId)) {
+      throw new Error(`Plain surface wording ${bodyId} has no installed asset`);
+    }
+  }
+}
+
+validatePlainSurfaceWording(PLAIN_SURFACE_BY_BODY_ID, [
+  ...nasaTextureByBodyId.keys(),
+  ...nasaMaterialPresentationByBodyId.keys(),
+]);
+
+export type SourcedOrbitalPeriod = Readonly<{
+  siderealPeriodDays: number;
+  authority: string;
+  sourceUrl: string;
+}>;
+
+const NSSDC = "NASA NSSDC fact sheet";
+const JPL_SATELLITES = "JPL SSD planetary satellite mean elements";
+const JPL_SATELLITES_URL = "https://ssd.jpl.nasa.gov/sats/elem/";
+
+function nssdc(
+  siderealPeriodDays: number,
+  sheet: string,
+): SourcedOrbitalPeriod {
+  return {
+    siderealPeriodDays,
+    authority: NSSDC,
+    sourceUrl: `https://nssdc.gsfc.nasa.gov/planetary/factsheet/${sheet}fact.html`,
+  };
+}
+
+function jplSatellite(siderealPeriodDays: number): SourcedOrbitalPeriod {
+  return {
+    siderealPeriodDays,
+    authority: JPL_SATELLITES,
+    sourceUrl: JPL_SATELLITES_URL,
+  };
+}
+
+/**
+ * Sidereal orbital periods, retrieved 2026-10-14. Planets and Pluto use the
+ * NSSDC "Sidereal orbit period", the Moon the NSSDC "Revolution period", and
+ * moons the JPL "P (days)" mean-element column. The live osculating period
+ * wobbles with barycentre motion and perturbations, so it is not used here.
+ */
+export const SIDEREAL_ORBITAL_PERIOD_BY_ID: Readonly<
+  Record<string, SourcedOrbitalPeriod>
+> = {
+  mercury: nssdc(87.969, "mercury"),
+  venus: nssdc(224.701, "venus"),
+  earth: nssdc(365.256, "earth"),
+  mars: nssdc(686.98, "mars"),
+  jupiter: nssdc(4_332.589, "jupiter"),
+  saturn: nssdc(10_755.699, "saturn"),
+  uranus: nssdc(30_685.4, "uranus"),
+  neptune: nssdc(60_189.018, "neptune"),
+  pluto: nssdc(90_560, "pluto"),
+  moon: nssdc(27.3217, "moon"),
+  phobos: jplSatellite(0.3187),
+  deimos: jplSatellite(1.2625),
+  io: jplSatellite(1.762732),
+  europa: jplSatellite(3.525463),
+  ganymede: jplSatellite(7.155588),
+  callisto: jplSatellite(16.69044),
+  mimas: jplSatellite(0.942422),
+  enceladus: jplSatellite(1.370218),
+  tethys: jplSatellite(1.887802),
+  dione: jplSatellite(2.736916),
+  rhea: jplSatellite(4.517503),
+  titan: jplSatellite(15.945448),
+  iapetus: jplSatellite(79.331002),
+  ariel: jplSatellite(2.520379),
+  umbriel: jplSatellite(4.144177),
+  titania: jplSatellite(8.705869),
+  oberon: jplSatellite(13.463237),
+  miranda: jplSatellite(1.413479),
+  triton: jplSatellite(5.876994),
+  charon: jplSatellite(6.387222),
+};
+
+/**
+ * Throws unless every body that shows the "One trip around" row has a
+ * positive, finite sourced period, and the table names no other body.
+ */
+export function validateSourcedOrbitalPeriods(
+  periodById: Readonly<Record<string, SourcedOrbitalPeriod>>,
+  orbitingBodyIds: Iterable<string>,
+): void {
+  const orbiting = new Set(orbitingBodyIds);
+  for (const bodyId of orbiting) {
+    const period = periodById[bodyId];
+    if (period === undefined) {
+      throw new Error(`Sourced orbital period is missing body ${bodyId}`);
+    }
+    if (
+      !Number.isFinite(period.siderealPeriodDays) ||
+      period.siderealPeriodDays <= 0
+    ) {
+      throw new Error(`Sourced orbital period of ${bodyId} is not positive`);
+    }
+  }
+  for (const bodyId of Object.keys(periodById)) {
+    if (!orbiting.has(bodyId)) {
+      throw new Error(
+        `Sourced orbital period ${bodyId} is not an orbiting body`,
+      );
+    }
+  }
+}
+
+validateSourcedOrbitalPeriods(
+  SIDEREAL_ORBITAL_PERIOD_BY_ID,
+  majorBodySnapshot.bodies
+    .filter((body) => PARENT_BODY_ID[body.id] !== undefined)
+    .map((body) => body.id),
+);
 
 const SECONDS_PER_HOUR = 3_600;
 const HOURS_PER_DAY = 24;
@@ -321,6 +480,24 @@ function formatDurationHours(hours: number, longestInHours: number): string {
 /** Orbits shorter than one Earth day read in hours, longer ones in days or years. */
 export function formatOrbitalPeriod(periodSeconds: number): string {
   return formatDurationHours(periodSeconds / SECONDS_PER_HOUR, HOURS_PER_DAY);
+}
+
+/** The sourced sidereal period in plain words, or undefined when none is sourced. */
+export function formatSourcedOrbitalPeriod(bodyId: string): string | undefined {
+  const period = SIDEREAL_ORBITAL_PERIOD_BY_ID[bodyId];
+  return period === undefined
+    ? undefined
+    : formatOrbitalPeriod(
+        period.siderealPeriodDays * HOURS_PER_DAY * SECONDS_PER_HOUR,
+      );
+}
+
+/** The live osculating period to four significant figures, in days or years. */
+export function formatLiveOrbitalPeriod(periodSeconds: number): string {
+  const days = periodSeconds / SECONDS_PER_HOUR / HOURS_PER_DAY;
+  const [value, unit] =
+    days < 2 * DAYS_PER_YEAR ? [days, "days"] : [days / DAYS_PER_YEAR, "years"];
+  return `${value.toLocaleString("en-GB", { maximumSignificantDigits: 4 })} ${unit}`;
 }
 
 /** Spins up to 30 hours read in hours, so the Earth and Mars days stay comparable. */

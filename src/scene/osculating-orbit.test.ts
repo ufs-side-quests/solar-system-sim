@@ -99,4 +99,37 @@ describe("osculating orbital period", () => {
     };
     expect(osculatingOrbitalPeriodSeconds(escaping, parent)).toBeUndefined();
   });
+
+  it("includes the body's own GM, so Charon about Pluto matches JPL within 0.1%", () => {
+    // JPL SSD planetary satellite mean elements: Charon P = 6.387222 days.
+    // Charon is 12% of Pluto's mass, so a μ without its GM misses by about 6%.
+    const periodSeconds = osculatingOrbitalPeriodSeconds(
+      epochState("charon"),
+      epochState("pluto"),
+    );
+    const days = (periodSeconds ?? Number.NaN) / DAY_SECONDS;
+    expect(Math.abs(days / 6.387222 - 1)).toBeLessThan(0.001);
+  });
+
+  it("throws for a state that cannot describe an orbit", () => {
+    const massless: BodyState = { ...parent, gravitationalParameterM3S2: 0 };
+    const atParent: BodyState = {
+      id: "at-parent",
+      gravitationalParameterM3S2: 0,
+      positionM: parent.positionM,
+      velocityMps: [0, 1, 0],
+    };
+    const orbiting: BodyState = {
+      id: "orbiting",
+      gravitationalParameterM3S2: 0,
+      positionM: [4, 0, 0],
+      velocityMps: [0, 0.5, 0],
+    };
+    expect(() => osculatingOrbitalPeriodSeconds(orbiting, massless)).toThrow(
+      "Two-body orbit state is physically invalid",
+    );
+    expect(() => osculatingOrbitalPeriodSeconds(atParent, parent)).toThrow(
+      "Two-body orbit state is physically invalid",
+    );
+  });
 });

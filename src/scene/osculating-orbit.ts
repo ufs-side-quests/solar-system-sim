@@ -1,4 +1,5 @@
 import type { BodyState } from "../physics/contracts";
+import { boundTwoBodyOrbit } from "../physics/two-body-propagator";
 
 type Vector3 = readonly [number, number, number];
 
@@ -89,30 +90,18 @@ export function osculatingOrbitPositionsM(
 }
 
 /**
- * Osculating two-body period from the live state, by vis-viva:
- * a = 1 / (2/r - v²/μ), T = 2π √(a³/μ), μ = GM_parent + GM_body.
+ * Osculating two-body period of the live state, with μ = GM_parent + GM_body.
  * Returns undefined for an unbound (parabolic or hyperbolic) state.
  */
 export function osculatingOrbitalPeriodSeconds(
   body: BodyState,
   parent: BodyState,
 ): number | undefined {
-  const mu =
-    body.gravitationalParameterM3S2 + parent.gravitationalParameterM3S2;
-  const radius = magnitude(subtract(body.positionM, parent.positionM));
-  const speed = magnitude(subtract(body.velocityMps, parent.velocityMps));
-  if (
-    !Number.isFinite(mu) ||
-    mu <= 0 ||
-    !Number.isFinite(radius) ||
-    radius <= 0 ||
-    !Number.isFinite(speed)
-  ) {
-    throw new Error("Osculating orbit state is physically invalid");
-  }
-  const inverseSemiMajorAxis = 2 / radius - (speed * speed) / mu;
-  if (inverseSemiMajorAxis <= 0) {
-    return undefined;
-  }
-  return 2 * Math.PI * Math.sqrt(1 / inverseSemiMajorAxis ** 3 / mu);
+  return boundTwoBodyOrbit(
+    {
+      positionM: subtract(body.positionM, parent.positionM),
+      velocityMps: subtract(body.velocityMps, parent.velocityMps),
+    },
+    body.gravitationalParameterM3S2 + parent.gravitationalParameterM3S2,
+  )?.periodSeconds;
 }
