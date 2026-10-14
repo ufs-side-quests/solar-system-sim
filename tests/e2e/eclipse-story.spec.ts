@@ -321,14 +321,16 @@ test("jumps to each story time while the story plays at an unchanged rate", asyn
 
   // Step 1 plays at the default 1 hour per second, so the clock shows
   // 15:4x for only a fraction of a second: watch every frame from before
-  // the click so the window cannot pass unseen.
+  // the click so the window cannot pass unseen. The jump integrates about
+  // 224 days, which takes a few seconds on a loaded machine; before the fix
+  // it never applied at all.
   const reachedAlignment = page.waitForFunction(
     () =>
       /12 Aug 2026 · 15:4\d/u.test(
         document.querySelector(".global-simulation-clock")?.textContent ?? "",
       ),
     undefined,
-    { polling: "raf", timeout: 5_000 },
+    { polling: "raf", timeout: 15_000 },
   );
   await page.getByRole("button", { name: "Eclipse story" }).click();
   await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");

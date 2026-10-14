@@ -280,7 +280,13 @@ test("the planets race starts at once from any date and repeats from the epoch",
   expect(loopMs).toBeLessThan(2_000);
   expect(longestSeekMs).toBeLessThan(2_000);
   expect(samples.filter((sample) => sample.outside)).toEqual([]);
-  expect(Math.max(...samples.map((sample) => sample.days))).toBeLessThan(365);
+  // Forward playback is clamped at the 360-day loop end, so even a slow
+  // machine never shows a later time once the race has started. Earlier
+  // samples hold the paused pre-race clock, which can be anywhere.
+  const raceDays = samples
+    .filter((sample) => sample.atMs >= started.atMs)
+    .map((sample) => sample.days);
+  expect(Math.max(...raceDays)).toBeLessThanOrEqual(360);
   await expect(page.getByText(/Outside ±1 year/u)).toHaveCount(0);
   await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);

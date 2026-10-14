@@ -899,6 +899,10 @@ export function App() {
   const timeRateIndexRef = useRef(timeRateIndex);
   const manualDeltaSecondsRef = useRef(0);
   const directSeekTimeSecondsRef = useRef<number | undefined>(undefined);
+  // A looping cool shot's end time: continuous forward playback never
+  // integrates past it, so the race cannot leave its validated window when
+  // rendering falls behind.
+  const forwardPlaybackLimitSecondsRef = useRef<number | undefined>(undefined);
   const focusBodyIdRef = useRef(focusBodyId);
   const focusHistoryRef = useRef<string[]>([]);
   const displayButtonRef = useRef<HTMLButtonElement>(null);
@@ -1123,11 +1127,33 @@ export function App() {
           const keyframeIntervalMs = isManual
             ? transitionDurationMs
             : (keyframeSeconds / selectedRate.secondsPerSecond) * 1_000;
-          const targetTimes = buildTargetTimes(
+          // Continuous forward playback stops at a looping shot's end, for
+          // this batch and every prefetched one.
+          const limitForwardTargets = (
+            times: readonly number[],
+            fromSeconds: number,
+          ): number[] => {
+            const forwardLimitSeconds = forwardPlaybackLimitSecondsRef.current;
+            return isManual ||
+              requestedDirection < 0 ||
+              forwardLimitSeconds === undefined
+              ? [...times]
+              : times
+                  .map((time) => Math.min(time, forwardLimitSeconds))
+                  .filter(
+                    (time, index, limited) =>
+                      time > fromSeconds && time !== limited[index - 1],
+                  );
+          };
+          const targetTimes = limitForwardTargets(
+            buildTargetTimes(solverTime, signedKeyframeSeconds, batchSize),
             solverTime,
-            signedKeyframeSeconds,
-            batchSize,
           );
+          if (targetTimes.length === 0) {
+            // The solver holds at the loop end until the shot restarts it.
+            await sleep(50);
+            continue;
+          }
           let nextStates = await client.api.integrateSeries(targetTimes);
           solverTime = targetTimes.at(-1) ?? solverTime;
 
@@ -1151,13 +1177,18 @@ export function App() {
           }
 
           while (isActive()) {
-            const nextBatchTargets = isManual
-              ? undefined
-              : buildTargetTimes(
+            const limitedNextTargets = isManual
+              ? []
+              : limitForwardTargets(
+                  buildTargetTimes(
+                    solverTime,
+                    signedKeyframeSeconds,
+                    PLAYBACK_BATCH_SIZE,
+                  ),
                   solverTime,
-                  signedKeyframeSeconds,
-                  PLAYBACK_BATCH_SIZE,
                 );
+            const nextBatchTargets =
+              limitedNextTargets.length === 0 ? undefined : limitedNextTargets;
             const prefetchedStates =
               nextBatchTargets === undefined
                 ? undefined
@@ -1839,10 +1870,14 @@ export function App() {
   const activeShotLoopEndTimeSeconds =
     activeCinematicShot?.loopEndTimeSeconds ?? null;
   useEffect(() => {
+    forwardPlaybackLimitSecondsRef.current =
+      activeShotLoopEndTimeSeconds ?? undefined;
+  }, [activeShotLoopEndTimeSeconds]);
+  useEffect(() => {
     if (
       activeShotLoopEndTimeSeconds === null ||
       activeShotTimeSeconds === undefined ||
-      activeShotTimeSeconds <= activeShotLoopEndTimeSeconds
+      activeShotTimeSeconds < activeShotLoopEndTimeSeconds
     ) {
       return;
     }
