@@ -74,7 +74,10 @@ import {
   operationalSpacecraftSnapshot,
 } from "../physics/operational-spacecraft";
 import { focusDistanceAu, focusNearPlaneAu } from "./camera-focus";
-import { GravityWellLayer } from "./GravityWellLayer";
+import {
+  GravityWellLayer,
+  type GravityWellDiagnostics,
+} from "./GravityWellLayer";
 import type {
   GravityPotentialSource,
   GravityWellMode,
@@ -5445,37 +5448,41 @@ float saturnRingTransmission(vec3 surfacePosition) {
           current,
           gravityFocusId ?? "sun",
         );
-        if (gravityCenterState === undefined) {
-          throw new Error("Gravity field center state is unavailable");
-        }
-        const gravitySources: GravityPotentialSource[] = current.bodies
-          .filter((body) => body.gravitationalParameterM3S2 > 0)
-          .map((body) => {
-            const definition = majorBodyById.get(body.id);
-            if (definition === undefined) {
-              throw new Error(
-                `Positive-GM body ${body.id} has no sourced gravity-well radius`,
-              );
-            }
-            const position = scenePosition(body.positionM);
-            return {
-              id: body.id,
-              gravitationalParameterM3S2: body.gravitationalParameterM3S2,
-              positionAu: [position.x, position.y, position.z],
-              radiusAu: definition.meanRadiusM / ASTRONOMICAL_UNIT_M,
-            };
+        // A focused body outside its ephemeris window (the ISS, Hubble, JWST)
+        // has no state, so the field has no centre and is not drawn.
+        let gravityDiagnostics: GravityWellDiagnostics | undefined;
+        if (gravityMode === "off" || gravityCenterState === undefined) {
+          gravityDiagnostics = gravityWellLayer.update({ mode: "off" });
+        } else {
+          const gravitySources: GravityPotentialSource[] = current.bodies
+            .filter((body) => body.gravitationalParameterM3S2 > 0)
+            .map((body) => {
+              const definition = majorBodyById.get(body.id);
+              if (definition === undefined) {
+                throw new Error(
+                  `Positive-GM body ${body.id} has no sourced gravity-well radius`,
+                );
+              }
+              const position = scenePosition(body.positionM);
+              return {
+                id: body.id,
+                gravitationalParameterM3S2: body.gravitationalParameterM3S2,
+                positionAu: [position.x, position.y, position.z],
+                radiusAu: definition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+              };
+            });
+          const gravityCenter = scenePosition(gravityCenterState.positionM);
+          gravityDiagnostics = gravityWellLayer.update({
+            mode: gravityMode,
+            scale: gravityWellScaleRef.current,
+            centerAu: [gravityCenter.x, gravityCenter.y, gravityCenter.z],
+            extentAu: gravityFieldExtentAu(
+              gravityFocusId,
+              bodyVisibilityRef.current,
+            ),
+            sources: gravitySources,
           });
-        const gravityCenter = scenePosition(gravityCenterState.positionM);
-        const gravityDiagnostics = gravityWellLayer.update({
-          mode: gravityMode,
-          scale: gravityWellScaleRef.current,
-          centerAu: [gravityCenter.x, gravityCenter.y, gravityCenter.z],
-          extentAu: gravityFieldExtentAu(
-            gravityFocusId,
-            bodyVisibilityRef.current,
-          ),
-          sources: gravitySources,
-        });
+        }
         container.dataset["gravityWellMode"] = gravityMode;
         container.dataset["gravityWellScale"] = gravityWellScaleRef.current;
         container.dataset["gravityWellVisible"] = String(
@@ -5909,30 +5916,39 @@ float saturnRingTransmission(vec3 surfacePosition) {
           ).toFixed(3);
         }
 
+        // The ISS state exists only inside its element window; the label pass
+        // hides the station when it is absent.
         const issState = bodyStateById(current, ISS_BODY_ID);
-        const earthStateForIss = bodyStateById(current, ISS_PARENT_BODY_ID);
-        if (issState === undefined || earthStateForIss === undefined) {
-          throw new Error("ISS or Earth scene state is unavailable");
+        if (issState !== undefined) {
+          const earthStateForIss = bodyStateById(current, ISS_PARENT_BODY_ID);
+          if (earthStateForIss === undefined) {
+            throw new Error("Earth scene state is unavailable for the ISS");
+          }
+          const issPosition = scenePosition(issState.positionM);
+          const earthPositionForIss = scenePosition(earthStateForIss.positionM);
+          issGroup.position.copy(issPosition);
+          const zenith = issPosition
+            .clone()
+            .sub(earthPositionForIss)
+            .normalize();
+          const relativeVelocity = icrfToScene({
+            x: issState.velocityMps[0] - earthStateForIss.velocityMps[0],
+            y: issState.velocityMps[1] - earthStateForIss.velocityMps[1],
+            z: issState.velocityMps[2] - earthStateForIss.velocityMps[2],
+          });
+          const alongTrack = relativeVelocity
+            .clone()
+            .sub(
+              zenith
+                .clone()
+                .multiplyScalar(relativeVelocity.clone().dot(zenith)),
+            )
+            .normalize();
+          const orbitNormal = zenith.clone().cross(alongTrack).normalize();
+          issGroup.quaternion.setFromRotationMatrix(
+            new Matrix4().makeBasis(orbitNormal, zenith, alongTrack),
+          );
         }
-        const issPosition = scenePosition(issState.positionM);
-        const earthPositionForIss = scenePosition(earthStateForIss.positionM);
-        issGroup.position.copy(issPosition);
-        const zenith = issPosition.clone().sub(earthPositionForIss).normalize();
-        const relativeVelocity = icrfToScene({
-          x: issState.velocityMps[0] - earthStateForIss.velocityMps[0],
-          y: issState.velocityMps[1] - earthStateForIss.velocityMps[1],
-          z: issState.velocityMps[2] - earthStateForIss.velocityMps[2],
-        });
-        const alongTrack = relativeVelocity
-          .clone()
-          .sub(
-            zenith.clone().multiplyScalar(relativeVelocity.clone().dot(zenith)),
-          )
-          .normalize();
-        const orbitNormal = zenith.clone().cross(alongTrack).normalize();
-        issGroup.quaternion.setFromRotationMatrix(
-          new Matrix4().makeBasis(orbitNormal, zenith, alongTrack),
-        );
         container.dataset["issEphemerisValid"] = String(
           isIssEphemerisWithinValidity(current.timeSeconds),
         );
@@ -6361,7 +6377,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
           completeCameraTransition();
         }
         const requestedFocusBodyId = focusBodyIdRef.current;
-        const resetRequested = resetViewTokenRef.current !== lastResetViewToken;
+        // A body with an ephemeris window (the ISS, Hubble, JWST) has no state
+        // until the seek into its window lands, so the reset waits for it.
+        const resetRequested =
+          resetViewTokenRef.current !== lastResetViewToken &&
+          (requestedFocusBodyId === null ||
+            bodyStateById(current, requestedFocusBodyId) !== undefined);
         if (resetRequested) {
           lastResetViewToken = resetViewTokenRef.current;
           if (!beginCameraTransition(requestedFocusBodyId, current)) {
@@ -8384,6 +8405,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
         issGroup.visible = false;
         issLabel.hidden = true;
         issMarker.hidden = true;
+        container.dataset["issGeometryVisible"] = "false";
+        container.dataset["issMarkerVisible"] = "false";
       }
       for (const probe of voyagerSnapshot.probes) {
         const probeState =
