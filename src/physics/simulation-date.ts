@@ -5,6 +5,10 @@ import { majorBodySnapshot } from "./solar-system";
 const J2000_JULIAN_DAY = 2_451_545;
 const SECONDS_PER_DAY = 86_400;
 
+// The present-day model is validated for one year either side of the snapshot
+// epoch (simulation time zero).
+export const VALIDATED_WINDOW_SECONDS = 365 * SECONDS_PER_DAY;
+
 export function simulationDateUtc(timeSeconds: number): Date {
   if (!Number.isFinite(timeSeconds)) {
     throw new Error("Simulation time must be finite");

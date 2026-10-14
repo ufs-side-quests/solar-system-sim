@@ -27,7 +27,9 @@ The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, ove
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
 Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecliptic so Mercury to Mars fill the view, turns on orbit guides, planet trails and labels, and runs the clock forward at 30 days per second, so Mercury laps Earth about every 4 seconds.
-While a cool shot is active, a caption names it and says what to watch.
+In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
+The race starts 330 days before the snapshot epoch and, when it reaches 330 days after, jumps back to the start and clears the trails, so it repeats inside the validated ±1 year ephemeris window without recomputing the year.
+While a cool shot is active and the clock runs, a caption names it and says what to watch; a tour, a new focus, or a view-mode change ends the shot.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
 Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a map double-click uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
@@ -229,6 +231,8 @@ It shows that even the possible 100,000 AU outer Oort Cloud reaches only about 3
 Rendered body positions will originate from numerical integration of explicit initial conditions and force models.
 
 Authoritative ephemerides provide initial states and validation references, not frame-by-frame scripted trajectories.
+
+A second seek to the time the last seek reached restarts REBOUND from the state it computed there, instead of integrating the whole span again; gravity does not depend on absolute time, so the engine keeps a time origin and the restored run continues the same physics.
 
 Deep-time scenarios require explicit physical assumptions and uncertainty disclosure because present-day measurements cannot determine unique states billions of years into the past or future.
 

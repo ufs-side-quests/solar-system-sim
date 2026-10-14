@@ -34,6 +34,7 @@ import {
 import {
   formatSimulationDateUtc,
   simulationDateUtc,
+  VALIDATED_WINDOW_SECONDS,
 } from "./physics/simulation-date";
 import {
   isVoyagerBodyId,
@@ -1014,13 +1015,23 @@ export function App() {
             transitionDurationMs: 0,
           });
         }
+        // The state the last seek reached. A looping cool shot seeks to the
+        // same start again and again; restoring it is instant, where
+        // integrating the whole span again freezes the view for seconds.
+        let lastSeek: { targetSeconds: number; state: SimulationState } | null =
+          null;
         while (isActive()) {
           const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
           if (directSeekTimeSeconds !== undefined) {
             directSeekTimeSecondsRef.current = undefined;
-            const rawNextState = await client.api.integrateTo(
-              directSeekTimeSeconds,
-            );
+            const rawNextState: SimulationState =
+              lastSeek?.targetSeconds === directSeekTimeSeconds
+                ? await client.api.restore(lastSeek.state)
+                : await client.api.integrateTo(directSeekTimeSeconds);
+            lastSeek = {
+              targetSeconds: directSeekTimeSeconds,
+              state: rawNextState,
+            };
             solverTime = rawNextState.timeSeconds;
             const nextState = withKnownSatellites(rawNextState);
             previousState = nextState;
@@ -1090,7 +1101,8 @@ export function App() {
             !isManual &&
             (!playingRef.current ||
               directionRef.current !== requestedDirection ||
-              timeRateIndexRef.current !== requestedRateIndex);
+              timeRateIndexRef.current !== requestedRateIndex ||
+              directSeekTimeSecondsRef.current !== undefined);
           if (initialRequestChanged) {
             await client.api.integrateTo(previousState.timeSeconds);
             solverTime = previousState.timeSeconds;
@@ -1125,7 +1137,8 @@ export function App() {
                 !isManual &&
                 (!playingRef.current ||
                   directionRef.current !== requestedDirection ||
-                  timeRateIndexRef.current !== requestedRateIndex);
+                  timeRateIndexRef.current !== requestedRateIndex ||
+                  directSeekTimeSecondsRef.current !== undefined);
               if (requestChanged) {
                 break;
               }
@@ -1465,6 +1478,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    setActiveCinematicShotId(null);
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
@@ -1482,6 +1496,7 @@ export function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    setActiveCinematicShotId(null);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
     setTourPlaying(!reducedMotion);
@@ -1707,6 +1722,15 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
+    if (shot.loopEndTimeSeconds !== null && shot.startTimeSeconds === null) {
+      throw new Error(`${shot.name} loops but has no start time`);
+    }
+    if (shot.startTimeSeconds !== null) {
+      manualDeltaSecondsRef.current = 0;
+      directSeekTimeSecondsRef.current = shot.startTimeSeconds;
+      setSeeking(true);
+      setClearTrailsToken((current) => current + 1);
+    }
     setTourPlaying(false);
     setTourKind(null);
     setTourStepIndex(null);
@@ -1740,6 +1764,46 @@ export function App() {
     setTourTransitionSequence((current) => current + 1);
     setControlPanelOpen(false);
   };
+
+  // The solver frame, not the displayed state: it changes in the same render
+  // that ends a seek, so a finished seek is never judged on a stale time.
+  const activeShotTimeSeconds = frame?.end.timeSeconds;
+  const activeShotStartTimeSeconds =
+    activeCinematicShot?.startTimeSeconds ?? null;
+  const activeShotLoopEndTimeSeconds =
+    activeCinematicShot?.loopEndTimeSeconds ?? null;
+  useEffect(() => {
+    const startTimeSeconds = activeShotStartTimeSeconds;
+    const loopEndTimeSeconds = activeShotLoopEndTimeSeconds;
+    if (
+      startTimeSeconds === null ||
+      loopEndTimeSeconds === null ||
+      activeShotTimeSeconds === undefined ||
+      seeking
+    ) {
+      return;
+    }
+    if (
+      activeShotTimeSeconds >= startTimeSeconds &&
+      activeShotTimeSeconds <= loopEndTimeSeconds
+    ) {
+      return;
+    }
+    // Running backward wraps to the end, forward to the start, so the shot
+    // repeats inside its window instead of leaving it.
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current =
+      activeShotTimeSeconds < startTimeSeconds
+        ? loopEndTimeSeconds
+        : startTimeSeconds;
+    setSeeking(true);
+    setClearTrailsToken((current) => current + 1);
+  }, [
+    activeShotLoopEndTimeSeconds,
+    activeShotStartTimeSeconds,
+    activeShotTimeSeconds,
+    seeking,
+  ]);
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
@@ -1824,6 +1888,7 @@ export function App() {
       epochTimeSeconds: state?.timeSeconds ?? 0,
     });
     setOrbitViewEnabled(true);
+    setActiveCinematicShotId(null);
     setTourPlaying(false);
     setSurfaceObserverEnabled(false);
     setViewMode("reality");
@@ -2309,7 +2374,7 @@ export function App() {
       ? DEEP_SPACE_NINE_NAME
       : undefined);
   const outsideValidatedWindow =
-    Math.abs(state?.timeSeconds ?? 0) > 365 * DAY_SECONDS;
+    Math.abs(state?.timeSeconds ?? 0) > VALIDATED_WINDOW_SECONDS;
 
   return (
     <main
@@ -2514,7 +2579,7 @@ export function App() {
           </span>
         </div>
 
-        {activeCinematicShot === undefined || tourKind !== null ? null : (
+        {activeCinematicShot === undefined || !playing ? null : (
           <p className="cinematic-shot-caption" role="status">
             <strong>{activeCinematicShot.name}</strong>
             <span>{activeCinematicShot.description}</span>
@@ -2598,6 +2663,10 @@ export function App() {
                 typeof activeTourStep?.cameraDistanceAu === "number"
                   ? activeTourStep.cameraDistanceAu
                   : activeCinematicShot?.cameraDistanceAu
+              }
+              fitCameraDistanceToPortrait={
+                typeof activeTourStep?.cameraDistanceAu !== "number" &&
+                activeCinematicShot !== undefined
               }
               cameraTargetBodyId={activeCameraTargetBodyId}
               observerCameraStyle={
