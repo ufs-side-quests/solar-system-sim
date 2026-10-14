@@ -12,6 +12,7 @@ import type { CSSProperties, RefObject } from "react";
 import { useCombobox } from "downshift";
 
 import { useInterfaceAudio } from "./audio/use-interface-audio";
+import { matchesPhoneLayout, usePhoneLayout } from "./phone-layout";
 import {
   discoveryMessage,
   type EasterEggId,
@@ -984,8 +985,20 @@ export function App() {
     mode: "auto" as ExposureMode,
   });
   const [immersiveMode, setImmersiveMode] = useState(false);
+  const phoneLayout = usePhoneLayout();
+  // On a phone the card opens short (name, size, Expand) so the sky stays in
+  // view; the facts are one tap away.
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
-    useState(false);
+    useState(matchesPhoneLayout);
+  // A screen that becomes a phone (a resize or a turn) also makes the card
+  // short.
+  const [cardPhoneLayout, setCardPhoneLayout] = useState(phoneLayout);
+  if (cardPhoneLayout !== phoneLayout) {
+    setCardPhoneLayout(phoneLayout);
+    if (phoneLayout) {
+      setSelectedBodyPanelCollapsed(true);
+    }
+  }
   const [fullscreenError, setFullscreenError] = useState<string>();
   const [objectVisibility, setObjectVisibility] = useState<ObjectVisibility>(
     DEFAULT_OBJECT_VISIBILITY,
@@ -1550,6 +1563,9 @@ export function App() {
       }
       const currentBodyId = focusBodyIdRef.current;
       setSelectedBodyId(bodyId);
+      if (matchesPhoneLayout()) {
+        setSelectedBodyPanelCollapsed(true);
+      }
       if (bodyId === currentBodyId) {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
         setCameraOrientation(
@@ -1626,6 +1642,9 @@ export function App() {
     focusBodyIdRef.current = previousBodyId;
     setFocusBodyId(previousBodyId);
     setSelectedBodyId(previousBodyId);
+    if (matchesPhoneLayout()) {
+      setSelectedBodyPanelCollapsed(true);
+    }
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation(
       previousBodyId === ""
@@ -2678,7 +2697,7 @@ export function App() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === "eclipse" || (tourKind !== null && phoneLayout) ? " is-tour-story" : ""}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -3424,6 +3443,13 @@ export function App() {
                     : "Apollo landing site"}
                 </span>
                 <strong>{selectedBodyDetail.name}</strong>
+                {selectedBodyPanelCollapsed &&
+                phoneLayout &&
+                selectedBodyDetail.size !== undefined ? (
+                  <p className="selected-body-size-line">
+                    {selectedBodyDetail.size}
+                  </p>
+                ) : null}
               </div>
               <div className="selected-body-actions">
                 {selectedBodyPanelCollapsed ? null : (
@@ -3509,7 +3535,7 @@ export function App() {
                 </button>
               </div>
             </div>
-            {selectedBodyPanelCollapsed ||
+            {(selectedBodyPanelCollapsed && !phoneLayout) ||
             !showLabels ||
             !objectVisibility.spacecraft ||
             !hintsAtUnfoundEasterEgg(

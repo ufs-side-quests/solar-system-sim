@@ -131,12 +131,12 @@ p {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.app-shell.is-eclipse-story {
+.app-shell.is-tour-story {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.app-shell.is-eclipse-story .command-bar,
-.app-shell.is-eclipse-story
+.app-shell.is-tour-story .command-bar,
+.app-shell.is-tour-story
   .workspace
   > :is(
     .focus-breadcrumb,
@@ -147,15 +147,15 @@ p {
     .display-panel,
     .timeline-dock
   ),
-.app-shell.is-eclipse-story .reality-navigation-map {
+.app-shell.is-tour-story .reality-navigation-map {
   display: none !important;
 }
 
-.app-shell.is-eclipse-story .scene[data-surface-observer-body] .body-label {
+.app-shell.is-tour-story .scene[data-surface-observer-body] .body-label {
   display: none !important;
 }
 
-.app-shell.is-eclipse-story .scale-tour {
+.app-shell.is-tour-story .scale-tour {
   bottom: 0.85rem;
 }
 
@@ -2645,10 +2645,12 @@ h1 {
   stroke: #83d1ff;
 }
 
+/* Above the body labels (z-index 4) and below every panel (12 and up), so a
+   guide label never draws over the facts card or the tour panel. */
 .wayfinder-label {
   appearance: none;
   position: absolute;
-  z-index: 16;
+  z-index: 11;
   top: 0;
   left: 0;
   min-height: 1rem;
@@ -3255,6 +3257,76 @@ h1 {
   .schematic-body.is-selected span:last-child,
   .schematic-body:hover span:last-child {
     display: inline;
+  }
+}
+
+/* The navigation map is a disclosure: its "Map" chip shows only on a phone. */
+.reality-navigation-map > summary {
+  display: none;
+}
+
+.selected-body-size-line {
+  margin: 0.15rem 0 0;
+  color: #d7ecfb;
+  font-size: 0.78rem;
+}
+
+/* Every phone, portrait or landscape. PHONE_LAYOUT_QUERY in phone-layout.ts
+   holds the same condition. */
+@media (max-width: 650px), (max-height: 500px) {
+  /* A tour shows only the clock and its panel (.is-tour-story). The panel sits
+     at the bottom and scrolls inside itself; its heading (Minimise, Exit) and
+     its actions stay in view. */
+  .app-shell.is-tour-story .scale-tour {
+    bottom: 0.55rem;
+    max-height: 50%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell.is-tour-story :is(.tour-progress-heading, .tour-actions) {
+    position: sticky;
+    z-index: 1;
+    background: var(--surface-strong);
+  }
+
+  .app-shell.is-tour-story .tour-progress-heading {
+    top: 0;
+  }
+
+  .app-shell.is-tour-story .tour-actions {
+    bottom: 0;
+  }
+
+  .reality-navigation-map:not([open]) {
+    width: auto;
+    padding: 0;
+  }
+
+  .reality-navigation-map > summary {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    padding: 0 0.9rem;
+    color: #d7e8f5;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .reality-navigation-map > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* An opened map is a popover above the card and the time controls. */
+  .reality-navigation-map[open] {
+    z-index: 13;
+  }
+
+  .reality-navigation-map[open] > summary {
+    min-height: 2rem;
+    padding: 0 0.2rem;
   }
 }
 

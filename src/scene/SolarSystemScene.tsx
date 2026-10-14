@@ -52,6 +52,7 @@ import {
   segmentClearsSphere,
 } from "../tour/easter-eggs";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
+import { matchesPhoneLayout } from "../phone-layout";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
   ISS_BODY_ID,
@@ -3205,9 +3206,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
     deepSunLabel.textContent = "Sun · Solar System origin";
     deepSunLabel.hidden = true;
     container.append(deepSunLabel);
-    const navigationMap = document.createElement("div");
+    // A disclosure: open on larger screens, a "Map" chip on a phone.
+    const navigationMap = document.createElement("details");
     navigationMap.className = "reality-navigation-map";
     navigationMap.setAttribute("aria-label", "Solar System navigation map");
+    navigationMap.open = !matchesPhoneLayout();
+    const navigationMapSummary = document.createElement("summary");
+    navigationMapSummary.textContent = "Map";
     const navigationMapHeader = document.createElement("div");
     navigationMapHeader.className = "reality-navigation-map__header";
     const navigationMapTitle = document.createElement("strong");
@@ -3325,6 +3330,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     navigationMapHelp.textContent =
       "Select an object; select it again or press Travel to fly there.";
     navigationMap.append(
+      navigationMapSummary,
       navigationMapHeader,
       navigationMapCanvas,
       navigationTooltip,
@@ -7565,10 +7571,26 @@ float saturnRingTransmission(vec3 surfacePosition) {
         } else {
           const viewportWidth = container.clientWidth;
           const viewportHeight = container.clientHeight;
+          // Guides stay in the sky above the time controls, which float over
+          // the bottom of the scene and draw above the guide labels. The
+          // controls never take more than the lower half of the scene.
+          const timeControlsBox = container.parentElement
+            ?.querySelector(".timeline-dock")
+            ?.getBoundingClientRect();
+          const guideHeight =
+            timeControlsBox === undefined || timeControlsBox.height === 0
+              ? viewportHeight
+              : Math.min(
+                  viewportHeight,
+                  Math.max(
+                    viewportHeight / 2,
+                    timeControlsBox.top - container.getBoundingClientRect().top,
+                  ),
+                );
           const viewportMargin = Math.min(
             110,
             viewportWidth / 3,
-            viewportHeight / 3,
+            guideHeight / 3,
           );
           const sunPosition = scenePosition(wayfinderSunState.positionM);
           const focusPosition =
@@ -7616,7 +7638,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               Math.max(viewportMargin, focusScreen.x),
             ),
             y: Math.min(
-              viewportHeight - viewportMargin,
+              guideHeight - viewportMargin,
               Math.max(viewportMargin, focusScreen.y),
             ),
           };
@@ -7665,7 +7687,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               pointInsideViewport(
                 rawTargetScreen,
                 viewportWidth,
-                viewportHeight,
+                guideHeight,
                 viewportMargin,
               );
             let location: "behind" | "off-screen" | "on-screen" = "on-screen";
@@ -7688,7 +7710,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 guideOrigin,
                 direction,
                 viewportWidth,
-                viewportHeight,
+                guideHeight,
                 viewportMargin,
               );
             }
@@ -7736,7 +7758,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
             const labelY = Math.min(
-              viewportHeight - 30,
+              guideHeight - 30,
               Math.max(30, endpoint.y + laneOffset),
             );
             const previousLabelX = Number(visual.label.dataset["positionX"]);
