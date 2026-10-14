@@ -35,7 +35,6 @@ export type SimulationState = Readonly<{
 export type PhysicsWorkerApi = {
   initialize(initialState: SimulationInitialState): Promise<SimulationState>;
   integrateTo(timeSeconds: number): Promise<SimulationState>;
-  restore(state: SimulationState): Promise<SimulationState>;
   integrateSeries(
     timeSeconds: readonly number[],
   ): Promise<readonly SimulationState[]>;

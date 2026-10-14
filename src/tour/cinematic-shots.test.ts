@@ -9,6 +9,10 @@ const DAY_SECONDS = 86_400;
 describe("cinematic shots", () => {
   it("keeps every Cool Shot physically scaled in Reality mode", () => {
     expect(CINEMATIC_SHOTS).not.toHaveLength(0);
+    for (const shot of CINEMATIC_SHOTS) {
+      expect(shot.bodyVisibilityPercent, shot.name).toBe(100);
+    }
+    // The planets race is the one Orrery shot.
     const portraits = CINEMATIC_SHOTS.filter(
       (shot) => shot !== PLANETS_RACING_SHOT,
     );
@@ -16,7 +20,6 @@ describe("cinematic shots", () => {
     expect(portraits).not.toHaveLength(0);
     for (const shot of portraits) {
       expect(shot.viewMode, shot.name).toBe("reality");
-      expect(shot.bodyVisibilityPercent, shot.name).toBe(100);
     }
   });
 
@@ -67,22 +70,21 @@ describe("cinematic shots", () => {
   });
 
   it("repeats the race inside the validated ephemeris window", () => {
-    const start = PLANETS_RACING_SHOT.startTimeSeconds;
+    // The race restarts from the epoch (time zero), so its loop end is the
+    // whole span it shows.
     const end = PLANETS_RACING_SHOT.loopEndTimeSeconds;
-    if (start === null || end === null) {
-      throw new Error("Planets racing must seek to a start and loop");
+    if (end === null) {
+      throw new Error("Planets racing must loop");
     }
-    expect(start).toBeGreaterThanOrEqual(-VALIDATED_WINDOW_SECONDS);
+    expect(end).toBeGreaterThan(0);
     expect(end).toBeLessThanOrEqual(VALIDATED_WINDOW_SECONDS);
-    // Each loop shows several Mercury laps.
+    // Each loop shows Mercury lap Earth at least three times (one synodic
+    // period is about 115.9 days).
+    const synodicDays = 1 / (1 / 87.97 - 1 / 365.26);
+    expect(end / DAY_SECONDS / synodicDays).toBeGreaterThanOrEqual(3);
     expect(
-      (end - start) / PLANETS_RACING_SHOT.timeRateSecondsPerSecond,
-    ).toBeGreaterThan(15);
-    for (const shot of CINEMATIC_SHOTS) {
-      if (shot.loopEndTimeSeconds !== null) {
-        expect(shot.startTimeSeconds, shot.name).not.toBeNull();
-      }
-    }
+      CINEMATIC_SHOTS.filter((shot) => shot.loopEndTimeSeconds !== null),
+    ).toEqual([PLANETS_RACING_SHOT]);
   });
 
   it("fits Mars's orbit across a portrait phone view", () => {

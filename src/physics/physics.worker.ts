@@ -43,9 +43,6 @@ const api: PhysicsWorkerApi = {
   async integrateTo(timeSeconds: number): Promise<SimulationState> {
     return (await engine()).integrateTo(timeSeconds);
   },
-  async restore(state: SimulationState): Promise<SimulationState> {
-    return (await engine()).restore(state);
-  },
   async integrateSeries(
     timeSeconds: readonly number[],
   ): Promise<readonly SimulationState[]> {

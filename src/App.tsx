@@ -1059,23 +1059,13 @@ export function App() {
             transitionDurationMs: 0,
           });
         }
-        // The state the last seek reached. A looping cool shot seeks to the
-        // same start again and again; restoring it is instant, where
-        // integrating the whole span again freezes the view for seconds.
-        let lastSeek: { targetSeconds: number; state: SimulationState } | null =
-          null;
         while (isActive()) {
           const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
           if (directSeekTimeSeconds !== undefined) {
             directSeekTimeSecondsRef.current = undefined;
-            const rawNextState: SimulationState =
-              lastSeek?.targetSeconds === directSeekTimeSeconds
-                ? await client.api.restore(lastSeek.state)
-                : await client.api.integrateTo(directSeekTimeSeconds);
-            lastSeek = {
-              targetSeconds: directSeekTimeSeconds,
-              state: rawNextState,
-            };
+            const rawNextState = await client.api.integrateTo(
+              directSeekTimeSeconds,
+            );
             solverTime = rawNextState.timeSeconds;
             const nextState = withKnownSatellites(rawNextState);
             previousState = nextState;
@@ -1786,6 +1776,18 @@ export function App() {
         ? activeCinematicShot.cameraTargetBodyId
         : undefined;
 
+  // A fresh worker initialised with the epoch state, so the clock returns to
+  // the snapshot epoch at once instead of integrating back to it.
+  const restartSimulation = useCallback((): void => {
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = undefined;
+    setSeeking(false);
+    setPlaybackBuffered(false);
+    setError(undefined);
+    setClearTrailsToken((current) => current + 1);
+    setSimulationRunToken((current) => current + 1);
+  }, []);
+
   const presentCinematicShot = (shot: CinematicShot): void => {
     const requestedRateIndex = TIME_RATES.findIndex(
       (rate) => rate.secondsPerSecond === shot.timeRateSecondsPerSecond,
@@ -1793,14 +1795,8 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    if (shot.loopEndTimeSeconds !== null && shot.startTimeSeconds === null) {
-      throw new Error(`${shot.name} loops but has no start time`);
-    }
-    if (shot.startTimeSeconds !== null) {
-      manualDeltaSecondsRef.current = 0;
-      directSeekTimeSecondsRef.current = shot.startTimeSeconds;
-      setSeeking(true);
-      setClearTrailsToken((current) => current + 1);
+    if (shot.loopEndTimeSeconds !== null) {
+      restartSimulation();
     }
     setTourPlaying(false);
     setTourKind(null);
@@ -1837,44 +1833,21 @@ export function App() {
   };
 
   // The solver frame, not the displayed state: it changes in the same render
-  // that ends a seek, so a finished seek is never judged on a stale time.
+  // that a new run starts from the epoch, so a restart is never repeated on a
+  // stale time.
   const activeShotTimeSeconds = frame?.end.timeSeconds;
-  const activeShotStartTimeSeconds =
-    activeCinematicShot?.startTimeSeconds ?? null;
   const activeShotLoopEndTimeSeconds =
     activeCinematicShot?.loopEndTimeSeconds ?? null;
   useEffect(() => {
-    const startTimeSeconds = activeShotStartTimeSeconds;
-    const loopEndTimeSeconds = activeShotLoopEndTimeSeconds;
     if (
-      startTimeSeconds === null ||
-      loopEndTimeSeconds === null ||
+      activeShotLoopEndTimeSeconds === null ||
       activeShotTimeSeconds === undefined ||
-      seeking
+      activeShotTimeSeconds <= activeShotLoopEndTimeSeconds
     ) {
       return;
     }
-    if (
-      activeShotTimeSeconds >= startTimeSeconds &&
-      activeShotTimeSeconds <= loopEndTimeSeconds
-    ) {
-      return;
-    }
-    // Running backward wraps to the end, forward to the start, so the shot
-    // repeats inside its window instead of leaving it.
-    manualDeltaSecondsRef.current = 0;
-    directSeekTimeSecondsRef.current =
-      activeShotTimeSeconds < startTimeSeconds
-        ? loopEndTimeSeconds
-        : startTimeSeconds;
-    setSeeking(true);
-    setClearTrailsToken((current) => current + 1);
-  }, [
-    activeShotLoopEndTimeSeconds,
-    activeShotStartTimeSeconds,
-    activeShotTimeSeconds,
-    seeking,
-  ]);
+    restartSimulation();
+  }, [activeShotLoopEndTimeSeconds, activeShotTimeSeconds, restartSimulation]);
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
@@ -2420,12 +2393,19 @@ export function App() {
     ? apolloLandingSiteById.get(selectedBodyId)
     : undefined;
 
+  // A looping shot only runs forward from the epoch: going backward ends it.
   const startPlaying = (nextDirection: -1 | 1): void => {
+    if (nextDirection === -1) {
+      setActiveCinematicShotId(null);
+    }
     setDirection(nextDirection);
     setPlaying(true);
   };
 
   const queueStep = (stepDirection: -1 | 1): void => {
+    if (stepDirection === -1) {
+      setActiveCinematicShotId(null);
+    }
     setPlaying(false);
     manualDeltaSecondsRef.current +=
       stepDirection * selectedTimeRate.secondsPerSecond;
@@ -2677,7 +2657,10 @@ export function App() {
           </span>
         </div>
 
-        {activeCinematicShot === undefined || !playing ? null : (
+        {/* The discovery toast takes the caption's place while it shows. */}
+        {activeCinematicShot === undefined ||
+        !playing ||
+        discoveredEasterEggId !== null ? null : (
           <p className="cinematic-shot-caption" role="status">
             <strong>{activeCinematicShot.name}</strong>
             <span>{activeCinematicShot.description}</span>
@@ -2697,17 +2680,7 @@ export function App() {
         {error !== undefined ? (
           <p className="error" role="alert">
             Simulation stopped: {error}{" "}
-            <button
-              type="button"
-              onClick={() => {
-                manualDeltaSecondsRef.current = 0;
-                directSeekTimeSecondsRef.current = undefined;
-                setSeeking(false);
-                setPlaybackBuffered(false);
-                setError(undefined);
-                setSimulationRunToken((current) => current + 1);
-              }}
-            >
+            <button type="button" onClick={restartSimulation}>
               Restart simulation
             </button>
           </p>

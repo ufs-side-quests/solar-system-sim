@@ -130,14 +130,11 @@ test("one tap from the first screen sets the planets racing round the Sun", asyn
     "Closer planets go round faster. Watch Mercury lap Earth.",
   );
   const timeOutput = page.locator(".time-readout output");
-  // The shot first seeks to 330 days before the epoch. Trails grow only once
-  // the race runs from there.
-  await expect
-    .poll(
-      async () => Number(await timeOutput.getAttribute("data-time-seconds")),
-      { timeout: 30_000 },
-    )
-    .toBeLessThan(-200 * 86_400);
+  // The race runs from the snapshot epoch.
+  const raceDays =
+    Number(await timeOutput.getAttribute("data-time-seconds")) / 86_400;
+  expect(raceDays).toBeGreaterThanOrEqual(0);
+  expect(raceDays).toBeLessThan(120);
   await expect(scene).toHaveAttribute("data-planet-trails-visible", "true");
   await expect(page.locator(".run-status")).toContainText(
     "30 days/s requested",
@@ -183,52 +180,168 @@ async function startPlanetsRacing(
   return scene;
 }
 
-test("the planets race repeats inside the validated ephemeris window", async ({
+type RaceSample = Readonly<{
+  atMs: number;
+  days: number;
+  seeking: boolean;
+  outside: boolean;
+}>;
+
+test("the planets race starts at once from any date and repeats from the epoch", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1024, height: 768 });
-  await startPlanetsRacing(page);
+  await page.goto("/");
   const timeOutput = page.locator(".time-readout output");
-  const runStatus = page.locator(".run-status");
-  const validity = page.locator(".model-validity");
+  await expect(timeOutput).toHaveAttribute("data-time-seconds", /\d/u, {
+    timeout: 30_000,
+  });
   const simulationDays = async (): Promise<number> =>
     Number(await timeOutput.getAttribute("data-time-seconds")) / 86_400;
-  // The shot first seeks to 330 days before the epoch.
-  await expect.poll(simulationDays, { timeout: 30_000 }).toBeLessThan(-300);
-  await expect(runStatus).toContainText("30 days/s requested");
+  // Move the clock well away from the epoch first.
+  await page.getByRole("slider", { name: "Playback rate" }).fill("5");
+  await expect(
+    page.getByText("30 days / second", { exact: true }),
+  ).toBeVisible();
+  await expect.poll(simulationDays, { timeout: 30_000 }).toBeGreaterThan(200);
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Run forward" })).toBeVisible();
+  expect(await simulationDays()).toBeGreaterThan(200);
 
-  let previousDays = await simulationDays();
-  let loops = 0;
-  let seekingSince: number | null = null;
-  let longestSeekMs = 0;
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 30_000) {
-    await expect(validity).toHaveAttribute(
-      "data-outside-validated-window",
-      "false",
-    );
-    const now = Date.now();
-    if ((await runStatus.textContent())?.startsWith("Seeking") === true) {
-      seekingSince ??= now;
-      longestSeekMs = Math.max(longestSeekMs, now - seekingSince);
-    } else {
-      seekingSince = null;
-    }
-    const days = await simulationDays();
-    // A jump back of more than 300 days is the race starting again.
-    if (previousDays - days > 300) {
-      loops += 1;
-    }
-    previousDays = days;
-    await page.waitForTimeout(200);
+  // Sample the clock on every animation frame from the tap onward.
+  await page.evaluate(() => {
+    const samples: RaceSample[] = [];
+    (window as unknown as { raceSamples: RaceSample[] }).raceSamples = samples;
+    const sample = (): void => {
+      const output = document.querySelector(".time-readout output");
+      const validity = document.querySelector(".model-validity");
+      samples.push({
+        atMs: performance.now(),
+        days: Number(output?.getAttribute("data-time-seconds")) / 86_400,
+        seeking:
+          document
+            .querySelector(".run-status")
+            ?.textContent.startsWith("Seeking") === true,
+        outside:
+          validity?.getAttribute("data-outside-validated-window") === "true",
+      });
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  const tappedAtMs = await page.evaluate(() => performance.now());
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+  // One loop is 360 days at 30 days per second, about 12 seconds.
+  await page.waitForTimeout(18_000);
+  const samples = await page.evaluate(
+    () => (window as unknown as { raceSamples: RaceSample[] }).raceSamples,
+  );
+
+  // The first tap starts the race at the epoch at once.
+  const started = samples.find(
+    (sample) => sample.atMs >= tappedAtMs && sample.days < 1,
+  );
+  if (started === undefined) {
+    throw new Error("The race never started at the epoch");
   }
-  expect(loops).toBeGreaterThanOrEqual(1);
-  // Starting again must not freeze the race while the past is recomputed.
-  expect(longestSeekMs).toBeLessThan(2_500);
+  const firstTapMs = started.atMs - tappedAtMs;
+  // The loop point: the clock reaches 360 days, then falls back to the epoch.
+  const loopPointIndex = samples.findIndex(
+    (sample) => sample.atMs > started.atMs && sample.days >= 359,
+  );
+  const restarted = samples
+    .slice(loopPointIndex)
+    .find((sample) => sample.days < 1);
+  const loopPoint = samples[loopPointIndex];
+  if (loopPoint === undefined || restarted === undefined) {
+    throw new Error("The race never restarted from the epoch");
+  }
+  const loopMs = restarted.atMs - loopPoint.atMs;
+  let longestSeekMs = 0;
+  let seekingSinceMs: number | null = null;
+  for (const sample of samples) {
+    seekingSinceMs = sample.seeking ? (seekingSinceMs ?? sample.atMs) : null;
+    if (seekingSinceMs !== null) {
+      longestSeekMs = Math.max(longestSeekMs, sample.atMs - seekingSinceMs);
+    }
+  }
+  console.log(
+    JSON.stringify({
+      firstTapMs,
+      loopMs,
+      longestSeekMs,
+      loopPointDays: loopPoint.days,
+    }),
+  );
+  expect(firstTapMs).toBeLessThan(2_000);
+  expect(loopMs).toBeLessThan(2_000);
+  expect(longestSeekMs).toBeLessThan(2_000);
+  expect(samples.filter((sample) => sample.outside)).toEqual([]);
+  expect(Math.max(...samples.map((sample) => sample.days))).toBeLessThan(365);
   await expect(page.getByText(/Outside ±1 year/u)).toHaveCount(0);
   await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+});
+
+test("running the clock backward ends the planets race", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await startPlanetsRacing(page);
+  const racingButton = page.getByRole("button", {
+    name: "Planets racing",
+    exact: true,
+  });
+  const timeOutput = page.locator(".time-readout output");
+  const simulationDays = async (): Promise<number> =>
+    Number(await timeOutput.getAttribute("data-time-seconds")) / 86_400;
+  await expect.poll(simulationDays).toBeGreaterThan(30);
+
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(racingButton).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Run backward" }).click();
+
+  await expect(racingButton).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".cinematic-shot-caption")).toHaveCount(0);
+  // The clock keeps running backward, below the epoch, as without the shot.
+  await expect.poll(simulationDays, { timeout: 20_000 }).toBeLessThan(-10);
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+});
+
+test("a discovery message takes the shot caption's place", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  // Selecting the Roadster finds it, an easter egg.
+  await selectFocus(
+    page.getByRole("combobox", { name: "Focus" }),
+    "Tesla Roadster and Starman",
+  );
+  const toast = page.getByRole("status").filter({ hasText: "You found" });
+  await expect(toast).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+
+  await expect(scene).toHaveAttribute("data-view-mode", "orrery");
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  const caption = page.locator(".cinematic-shot-caption");
+  await expect(toast).toBeVisible();
+  await expect(caption).toHaveCount(0);
+  // The caption comes back when the message goes.
+  await expect(toast).toHaveCount(0, { timeout: 10_000 });
+  await expect(caption).toBeVisible();
 });
 
 test("a tour ends the planets racing shot", async ({ page }) => {
@@ -297,6 +410,54 @@ for (const viewport of [
     });
   });
 }
+
+test("the shot caption clears the camera journey label at 768 px", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await selectFocus(page.getByRole("combobox", { name: "Focus" }), "Earth");
+  await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 40_000 },
+  );
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+  const caption = page.locator(".cinematic-shot-caption");
+  const journey = page.locator(".camera-journey");
+  await expect(caption).toBeVisible();
+  // The camera flies from Earth to the Sun with its journey label showing.
+  await expect(journey).toBeVisible();
+  let sampled = 0;
+  while (await journey.isVisible()) {
+    const captionBox = await caption.boundingBox();
+    const journeyBox = await journey.boundingBox();
+    if (captionBox === null || journeyBox === null) {
+      break;
+    }
+    sampled += 1;
+    const overlaps =
+      captionBox.x < journeyBox.x + journeyBox.width &&
+      journeyBox.x < captionBox.x + captionBox.width &&
+      captionBox.y < journeyBox.y + journeyBox.height &&
+      journeyBox.y < captionBox.y + captionBox.height;
+    expect(overlaps, JSON.stringify({ captionBox, journeyBox })).toBe(false);
+    await page.waitForTimeout(100);
+  }
+  expect(sampled).toBeGreaterThan(0);
+});
 
 test("the planets race fits Mars's orbit across a phone", async ({ page }) => {
   test.setTimeout(90_000);

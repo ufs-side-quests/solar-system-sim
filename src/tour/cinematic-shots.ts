@@ -11,10 +11,9 @@ export type CinematicShot = Readonly<{
   cameraDistanceAu?: number;
   cameraZoom: number;
   timeRateSecondsPerSecond: number;
-  // Simulation time the shot seeks to, or null to keep the current time.
-  startTimeSeconds: number | null;
-  // When time passes this, the shot seeks back to its start and clears the
-  // trails, so it repeats; null for shots that run on. Requires a start time.
+  // A looping shot restarts the simulation from the snapshot epoch (time
+  // zero) and restarts it again, with clear trails, when time passes this;
+  // null for shots that run on from the current time.
   loopEndTimeSeconds: number | null;
   viewMode: Exclude<ViewMode, "schematic">;
   bodyVisibilityPercent: number;
@@ -32,9 +31,8 @@ export const PLANETS_RACING_SHOT: CinematicShot = {
   cameraDistanceAu: 6,
   cameraZoom: 1,
   timeRateSecondsPerSecond: 30 * 86_400,
-  // Stay inside the ±1 year validated ephemeris window around the epoch.
-  startTimeSeconds: -330 * 86_400,
-  loopEndTimeSeconds: 330 * 86_400,
+  // Stay inside the ±1 year validated ephemeris window after the epoch.
+  loopEndTimeSeconds: 360 * 86_400,
   viewMode: "orrery",
   bodyVisibilityPercent: 100,
   orbitGuides: true,
@@ -54,7 +52,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.00018,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
@@ -72,7 +69,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.0024,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
@@ -90,7 +86,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.0018,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
@@ -108,7 +103,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.00005,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 600,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
@@ -125,7 +119,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     orientation: "sun-facing",
     cameraZoom: 1.8,
     timeRateSecondsPerSecond: 86_400,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
@@ -143,7 +136,6 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     orientation: "parent-facing",
     cameraZoom: 16,
     timeRateSecondsPerSecond: 3_600,
-    startTimeSeconds: null,
     loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,

@@ -17,10 +17,6 @@ const VZ = 6;
 export class ReboundEngine {
   readonly #module: ReboundModule;
   #bodyIds: string[] = [];
-  // REBOUND starts every simulation at its own time zero. Gravity does not
-  // depend on absolute time, so a restored state runs from REBOUND time zero
-  // and this origin maps REBOUND time back to simulation time.
-  #timeOriginSeconds = 0;
 
   public constructor(module: ReboundModule) {
     this.#module = module;
@@ -32,24 +28,15 @@ export class ReboundEngine {
     const initialState = simulationInitialStateSchema.parse(
       untrustedInitialState,
     );
-    this.#create(initialState.bodies, 0);
+    this.#assertSuccess(this.#module._sste_create(1), "create simulation");
+    this.#bodyIds = [];
+    for (const body of initialState.bodies) {
+      this.#addBody(body);
+    }
     this.#assertSuccess(
       this.#module._sste_move_to_barycentre(),
       "move to barycentre",
     );
-    return this.readState();
-  }
-
-  // Restarts the integration from a state this engine computed earlier, so a
-  // repeated seek to the same time does not integrate the whole span again.
-  public restore(state: SimulationState): SimulationState {
-    if (!Number.isFinite(state.timeSeconds)) {
-      throw new Error("Restored simulation time must be finite");
-    }
-    const { bodies } = simulationInitialStateSchema.parse({
-      bodies: state.bodies,
-    });
-    this.#create(bodies, state.timeSeconds);
     return this.readState();
   }
 
@@ -58,7 +45,7 @@ export class ReboundEngine {
       throw new Error("Integration target time must be finite");
     }
     this.#assertSuccess(
-      this.#module._sste_integrate(timeSeconds - this.#timeOriginSeconds),
+      this.#module._sste_integrate(timeSeconds),
       "integrate simulation",
     );
     return this.readState();
@@ -85,7 +72,7 @@ export class ReboundEngine {
         this.#readBodyValue(bodyIndex, VZ),
       ] as const,
     }));
-    const timeSeconds = this.#module._sste_time() + this.#timeOriginSeconds;
+    const timeSeconds = this.#module._sste_time();
     const energy = this.#module._sste_energy();
     if (!Number.isFinite(timeSeconds) || !Number.isFinite(energy)) {
       throw new Error("Physics engine returned non-finite simulation metadata");
@@ -95,18 +82,6 @@ export class ReboundEngine {
       energy,
       bodies: Object.freeze(bodies),
     });
-  }
-
-  #create(
-    bodies: readonly BodyInitialState[],
-    timeOriginSeconds: number,
-  ): void {
-    this.#assertSuccess(this.#module._sste_create(1), "create simulation");
-    this.#bodyIds = [];
-    this.#timeOriginSeconds = timeOriginSeconds;
-    for (const body of bodies) {
-      this.#addBody(body);
-    }
   }
 
   #addBody(body: BodyInitialState): void {
