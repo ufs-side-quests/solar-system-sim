@@ -241,6 +241,8 @@ const PERSPECTIVE_CAMERA_DIRECTION = ECLIPTIC_FORWARD.clone()
 const SOLAR_SYSTEM_CAMERA_POSITION =
   PERSPECTIVE_CAMERA_DIRECTION.clone().multiplyScalar(90);
 const VOYAGER_MODEL_HGA_BORESIGHT = new Vector3(0, 1, 0);
+// Map dots closer than this, in map canvas pixels, read as one spot.
+const NAVIGATION_MAP_SAME_SPOT_PX = 2;
 const NAVIGATION_MAP_RANGES = [
   { value: "auto", label: "Auto" },
   { value: "2", label: "2 AU" },
@@ -643,7 +645,11 @@ type SolarSystemSceneProps = Readonly<{
   eclipseShadowVisible: boolean;
   foundEasterEggIds: ReadonlySet<EasterEggId>;
   onSelectBody(bodyId: string): void;
+  // A first press on a label, a body in the scene or the map.
+  onPickBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
+  // The navigation map's bottom edge in scene pixels, or null when hidden.
+  onNavigationMapBottomChange(bottomPx: number | null): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
   onOrbitViewChange(enabled: boolean): void;
   onSemanticZoomChange(level: SemanticZoomLevel): void;
@@ -705,7 +711,9 @@ export function SolarSystemScene({
   eclipseShadowVisible,
   foundEasterEggIds,
   onSelectBody,
+  onPickBody,
   onFocusBody,
+  onNavigationMapBottomChange,
   onOrientationChange,
   onOrbitViewChange,
   onSemanticZoomChange,
@@ -870,13 +878,16 @@ export function SolarSystemScene({
         : focusBodyIdRef.current === bodyId;
     // One gesture for every label and canvas pick, so a tap, a click and the
     // Enter key all work alike: the first press selects the body and shows its
-    // facts; a press on the selected body flies there.
+    // facts; a press on the selected body flies there. Once there, a further
+    // press changes nothing.
     const pickBody = (bodyId: string): void => {
-      if (selectedBodyIdRef.current === bodyId && !isFlownTo(bodyId)) {
-        onFocusBody(bodyId);
+      if (selectedBodyIdRef.current !== bodyId) {
+        onPickBody(bodyId);
         return;
       }
-      onSelectBody(bodyId);
+      if (!isFlownTo(bodyId)) {
+        onFocusBody(bodyId);
+      }
     };
     const showLabelSelection = (label: HTMLElement, bodyId: string): void => {
       const selected = selectedBodyIdRef.current === bodyId;
@@ -3187,7 +3198,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     navigationMapCanvas.setAttribute("role", "application");
     navigationMapCanvas.setAttribute(
       "aria-label",
-      "Top-down map. Click an object to select it and double-click to travel.",
+      "Top-down map. Select an object; select it again or press Travel to fly there.",
     );
     const navigationTooltip = document.createElement("span");
     navigationTooltip.className = "reality-navigation-map__tooltip";
@@ -3278,7 +3289,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     const navigationMapScale = document.createElement("small");
     const navigationMapHelp = document.createElement("small");
     navigationMapHelp.textContent =
-      "Click to select · double-click or Travel to fly";
+      "Select an object; select it again or press Travel to fly there.";
     navigationMap.append(
       navigationMapHeader,
       navigationMapCanvas,
@@ -3701,7 +3712,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
     };
 
-    // A double-click on a body is two picks; on the ground it resets the look.
+    // A double-click on a body is two picks. In surface view a double-click
+    // returns the look to the target.
     const handleDoubleClick = (): void => {
       if (surfaceObserverRef.current !== null) {
         surfaceFreeLook = false;
@@ -4098,6 +4110,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
     });
     resizeObserver.observe(container);
     resize(container.clientWidth, container.clientHeight);
+    // The facts card stacks below the navigation map, so the map reports its
+    // bottom edge whenever its size, the scene size or its visibility changes.
+    const navigationMapObserver = new ResizeObserver(() => {
+      const height = navigationMap.offsetHeight;
+      onNavigationMapBottomChange(
+        height === 0 ? null : navigationMap.offsetTop + height,
+      );
+    });
+    navigationMapObserver.observe(navigationMap);
+    navigationMapObserver.observe(container);
 
     const applyVisualQuality = (quality: VisualQuality): void => {
       const profile = VISUAL_QUALITY_PROFILES[quality];
@@ -7251,6 +7273,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
           const isFocused = destination.id === focusBodyIdRef.current;
           const isSelectedDestination =
             destination.id === navigationDestinationSelect.value;
+          // At map scale a moon or a nearby craft sits on its planet's dot.
+          // The first dot drawn there (the planet) stays the one a press
+          // picks, unless the hidden object is the focus or the destination.
+          if (
+            !isFocused &&
+            !isSelectedDestination &&
+            navigationMapHits.some(
+              (hit) =>
+                Math.hypot(hit.x - x, hit.y - y) < NAVIGATION_MAP_SAME_SPOT_PX,
+            )
+          ) {
+            continue;
+          }
           navigationContext.fillStyle =
             destination.group === "Spacecraft"
               ? "#a5e3c2"
@@ -8853,6 +8888,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       window.clearTimeout(startupTimer);
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
+      navigationMapObserver.disconnect();
+      onNavigationMapBottomChange(null);
       controls.dispose();
       dracoLoader.dispose();
       controls.removeEventListener("start", handleControlStart);
@@ -8944,7 +8981,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
     onFocusBody,
     onGpuError,
     onGpuStatus,
+    onNavigationMapBottomChange,
     onOrientationChange,
+    onPickBody,
     onSelectBody,
     onSemanticZoomChange,
   ]);

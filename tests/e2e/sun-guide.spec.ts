@@ -69,9 +69,7 @@ test("keeps the Sun labelled with a live focus distance and bearing line", async
     name: /Physics-driven Solar System/u,
   });
   const focus = page.getByRole("combobox", { name: "Focus" });
-  const sunLabel = page
-    .getByRole("button", { name: "Sun", exact: true })
-    .and(page.locator(".sun-guide-label"));
+  const sunLabel = page.getByRole("button", { name: "Sun", exact: true });
   const sunLine = page.locator(".sun-guide-line");
 
   await expect(scene).toHaveAttribute("data-sun-guide-visible", "true", {

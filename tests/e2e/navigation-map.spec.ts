@@ -58,3 +58,48 @@ test("chooses an AU map range and travels to an object", async ({
   await expect(scene).toHaveAttribute("data-focus-body", "saturn");
   await expect(navigationMap).toHaveAttribute("data-destination", "saturn");
 });
+
+test("keeps the facts card clear of the navigation map's controls", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pause" }).click();
+  const navigationMap = page.locator(".reality-navigation-map");
+  await expect(navigationMap).toBeVisible({ timeout: 30_000 });
+  await page
+    .getByRole("combobox", { name: "Navigation destination" })
+    .selectOption("saturn");
+  const card = page.locator(".selected-body-detail");
+  await expect(card).toBeVisible();
+  const travel = page.getByRole("button", { name: "Travel" });
+
+  for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(
+        async () => {
+          const [mapBox, cardBox] = await Promise.all([
+            navigationMap.boundingBox(),
+            card.boundingBox(),
+          ]);
+          if (mapBox === null || cardBox === null) {
+            throw new Error("The map or the facts card has no bounding box");
+          }
+          // The card starts below the map's bottom edge.
+          return cardBox.y - (mapBox.y + mapBox.height);
+        },
+        {
+          message: `card below map at ${String(viewport.width)}x${String(viewport.height)}`,
+        },
+      )
+      .toBeGreaterThanOrEqual(0);
+    await travel.click({ trial: true });
+  }
+});
