@@ -55,7 +55,7 @@ import {
 } from "../tour/easter-eggs";
 import { bodyDisplayName } from "./body-display-name";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
-import { matchesPhoneLayout } from "../phone-layout";
+import { PHONE_LAYOUT_QUERY } from "../phone-layout";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
   ISS_BODY_ID,
@@ -3198,13 +3198,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
     deepSunLabel.textContent = "Sun · Solar System origin";
     deepSunLabel.hidden = true;
     container.append(deepSunLabel);
-    // A disclosure: open on larger screens, a "Map" chip on a phone.
+    // A disclosure: open on larger screens, a "Mini map" chip on a phone. A
+    // resize or a turn into or out of the phone layout sets it again.
     const navigationMap = document.createElement("details");
     navigationMap.className = "reality-navigation-map";
     navigationMap.setAttribute("aria-label", "Solar System navigation map");
-    navigationMap.open = !matchesPhoneLayout();
+    const phoneLayoutQuery = window.matchMedia(PHONE_LAYOUT_QUERY);
+    const syncNavigationMapOpen = (): void => {
+      navigationMap.open = !phoneLayoutQuery.matches;
+    };
+    syncNavigationMapOpen();
+    phoneLayoutQuery.addEventListener("change", syncNavigationMapOpen);
     const navigationMapSummary = document.createElement("summary");
-    navigationMapSummary.textContent = "Map";
+    navigationMapSummary.textContent = "Mini map";
     const navigationMapHeader = document.createElement("div");
     navigationMapHeader.className = "reality-navigation-map__header";
     const navigationMapTitle = document.createElement("strong");
@@ -5201,6 +5207,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         smoothedSpeedMps: 0,
       };
       lastCameraTransitionSequence = sequence;
+      // On a phone the open map covers the facts card; a flight closes it.
+      if (phoneLayoutQuery.matches) {
+        navigationMap.open = false;
+      }
       camera.position.copy(startPosition);
       controls.target.copy(startTarget);
       camera.up.copy(startUp);
@@ -7665,22 +7675,42 @@ float saturnRingTransmission(vec3 surfacePosition) {
         } else {
           const viewportWidth = container.clientWidth;
           const viewportHeight = container.clientHeight;
-          // Guides stay in the sky above the time controls, which float over
-          // the bottom of the scene and draw above the guide labels. The
-          // controls never take more than the lower half of the scene.
-          const timeControlsBox = container.parentElement
-            ?.querySelector(".timeline-dock")
-            ?.getBoundingClientRect();
-          const guideHeight =
-            timeControlsBox === undefined || timeControlsBox.height === 0
-              ? viewportHeight
-              : Math.min(
-                  viewportHeight,
-                  Math.max(
-                    viewportHeight / 2,
-                    timeControlsBox.top - container.getBoundingClientRect().top,
-                  ),
-                );
+          // Guides stay out from under the bottom panels, which float over
+          // the scene and draw above the guide labels: the time controls and
+          // the short facts card. Beside a panel the sky stays open down to
+          // the bottom edge. A panel never takes more than the lower half of
+          // the scene.
+          const sceneBox = container.getBoundingClientRect();
+          const guideObstacles = [
+            ...(container.parentElement?.querySelectorAll(
+              ".timeline-dock, .selected-body-detail.is-collapsed",
+            ) ?? []),
+          ]
+            .map((panel) => panel.getBoundingClientRect())
+            .filter((box) => box.height > 0)
+            .map((box) => ({
+              left: box.left - sceneBox.left,
+              right: box.right - sceneBox.left,
+              top: Math.min(
+                viewportHeight,
+                Math.max(viewportHeight / 2, box.top - sceneBox.top),
+              ),
+            }));
+          const guideHeight = Math.min(
+            viewportHeight,
+            ...guideObstacles.map((obstacle) => obstacle.top),
+          );
+          // The lowest y a guide may use across [left, right] of the scene.
+          const guideFloor = (left: number, right: number): number =>
+            Math.min(
+              viewportHeight,
+              ...guideObstacles
+                .filter(
+                  (obstacle) =>
+                    right >= obstacle.left && left <= obstacle.right,
+                )
+                .map((obstacle) => obstacle.top),
+            );
           const viewportMargin = Math.min(
             110,
             viewportWidth / 3,
@@ -7731,6 +7761,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
               viewportWidth - viewportMargin,
               Math.max(viewportMargin, focusScreen.x),
             ),
+            // Always above the top of every bottom panel, so a ray that ends
+            // under one can be cut short at that height.
             y: Math.min(
               guideHeight - viewportMargin,
               Math.max(viewportMargin, focusScreen.y),
@@ -7781,7 +7813,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               pointInsideViewport(
                 rawTargetScreen,
                 viewportWidth,
-                guideHeight,
+                guideFloor(rawTargetScreen.x, rawTargetScreen.x),
                 viewportMargin,
               );
             let location: "behind" | "off-screen" | "on-screen" = "on-screen";
@@ -7804,9 +7836,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 guideOrigin,
                 direction,
                 viewportWidth,
-                guideHeight,
+                viewportHeight,
                 viewportMargin,
               );
+              if (
+                guideFloor(endpoint.x, endpoint.x) - viewportMargin <
+                endpoint.y
+              ) {
+                endpoint = rayToViewportEdge(
+                  guideOrigin,
+                  direction,
+                  viewportWidth,
+                  guideHeight,
+                  viewportMargin,
+                );
+              }
             }
             const hasLine = originBodyId !== targetBodyId;
             visual.line.style.display = hasLine ? "" : "none";
@@ -7853,7 +7897,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
             const labelY = Math.min(
-              guideHeight - 30,
+              guideFloor(labelX, labelX + labelWidth) - 30,
               Math.max(30, endpoint.y + laneOffset),
             );
             const previousLabelX = Number(visual.label.dataset["positionX"]);
@@ -9087,6 +9131,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         "change",
         handleNavigationDestinationChange,
       );
+      phoneLayoutQuery.removeEventListener("change", syncNavigationMapOpen);
       navigationTravelButton.removeEventListener(
         "click",
         travelToNavigationDestination,

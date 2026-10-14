@@ -191,12 +191,6 @@ for (const viewport of [
     await page.goto("/");
     const scene = await waitForScene(page);
     await focusBody(page, scene, "Saturn");
-    // On a phone a flight leaves the card short; the facts are one tap away.
-    if (viewport.width <= 650) {
-      await page
-        .getByRole("button", { name: "Expand selected body details" })
-        .click();
-    }
 
     const opener = page
       .locator(".selected-body-detail")

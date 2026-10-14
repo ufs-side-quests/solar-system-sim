@@ -2669,8 +2669,8 @@ h1 {
   stroke: #83d1ff;
 }
 
-/* Above the body labels (z-index 4) and below every panel (12 and up), so a
-   guide label never draws over the facts card or the tour panel. */
+/* Above the body labels (z-index 4) and below the facts card, tour card,
+   camera dock and time controls (12 and up). */
 .wayfinder-label {
   appearance: none;
   position: absolute;
@@ -3095,10 +3095,6 @@ h1 {
     overflow: auto;
   }
 
-  .app-shell {
-    min-height: 44rem;
-  }
-
   .command-bar {
     grid-template-columns: 1fr auto;
     gap: 0.5rem;
@@ -3295,9 +3291,22 @@ h1 {
   font-size: 0.78rem;
 }
 
+button.selected-body-size-line {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.7rem;
+  text-align: left;
+}
+
 /* Every phone, portrait or landscape. PHONE_LAYOUT_QUERY in phone-layout.ts
    holds the same condition. */
 @media (max-width: 650px), (max-height: 500px) {
+  /* The app always fits the screen: the page never scrolls, so no control
+     sits below the fold. */
+  .app-shell {
+    min-height: 0;
+  }
+
   /* A tour shows only the clock and its panel (.is-tour-story). The panel sits
      at the bottom and scrolls inside itself; its heading (Minimise, Exit) and
      its actions stay in view. */
@@ -3351,6 +3360,130 @@ h1 {
   .reality-navigation-map[open] > summary {
     min-height: 2rem;
     padding: 0 0.2rem;
+  }
+}
+
+/* A landscape phone: 500 px tall or less and wider than 650 px. One header
+   row; the camera dock and the status share the top row of the scene; the
+   breadcrumb, the clock and the Mini map stand in the right column; and the
+   selected-body card keeps the bottom left above the time controls, so
+   nothing overlaps on a 375 px tall screen. */
+@media (max-height: 500px) and (min-width: 651px) {
+  .command-bar {
+    min-height: 0;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    padding: 0.4rem 0.55rem;
+  }
+
+  /* The mark stays in view; the name stays for screen readers. */
+  .brand-lockup h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .focus-control {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .focus-input-group {
+    width: min(18rem, 30vw);
+  }
+
+  .focus-control input {
+    width: 100%;
+  }
+
+  .command-actions {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .command-actions button:not(.display-button, .fullscreen-button) {
+    display: none;
+  }
+
+  .camera-scale {
+    display: none;
+  }
+
+  /* Left of the status (about 11 rem wide); labels wrap to two lines when
+     the row is short of room, and every button stays at least 44 px wide. */
+  .camera-dock {
+    top: 0.55rem;
+    left: 0.55rem;
+    width: min(34rem, calc(100% - 13rem));
+    transform: none;
+  }
+
+  .camera-dock-actions {
+    width: 100%;
+  }
+
+  .camera-dock-actions button {
+    flex: 1 1 auto;
+    min-width: 2.75rem;
+    padding-inline: 0.3rem;
+  }
+
+  .status-cluster {
+    top: 0.55rem;
+    right: 0.55rem;
+  }
+
+  .focus-breadcrumb {
+    top: 3.1rem;
+    right: 0.55rem;
+    left: auto;
+  }
+
+  .global-simulation-clock {
+    top: 5.5rem;
+    right: 0.55rem;
+    left: auto;
+  }
+
+  .reality-navigation-map {
+    top: 7.2rem;
+    right: 0.55rem;
+    left: auto;
+  }
+
+  /* An opened map covers the top right of the scene, the clock (60) too,
+     and fits under it. */
+  .reality-navigation-map[open] {
+    top: 0.55rem;
+    z-index: 61;
+  }
+
+  .reality-navigation-map canvas {
+    height: 6.5rem;
+  }
+
+  .reality-navigation-map > small:last-child {
+    display: none;
+  }
+
+  .timeline-dock {
+    bottom: 0.55rem;
+    gap: 0.3rem 0.6rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* Below the camera dock and above the time controls. */
+  .selected-body-detail {
+    --selected-body-detail-bottom: 7.4rem;
+    --selected-body-detail-min-top: 3.6rem;
+
+    max-height: calc(
+      100% - var(--selected-body-detail-bottom) -
+        var(--selected-body-detail-min-top)
+    );
   }
 }
 

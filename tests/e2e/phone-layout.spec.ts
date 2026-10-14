@@ -68,11 +68,60 @@ async function sunLabelPlacement(page: Page): Promise<{
   });
 }
 
+// How far the page scrolls: 0 when the app fits the screen.
+async function pageOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const root = document.scrollingElement;
+    if (root === null) {
+      throw new Error("The page has no scrolling element");
+    }
+    return root.scrollHeight - window.innerHeight;
+  });
+}
+
+// tap() scrolls a control into view, even on a page that hides its scroll
+// bar, and toBeVisible ignores the viewport, so check that the page never
+// scrolled and that the box lies on the screen itself.
+async function expectOnScreen(
+  control: Locator,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  expect(await control.page().evaluate(() => window.scrollY)).toBe(0);
+  const box = await control.boundingBox();
+  if (box === null) {
+    throw new Error("The control has no box");
+  }
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
+
 for (const { viewport, uranusSunLabel } of PHONES) {
   const size = `${String(viewport.width)}x${String(viewport.height)}`;
 
   test.describe(`phone ${size}`, () => {
     test.use({ viewport, isMobile: true, hasTouch: true });
+
+    test("the app fits the screen and the tour's step buttons are on it", async ({
+      page,
+    }) => {
+      test.setTimeout(90_000);
+      await page.goto("/");
+      await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+        timeout: 30_000,
+      });
+      expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+      await page.getByRole("button", { name: "Scale tour" }).tap();
+      const tour = page.getByRole("dialog", {
+        name: "Scale of the Solar System tour",
+      });
+      await expect(tour).toBeVisible();
+      expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+      await expectOnScreen(
+        tour.getByRole("button", { name: "Next" }),
+        viewport,
+      );
+      await expectOnScreen(page.locator(".global-simulation-clock"), viewport);
+    });
 
     test("a tour shows only the clock and its panel", async ({
       page,
@@ -112,7 +161,13 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await flyTo(page, scene, "Jupiter");
       const card = page.locator(".selected-body-detail");
       await expect(card).toHaveClass(/is-collapsed/u);
-      await expect(card.getByText("As wide as 11 Earths")).toBeVisible();
+      // The size line itself opens Compare sizes.
+      const compare = card.getByRole("button", {
+        name: "As wide as 11 Earths · Compare sizes",
+      });
+      await expect(compare).toHaveText("As wide as 11 Earths · Compare");
+      const compareBox = await compare.boundingBox();
+      expect(compareBox?.height ?? 0).toBeGreaterThanOrEqual(44);
       await expect(
         card.getByRole("button", { name: "Expand selected body details" }),
       ).toBeVisible();
@@ -135,6 +190,11 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await page.screenshot({
         path: testInfo.outputPath(`jupiter-${size}.png`),
       });
+      await compare.tap();
+      const lineup = page.getByRole("dialog", { name: "Compare sizes" });
+      await expect(lineup).toBeVisible();
+      await lineup.getByRole("button", { name: "Close" }).tap();
+      await expect(lineup).toHaveCount(0);
       // The facts are one tap away, and the next flight makes the card short
       // again.
       await card
@@ -145,24 +205,27 @@ for (const { viewport, uranusSunLabel } of PHONES) {
       await expect(card).toHaveClass(/is-collapsed/u);
     });
 
-    test("the navigation map is a Map chip that opens and travels", async ({
+    test("the navigation map is a Mini map chip that opens and travels", async ({
       page,
     }) => {
       test.setTimeout(90_000);
       const scene = await openExplorer(page);
       const map = page.locator(".reality-navigation-map");
       const chip = map.locator("summary");
-      await expect(chip).toHaveText("Map");
+      await expect(chip).toHaveText("Mini map");
       await expect(chip).toBeVisible();
       await expect(map).toHaveJSProperty("open", false);
       const travel = page.getByRole("button", { name: "Travel" });
       await expect(travel).toBeHidden();
       await chip.tap();
       await expect(map).toHaveJSProperty("open", true);
+      await expectOnScreen(travel, viewport);
       await page
         .getByRole("combobox", { name: "Navigation destination" })
         .selectOption("saturn");
       await travel.tap();
+      // The flight closes the map so it does not cover the facts card.
+      await expect(map).toHaveJSProperty("open", false);
       await expect(scene).toHaveAttribute(
         "data-camera-transition-phase",
         "settled",
@@ -186,8 +249,63 @@ for (const { viewport, uranusSunLabel } of PHONES) {
   });
 }
 
+test.describe("a window that resizes across the phone layout", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("opens the navigation map on a large screen and folds it on a phone", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openExplorer(page);
+    const map = page.locator(".reality-navigation-map");
+    const travel = page.getByRole("button", { name: "Travel" });
+    await expect(map).toHaveJSProperty("open", false);
+    await expect(travel).toBeHidden();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(map).toHaveJSProperty("open", true);
+    await expect(travel).toBeVisible();
+    await expect(map.locator("summary")).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(map).toHaveJSProperty("open", false);
+    await expect(travel).toBeHidden();
+    await expect(map.locator("summary")).toBeVisible();
+  });
+});
+
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+
+  // The time controls sit in the middle of the bottom edge; beside them the
+  // sky is open, so a guide there is not cut short into their column.
+  test("a guide beside the time controls keeps its own direction", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.goto("/");
+    await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Pause" }).click();
+    const scene = page.getByRole("img", {
+      name: /Physics-driven Solar System/u,
+    });
+    await flyTo(page, scene, "Uranus");
+    const label = page.locator(".sun-guide-label");
+    await expect(label).toBeAttached();
+    await expect
+      .poll(async () => {
+        const labelBox = await label.boundingBox();
+        const controls = await page.locator(".timeline-dock").boundingBox();
+        if (labelBox === null || controls === null) {
+          throw new Error("The Sun guide label or time controls are missing");
+        }
+        return {
+          besideControls: labelBox.x + labelBox.width <= controls.x,
+          aboveScreenBottom: labelBox.y + labelBox.height <= 900,
+        };
+      })
+      .toEqual({ besideControls: true, aboveScreenBottom: true });
+  });
 
   test("the Sun guide label stays under the card, above the time controls", async ({
     page,

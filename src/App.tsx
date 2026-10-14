@@ -3523,13 +3523,26 @@ export function App() {
                     : "Apollo landing site"}
                 </span>
                 <strong>{selectedBodyDetail.name}</strong>
-                {selectedBodyPanelCollapsed &&
-                phoneLayout &&
-                selectedBodyDetail.size !== undefined ? (
+                {/* On a phone the short card's size line opens Compare sizes. */}
+                {!selectedBodyPanelCollapsed ||
+                !phoneLayout ||
+                selectedBodyDetail.size === undefined ? null : isInSizeLineup(
+                    selectedBodyId,
+                  ) ? (
+                  <button
+                    type="button"
+                    className="selected-body-size-line"
+                    aria-haspopup="dialog"
+                    aria-label={`${selectedBodyDetail.size} · Compare sizes`}
+                    onClick={() => setSizeLineupOpen(true)}
+                  >
+                    {selectedBodyDetail.size} · Compare
+                  </button>
+                ) : (
                   <p className="selected-body-size-line">
                     {selectedBodyDetail.size}
                   </p>
-                ) : null}
+                )}
               </div>
               <div className="selected-body-actions">
                 {selectedBodyPanelCollapsed ? null : (
