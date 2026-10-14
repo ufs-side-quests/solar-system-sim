@@ -12,12 +12,14 @@ import {
 import type { CSSProperties, RefObject } from "react";
 import { useCombobox } from "downshift";
 
+import { AUDIO_SETTINGS_STORAGE_KEY } from "./audio/audio-settings";
 import { useInterfaceAudio } from "./audio/use-interface-audio";
 import { matchesPhoneLayout, usePhoneLayout } from "./phone-layout";
 import {
   discoveryMessage,
   discoveryProgress,
   type EasterEggId,
+  forgetFoundEasterEggs,
   hiddenSurpriseRows,
   HIDDEN_SURPRISES_GROUP,
   hiddenSurprisesHeading,
@@ -219,6 +221,17 @@ const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
 const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
+// A modifier pressed alone (Shift, or the Cmd of Cmd+Tab) leaves the
+// blank-screen cover in place.
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "Control",
+  "Fn",
+  "Meta",
+  "Shift",
+]);
 type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
 type GuidedTourKind = "scale" | "eclipse";
 // The settings a tour step overrides, restored when the tour ends.
@@ -1120,6 +1133,13 @@ export function App() {
   const phoneLayout = usePhoneLayout();
   // On a phone the card opens short (name, size, Expand) so the sky stays in
   // view; the facts are one tap away.
+  // A teacher's clicker "blank screen" key (b or .) covers the window and
+  // pauses what plays behind it: the tour (with its narration and clock), or
+  // the clock outside a tour. The cover keeps what it paused to restore it.
+  const [blackout, setBlackout] = useState<{
+    readonly paused: "tour" | "clock";
+    readonly wasPlaying: boolean;
+  } | null>(null);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
     useState(matchesPhoneLayout);
   // A screen that becomes a phone (a resize or a turn) also makes the card
@@ -1223,7 +1243,7 @@ export function App() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const enterImmersiveMode = (): void => {
+  const enterImmersiveMode = useCallback((): void => {
     const appShell = appShellRef.current;
     if (appShell === null) {
       throw new Error("Application shell is unavailable for fullscreen mode");
@@ -1238,9 +1258,9 @@ export function App() {
             : "Fullscreen failed for an unknown browser reason",
         );
       });
-  };
+  }, []);
 
-  const exitImmersiveMode = (): void => {
+  const exitImmersiveMode = useCallback((): void => {
     setFullscreenError(undefined);
     if (document.fullscreenElement !== appShellRef.current) {
       throw new Error("The Solar System Explorer is not fullscreen");
@@ -1252,7 +1272,7 @@ export function App() {
           : "Leaving fullscreen failed for an unknown browser reason",
       );
     });
-  };
+  }, []);
 
   useEffect(() => {
     const client = createPhysicsClient();
@@ -1746,30 +1766,6 @@ export function App() {
     requestResetView();
   }, [endTour, requestResetView]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && tourStepIndex !== null) {
-        event.preventDefault();
-        exitTour();
-        return;
-      }
-      if (event.key.toLowerCase() !== "r") {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-      requestResetView();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [exitTour, requestResetView, tourStepIndex]);
-
   const applyOrientationPreset = (
     preset: Exclude<CameraOrientationPreset, "custom">,
   ): void => {
@@ -1810,6 +1806,26 @@ export function App() {
     setDiscoveredEasterEggId(selectedBodyId);
     audio.interact("discovery");
   }, [selectedBodyId, foundEasterEggIds, audio.interact]);
+
+  const startFresh = (): void => {
+    const count = foundEasterEggIds.size;
+    const surprises =
+      count === 0
+        ? ""
+        : `the ${String(count)} ${count === 1 ? "surprise" : "surprises"} found and `;
+    if (
+      !window.confirm(`Forget ${surprises}the sound settings on this computer?`)
+    ) {
+      return;
+    }
+    forgetFoundEasterEggs();
+    try {
+      window.localStorage.removeItem(AUDIO_SETTINGS_STORAGE_KEY);
+    } catch {
+      // Storage is unavailable: no sound settings were kept on this computer.
+    }
+    window.location.reload();
+  };
 
   useEffect(() => {
     if (discoveredEasterEggId === null) {
@@ -2237,21 +2253,141 @@ export function App() {
     }
   }, [tourEnded]);
 
-  const advanceScaleTour = (direction: -1 | 1): void => {
+  const advanceScaleTour = useCallback(
+    (direction: -1 | 1): void => {
+      if (tourStepIndex === null) {
+        return;
+      }
+      const next = tourStepIndex + direction;
+      if (next < 0) {
+        setTourStepIndex(0);
+        return;
+      }
+      if (next >= activeTourSteps.length) {
+        showTourEnding();
+        return;
+      }
+      setTourStepIndex(next);
+    },
+    [activeTourSteps, showTourEnding, tourStepIndex],
+  );
+
+  const blankScreen = useCallback((): void => {
     if (tourStepIndex === null) {
+      setBlackout({ paused: "clock", wasPlaying: playing });
+      setPlaying(false);
       return;
     }
-    const next = tourStepIndex + direction;
-    if (next < 0) {
-      setTourStepIndex(0);
-      return;
+    setBlackout({ paused: "tour", wasPlaying: tourPlaying });
+    setTourPlaying(false);
+  }, [playing, tourPlaying, tourStepIndex]);
+
+  const showScreen = useCallback((): void => {
+    if (blackout === null) {
+      throw new Error("The screen is not blanked");
     }
-    if (next >= activeTourSteps.length) {
-      showTourEnding();
-      return;
+    if (blackout.paused === "tour") {
+      setTourPlaying(blackout.wasPlaying);
+    } else {
+      setPlaying(blackout.wasPlaying);
     }
-    setTourStepIndex(next);
-  };
+    setBlackout(null);
+  }, [blackout]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (blackout !== null) {
+        // A held key, a modifier alone (Cmd of Cmd+Tab), a browser shortcut
+        // or a media key does not bring the picture back.
+        if (event.repeat || MODIFIER_KEYS.has(event.key)) {
+          event.preventDefault();
+          return;
+        }
+        if (
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          /^(Media|Audio)/u.test(event.key)
+        ) {
+          return;
+        }
+        // Also stops a Space or Enter from pressing the focused button.
+        event.preventDefault();
+        showScreen();
+        return;
+      }
+      // A control that took the key (Escape closes the Display panel) keeps it.
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (event.key === "Escape" && tourStepIndex !== null) {
+        event.preventDefault();
+        exitTour();
+        return;
+      }
+      const target = event.target;
+      // A clicker sends Page Down and Page Up. They step the tour from any
+      // control: a tour hides every text box, list and slider (.is-tour-story),
+      // so no control on screen takes them.
+      // Ctrl+Page Down and Ctrl+Page Up stay with the browser to switch tabs.
+      if (
+        (event.key === "PageDown" || event.key === "PageUp") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        tourStepIndex !== null &&
+        !tourEnded
+      ) {
+        event.preventDefault();
+        // A held key would race through the steps to the ending.
+        if (!event.repeat) {
+          advanceScaleTour(event.key === "PageDown" ? 1 : -1);
+        }
+        return;
+      }
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "r") {
+        requestResetView();
+        return;
+      }
+      if (key === "f" && !event.repeat) {
+        event.preventDefault();
+        if (document.fullscreenElement === appShellRef.current) {
+          exitImmersiveMode();
+        } else {
+          enterImmersiveMode();
+        }
+        return;
+      }
+      if ((key === "b" || key === ".") && !event.repeat) {
+        event.preventDefault();
+        blankScreen();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    advanceScaleTour,
+    blackout,
+    blankScreen,
+    enterImmersiveMode,
+    exitImmersiveMode,
+    exitTour,
+    requestResetView,
+    showScreen,
+    tourEnded,
+    tourStepIndex,
+  ]);
 
   useEffect(() => {
     if (tourStepIndex === null) {
@@ -3072,7 +3208,7 @@ export function App() {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === null ? "" : " is-tour-story"}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourStepIndex === null ? "" : " is-touring"}${tourKind === null ? "" : " is-tour-story"}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -3187,6 +3323,15 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {blackout === null ? null : (
+        <div
+          className="blackout-cover"
+          // Only the picture is blanked; any key brings it back.
+          aria-hidden="true"
+          onClick={showScreen}
+        />
+      )}
 
       {immersiveMode ? (
         <button
@@ -5045,6 +5190,16 @@ export function App() {
                 one-pixel object larger than its physical apparent size.
               </small>
             ) : null}
+            <h3>This computer</h3>
+            <div className="control-section">
+              <button type="button" onClick={startFresh}>
+                Start fresh
+              </button>
+              <small className="control-note">
+                Forgets the hidden surprises found and the sound settings, so
+                the next child starts from the beginning.
+              </small>
+            </div>
           </section>
 
           <section
