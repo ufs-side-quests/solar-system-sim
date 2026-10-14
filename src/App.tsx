@@ -2073,7 +2073,10 @@ export function App() {
     if (
       activeShotLoopEndTimeSeconds === null ||
       activeShotTimeSeconds === undefined ||
-      activeShotTimeSeconds < activeShotLoopEndTimeSeconds
+      // REBOUND finishes on the requested time with a last step of
+      // (end - t), which can land a rounding error short of the loop end
+      // where playback holds, so the restart allows one simulated second.
+      activeShotTimeSeconds < activeShotLoopEndTimeSeconds - 1
     ) {
       return;
     }
