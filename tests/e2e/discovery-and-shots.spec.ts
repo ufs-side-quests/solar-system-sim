@@ -365,11 +365,9 @@ test("a tour ends the planets racing shot", async ({ page }) => {
   await expect(racingButton).toHaveAttribute("aria-pressed", "false");
   await expect(caption).toHaveCount(0);
 
+  // Exit restores the pre-tour playback, so the clock runs again at once;
+  // with the clock running, the old shot must not come back.
   await page.getByRole("button", { name: "Exit" }).click();
-  await expect(page.getByRole("button", { name: "Run forward" })).toBeVisible();
-  await expect(caption).toHaveCount(0);
-  // With the clock running again, the old shot must not come back.
-  await page.getByRole("button", { name: "Run forward" }).click();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
   await expect(caption).toHaveCount(0);
   await expect(racingButton).toHaveAttribute("aria-pressed", "false");
