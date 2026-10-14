@@ -65,6 +65,10 @@ test("selected body stats identify their source and velocity reference", async (
 
   await page.setViewportSize({ width: 390, height: 844 });
   await selectFocus(focus, "Earth");
+  // On a phone a flight leaves the card short; the facts are one tap away.
+  await page
+    .getByRole("button", { name: "Expand selected body details" })
+    .click();
   await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
   await expect(page.getByRole("button", { name: "Display" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();

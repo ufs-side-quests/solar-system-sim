@@ -258,6 +258,7 @@ The initial Reality overview uses physical scale, so labels identify bodies whos
 Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
+That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
 The same press on the selected body travels to it and fits its default view, as the card's Focus button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
@@ -280,7 +281,11 @@ Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemi
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
 Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
-The camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
+On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
+On a phone a tour shows only the clock and the tour card, which sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
+On a phone the selected-body card opens short, with the name, Expand, and a size line such as "As wide as 11 Earths · Compare" that opens Compare sizes; every flight makes it short again.
+On a phone the navigation plot folds into a "Mini map" button, and every flight folds it again; a window that grows out of the phone layout opens it.
+Outside a tour, the camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
 Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.

@@ -486,6 +486,10 @@ for (const viewport of [
     const scene = await waitForScene(page);
     await focusBody(page, scene, "Jupiter");
     const card = page.locator(".selected-body-detail");
+    // On a phone a flight leaves the card short; the facts are one tap away.
+    await card
+      .getByRole("button", { name: "Expand selected body details" })
+      .click();
     await card.getByText("More detail", { exact: true }).click();
     await expect(
       card.getByText("Rotation angle", { exact: true }),
