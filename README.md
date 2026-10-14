@@ -58,7 +58,11 @@ Playback rate is independent of solver keyframe size: continuous playback integr
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
-It also caps enhanced radii against the nearest major-body separation, preventing a readability setting from merging neighboring bodies.
+At full boost every planet, dwarf planet and moon is drawn at 0.02 AU times the square root of its radius in Earth radii, so the drawn sizes keep the true size order.
+The Sun is drawn at a fixed 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.
+It also caps enhanced radii against every nearby natural-body separation, preventing a readability setting from merging neighboring bodies: two neighbours together fill at most 40% of the distance between their centres, and each takes a share in proportion to its readable size.
+A moon never takes a larger share of that cap than its planet, so it is never drawn larger than the planet it orbits.
+Spacecraft and fictional objects never limit the drawn size of a natural body.
 
 The International Space Station is a separate massless spacecraft state around the live REBOUND Earth position.
 Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in UTC, transformed from TEME through true equator of date into the J2000 mean-equator frame, and then translated by Earth's barycentric state.

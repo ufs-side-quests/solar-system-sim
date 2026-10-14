@@ -174,6 +174,8 @@ import {
 } from "./surface-observer";
 import {
   isPhysicalBodyResolvable,
+  type DisplayNeighbour,
+  neighbourClearanceScale,
   nonOverlappingDisplayedRadiusAu,
 } from "./scale";
 import { SmallBodyGpuLayer } from "./SmallBodyGpuLayer";
@@ -5559,42 +5561,72 @@ float saturnRingTransmission(vec3 surfacePosition) {
         container.dataset["knownMoonPointCount"] = String(
           visibleKnownMoonPointCount,
         );
+        const overviewHidesMoons =
+          currentFocusBodyId === null || currentFocusBodyId === "sun";
+        const clearanceScaleById = new Map<string, number>();
+        for (const body of majorBodySnapshot.bodies) {
+          const bodyPosition = sceneBodyPositions.get(body.id);
+          if (bodyPosition === undefined) {
+            throw new Error(`Scene position is missing body ${body.id}`);
+          }
+          const neighbours: DisplayNeighbour[] = [];
+          for (const [otherBodyId, otherPosition] of sceneBodyPositions) {
+            const otherMajorBody = majorBodyById.get(otherBodyId);
+            // Only natural bodies limit a displayed size. Spacecraft and
+            // fictional objects never shrink a planet or a moon.
+            const otherIsNatural =
+              otherMajorBody !== undefined ||
+              knownSatelliteById.has(otherBodyId);
+            const isHiddenOverviewMoon =
+              overviewHidesMoons &&
+              body.type !== "moon" &&
+              (otherMajorBody?.type === "moon" ||
+                knownSatelliteById.has(otherBodyId));
+            if (
+              otherBodyId !== body.id &&
+              otherIsNatural &&
+              !isHiddenOverviewMoon
+            ) {
+              neighbours.push({
+                distanceAu: bodyPosition.distanceTo(otherPosition),
+                body: otherMajorBody,
+              });
+            }
+          }
+          clearanceScaleById.set(
+            body.id,
+            neighbourClearanceScale(body, neighbours),
+          );
+        }
         for (const body of majorBodySnapshot.bodies) {
           const bodyState = bodyStateById(current, body.id);
           const mesh = bodyMeshes.get(body.id);
           if (bodyState !== undefined && mesh !== undefined) {
             mesh.position.copy(scenePosition(bodyState.positionM));
-            const bodyPosition = sceneBodyPositions.get(body.id);
-            if (bodyPosition === undefined) {
-              throw new Error(`Scene position is missing body ${body.id}`);
+            const ownClearanceScale = clearanceScaleById.get(body.id);
+            if (ownClearanceScale === undefined) {
+              throw new Error(`Clearance scale is missing body ${body.id}`);
             }
-            let nearestBodyDistanceAu = Number.POSITIVE_INFINITY;
-            for (const [otherBodyId, otherPosition] of sceneBodyPositions) {
-              const otherBodyIsSpacecraft =
-                otherBodyId === ISS_BODY_ID ||
-                isVoyagerBodyId(otherBodyId) ||
-                isOperationalSpacecraftBodyId(otherBodyId);
-              if (otherBodyId !== body.id && !otherBodyIsSpacecraft) {
-                const otherMajorBody = majorBodyById.get(otherBodyId);
-                const isHiddenOverviewMoon =
-                  (currentFocusBodyId === null ||
-                    currentFocusBodyId === "sun") &&
-                  body.type !== "moon" &&
-                  (otherMajorBody?.type === "moon" ||
-                    knownSatelliteById.has(otherBodyId));
-                if (isHiddenOverviewMoon) {
-                  continue;
-                }
-                nearestBodyDistanceAu = Math.min(
-                  nearestBodyDistanceAu,
-                  bodyPosition.distanceTo(otherPosition),
+            // A moon shares its planet's scale limit, so it never looks
+            // larger than the planet it orbits.
+            let clearanceScale = ownClearanceScale;
+            if (body.type === "moon") {
+              const parentId = PARENT_BODY_ID[body.id];
+              const parentClearanceScale =
+                parentId === undefined
+                  ? undefined
+                  : clearanceScaleById.get(parentId);
+              if (parentClearanceScale === undefined) {
+                throw new Error(
+                  `Clearance scale is missing the parent of ${body.id}`,
                 );
               }
+              clearanceScale = Math.min(clearanceScale, parentClearanceScale);
             }
             const radius = nonOverlappingDisplayedRadiusAu(
               body,
               bodyVisibilityRef.current,
-              nearestBodyDistanceAu,
+              clearanceScale,
             );
             if (body.id === "saturn" || isDiscreteRingBodyId(body.id)) {
               const meanRadiusKm = body.meanRadiusM / 1_000;
