@@ -390,3 +390,45 @@ test("jumps to each story time while the story plays at an unchanged rate", asyn
     { polling: "raf", timeout: 3_000 },
   );
 });
+
+test("a free-look drag in a surface step keeps the story playing", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute(
+    "data-tour-step",
+    "london-before-contact",
+  );
+  await expect(scene).toHaveAttribute("data-surface-observer-body", "earth", {
+    timeout: 30_000,
+  });
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
+
+  const canvasBox = await page.locator("canvas.major-body-layer").boundingBox();
+  if (canvasBox === null) throw new Error("Scene canvas has no bounding box");
+  const startX = canvasBox.x + canvasBox.width / 2;
+  const startY = canvasBox.y + canvasBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 180, startY - 70, { steps: 8 });
+  await page.mouse.up();
+
+  // Free look turns the observer's head; it is not a camera drag.
+  await expect(scene).toHaveAttribute("data-surface-free-look", "true");
+  await expect(story).toHaveAttribute("data-tour-playing", "true");
+  await expect(scene).not.toHaveAttribute("data-camera-orientation", "custom");
+});

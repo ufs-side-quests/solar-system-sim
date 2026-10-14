@@ -1203,7 +1203,9 @@ export function SolarSystemScene({
         return;
       }
       tapPending = false;
-      handleControlStart();
+      // Surface view disables the controls: its drag is free look, which
+      // turns the observer's head and keeps a story playing.
+      if (controls.enabled) handleControlStart();
     };
     const handleCanvasPressEnd = (event: PointerEvent): void => {
       canvasPresses.delete(event.pointerId);
