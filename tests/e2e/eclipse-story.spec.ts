@@ -320,13 +320,9 @@ test("jumps to each story time while the story plays at an unchanged rate", asyn
   });
 
   // Step 1 plays at the default 1 hour per second, so the clock shows
-  // 15:4x for only about a quarter of a second: read it on every frame.
-  await page.getByRole("button", { name: "Eclipse story" }).click();
-  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
-  await expect(
-    story.getByRole("button", { name: "Pause story" }),
-  ).toBeVisible();
-  await page.waitForFunction(
+  // 15:4x for only a fraction of a second: watch every frame from before
+  // the click so the window cannot pass unseen.
+  const reachedAlignment = page.waitForFunction(
     () =>
       /12 Aug 2026 · 15:4\d/u.test(
         document.querySelector(".global-simulation-clock")?.textContent ?? "",
@@ -334,6 +330,12 @@ test("jumps to each story time while the story plays at an unchanged rate", asyn
     undefined,
     { polling: "raf", timeout: 5_000 },
   );
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "eclipse-alignment");
+  await expect(
+    story.getByRole("button", { name: "Pause story" }),
+  ).toBeVisible();
+  await reachedAlignment;
 
   await page.getByRole("button", { name: "Next" }).click();
   await expect(story).toHaveAttribute(

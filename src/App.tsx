@@ -1131,8 +1131,9 @@ export function App() {
           let nextStates = await client.api.integrateSeries(targetTimes);
           solverTime = targetTimes.at(-1) ?? solverTime;
 
-          // A pending direct seek (story step, ISS or spacecraft focus) ends
-          // the current batch too, so it applies whatever the playback rate.
+          // A tour step's pending seek ends the current batch too, so it
+          // applies whatever the playback rate. ISS and spacecraft focus seeks
+          // restart the run and apply at the top of the new loop.
           const playbackRequestChanged = (): boolean =>
             directSeekTimeSecondsRef.current !== undefined ||
             (!isManual &&
