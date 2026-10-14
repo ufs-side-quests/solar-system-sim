@@ -1130,7 +1130,49 @@ export function SolarSystemScene({
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
     let interruptCameraTransition: () => void = () => undefined;
+    // A press that begins on the canvas during a camera flight counts as a tap
+    // until it moves past this distance: children touch the screen while they
+    // wait, and a tap must not strand them mid-flight. A drag past it, a
+    // second finger, or the wheel still hands the camera to the child at once.
+    const FLIGHT_TAP_SLOP_PX = 8;
+    const canvasPresses = new Map<number, { x: number; y: number }>();
+    let flightTapPending = false;
+    const handleCanvasPressDown = (event: PointerEvent): void => {
+      if (event.target !== renderer.domElement) return;
+      canvasPresses.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      flightTapPending =
+        canvasPresses.size === 1 && activeCameraTransition !== undefined;
+    };
+    const handleCanvasPressMove = (event: PointerEvent): void => {
+      if (!flightTapPending) return;
+      const press = canvasPresses.get(event.pointerId);
+      if (press === undefined) return;
+      if (
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) <
+        FLIGHT_TAP_SLOP_PX
+      ) {
+        // OrbitControls never sees the jitter, so it adds no rotation or
+        // damping that would fight the flight.
+        event.stopPropagation();
+        return;
+      }
+      flightTapPending = false;
+      handleControlStart();
+    };
+    const handleCanvasPressEnd = (event: PointerEvent): void => {
+      canvasPresses.delete(event.pointerId);
+      if (canvasPresses.size === 0) flightTapPending = false;
+    };
+    // Capture on the container runs before OrbitControls' canvas listeners.
+    container.addEventListener("pointerdown", handleCanvasPressDown, true);
+    container.addEventListener("pointermove", handleCanvasPressMove, true);
+    container.addEventListener("pointerup", handleCanvasPressEnd, true);
+    container.addEventListener("pointercancel", handleCanvasPressEnd, true);
     const handleControlStart = (): void => {
+      if (flightTapPending) return;
       interruptCameraTransition();
       if (orbitViewEnabledRef.current) {
         orbitViewEnabledRef.current = false;
@@ -8937,6 +8979,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
       controls.dispose();
       dracoLoader.dispose();
       controls.removeEventListener("start", handleControlStart);
+      container.removeEventListener("pointerdown", handleCanvasPressDown, true);
+      container.removeEventListener("pointermove", handleCanvasPressMove, true);
+      container.removeEventListener("pointerup", handleCanvasPressEnd, true);
+      container.removeEventListener(
+        "pointercancel",
+        handleCanvasPressEnd,
+        true,
+      );
       renderer.domElement.removeEventListener(
         "pointerdown",
         handleSurfacePointerDown,
