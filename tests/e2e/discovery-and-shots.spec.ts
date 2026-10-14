@@ -235,8 +235,23 @@ test("the planets race starts at once from any date and repeats from the epoch",
   await page
     .getByRole("button", { name: "Planets racing", exact: true })
     .click();
-  // One loop is 360 days at 30 days per second, about 12 seconds.
-  await page.waitForTimeout(18_000);
+  // One loop is 360 days at 30 days per second, about 12 seconds on an idle
+  // machine; wait for the real loop (a sample at the loop end followed by
+  // one back at the epoch) rather than a fixed time.
+  await page.waitForFunction(
+    (afterMs) => {
+      const raceSamples = (
+        window as unknown as { raceSamples: RaceSample[] }
+      ).raceSamples.filter((sample) => sample.atMs >= afterMs);
+      const loopIndex = raceSamples.findIndex((sample) => sample.days >= 359);
+      return (
+        loopIndex >= 0 &&
+        raceSamples.slice(loopIndex).some((sample) => sample.days < 1)
+      );
+    },
+    tappedAtMs,
+    { polling: 250, timeout: 60_000 },
+  );
   const samples = await page.evaluate(
     () => (window as unknown as { raceSamples: RaceSample[] }).raceSamples,
   );
