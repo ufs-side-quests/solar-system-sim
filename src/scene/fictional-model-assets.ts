@@ -48,13 +48,14 @@ export const fictionalModelAssets = fictionalModelAssetSchema.array().parse([
     bodyId: "deep-space-nine",
     modelUrl: "/models/community/deep-space-nine.glb",
     pageUrl:
-      "https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa",
-    archiveUrl: "https://objaverse.allenai.org/",
+      "https://sketchfab.com/3d-models/deep-space-nine-star-trek-3e1743fc00be4d83848c7d890b8a5988",
+    archiveUrl:
+      "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-121/3e1743fc00be4d83848c7d890b8a5988.glb",
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
-    sha256: "fe6995519797e99414b5f3a7518d3485e8881b9f1d1421394693ba3fb4cb1cc9",
-    byteLength: 1_220_736,
+    sha256: "e4a63c9f355bda8dfb9fd81a00afb5b1ea391ea98437297e5749a7ac8c2881de",
+    byteLength: 555_180,
     maximumDimensionM: 1_451.82,
-    credit: "Deep Space Nine by neilken · CC BY 4.0 · Sketchfab",
+    credit: "Deep Space Nine by rossrobotics · CC BY 4.0 · Sketchfab",
   },
   {
     bodyId: "uss-defiant",

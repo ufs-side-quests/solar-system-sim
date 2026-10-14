@@ -199,7 +199,7 @@ for (const [search, bodyId, distanceText, litWindowMaterials] of [
     "Deep Space Nine (fictional)",
     "deep-space-nine",
     "Distance from Callisto",
-    "3",
+    "1",
   ],
   [
     "USS Defiant (fictional)",
