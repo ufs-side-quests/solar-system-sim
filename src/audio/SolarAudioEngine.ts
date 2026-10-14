@@ -5,7 +5,7 @@ export type AudioEngineStatus =
 export type NarrationStatus =
   "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
-export type InterfaceSound = "button" | "option" | "slider";
+export type InterfaceSound = "button" | "option" | "slider" | "discovery";
 
 const CHORDS_HZ = [
   [55, 82.41, 110, 164.81],
@@ -356,29 +356,42 @@ export class SolarAudioEngine {
     ) {
       return;
     }
-    const now = this.context.currentTime;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
-    const frequencies: Readonly<
-      Record<InterfaceSound, readonly [number, number]>
+    // Each tone is [start Hz, end Hz, delay s, length s, peak gain].
+    const tones: Readonly<
+      Record<
+        InterfaceSound,
+        readonly (readonly [number, number, number, number, number])[]
+      >
     > = {
-      button: [520, 330],
-      option: [440, 690],
-      slider: [360, 470],
+      button: [[520, 330, 0, 0.055, 0.035]],
+      option: [[440, 690, 0, 0.055, 0.035]],
+      slider: [[360, 470, 0, 0.055, 0.035]],
+      // A rising C major arpeggio (C5, E5, G5) for a found easter egg.
+      discovery: [
+        [523.25, 523.25, 0, 0.22, 0.05],
+        [659.25, 659.25, 0.12, 0.22, 0.05],
+        [783.99, 783.99, 0.24, 0.34, 0.05],
+      ],
     };
-    const [startFrequency, endFrequency] = frequencies[sound];
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(startFrequency, now);
-    oscillator.frequency.exponentialRampToValueAtTime(
-      endFrequency,
-      now + 0.045,
-    );
-    gain.gain.setValueAtTime(0.035, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
-    oscillator.connect(gain);
-    gain.connect(this.nodes.effectsGain);
-    oscillator.start(now);
-    oscillator.stop(now + 0.06);
+    for (const [startFrequency, endFrequency, delay, length, peak] of tones[
+      sound
+    ]) {
+      const start = this.context.currentTime + delay;
+      const oscillator = this.context.createOscillator();
+      const gain = this.context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(startFrequency, start);
+      oscillator.frequency.exponentialRampToValueAtTime(
+        endFrequency,
+        start + Math.min(0.045, length),
+      );
+      gain.gain.setValueAtTime(peak, start);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
+      oscillator.connect(gain);
+      gain.connect(this.nodes.effectsGain);
+      oscillator.start(start);
+      oscillator.stop(start + length + 0.005);
+    }
   }
 
   private startNarrationSource(): void {

@@ -12,6 +12,13 @@ import type { RefObject } from "react";
 import { useCombobox } from "downshift";
 
 import { useInterfaceAudio } from "./audio/use-interface-audio";
+import {
+  discoveryMessage,
+  type EasterEggId,
+  isEasterEggId,
+  loadFoundEasterEggs,
+  saveFoundEasterEggs,
+} from "./tour/easter-eggs";
 import { createPhysicsClient } from "./physics/client";
 import type { BodyState, SimulationState } from "./physics/contracts";
 import { withKnownSatellites } from "./physics/known-satellite-ephemeris";
@@ -744,6 +751,8 @@ function useDisplayedSimulationState(
   return { state: displayedState, stateRef: displayedStateRef };
 }
 
+const DISCOVERY_TOAST_DURATION_MS = 6_000;
+
 export function App() {
   const audio = useInterfaceAudio();
   const [frame, setFrame] = useState<SimulationFrame>();
@@ -763,6 +772,10 @@ export function App() {
     useState<DisplayPanelTab>("view");
   const [focusBodyId, setFocusBodyId] = useState("");
   const [selectedBodyId, setSelectedBodyId] = useState("");
+  const [foundEasterEggIds, setFoundEasterEggIds] =
+    useState<ReadonlySet<EasterEggId>>(loadFoundEasterEggs);
+  const [discoveredEasterEggId, setDiscoveredEasterEggId] =
+    useState<EasterEggId | null>(null);
   const [showMoonTrail, setShowMoonTrail] = useState(false);
   const [showPlanetTrails, setShowPlanetTrails] = useState(false);
   const [showMinorBodyTrails, setShowMinorBodyTrails] = useState(false);
@@ -1269,6 +1282,33 @@ export function App() {
   const handleOrbitViewChange = useCallback((enabled: boolean): void => {
     setOrbitViewEnabled(enabled);
   }, []);
+
+  // Every selection path (label, scene click, focus list, next object) ends
+  // here, so the first selection of an easter egg counts as finding it.
+  useEffect(() => {
+    if (
+      !isEasterEggId(selectedBodyId) ||
+      foundEasterEggIds.has(selectedBodyId)
+    ) {
+      return;
+    }
+    const found = new Set(foundEasterEggIds).add(selectedBodyId);
+    setFoundEasterEggIds(found);
+    saveFoundEasterEggs(found);
+    setDiscoveredEasterEggId(selectedBodyId);
+    audio.interact("discovery");
+  }, [selectedBodyId, foundEasterEggIds, audio.interact]);
+
+  useEffect(() => {
+    if (discoveredEasterEggId === null) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setDiscoveredEasterEggId(null),
+      DISCOVERY_TOAST_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [discoveredEasterEggId]);
 
   const handleSceneBodySelection = useCallback((bodyId: string): void => {
     setApolloInspectionSiteId(null);
@@ -2608,6 +2648,7 @@ export function App() {
               manualExposureEv={manualExposureEv}
               deepSpacePresentation={activeTourStep?.presentation}
               eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
+              foundEasterEggIds={foundEasterEggIds}
               onSelectBody={handleSceneBodySelection}
               onFocusBody={navigateToFocus}
               onOrientationChange={handleSceneOrientationChange}
@@ -2679,6 +2720,12 @@ export function App() {
             </button>
           </div>
         </nav>
+
+        <p className="discovery-toast" role="status">
+          {discoveredEasterEggId === null
+            ? null
+            : discoveryMessage(discoveredEasterEggId)}
+        </p>
 
         {surfaceObservation === undefined || tourKind === "eclipse" ? null : (
           <aside

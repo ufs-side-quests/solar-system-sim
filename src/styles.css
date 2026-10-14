@@ -840,6 +840,16 @@ h1 {
   background: transparent;
 }
 
+.body-label.is-unknown-object {
+  color: #ffd98a;
+  font-size: 0.68rem;
+  font-weight: 650;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 0.5rem rgb(0 0 0 / 92%),
+    0 0 0.7rem rgb(255 196 92 / 45%);
+}
+
 .body-label.is-selected,
 .wayfinder-label.is-selected {
   color: #8ed8ff;
@@ -1048,6 +1058,31 @@ h1 {
   padding: 0.35rem;
   border-radius: 0.85rem;
   transform: translateX(-50%);
+}
+
+.discovery-toast {
+  position: absolute;
+  z-index: 16;
+  top: 4.6rem;
+  left: 50%;
+  width: max-content;
+  max-width: min(26rem, calc(100% - 1.7rem));
+  margin: 0;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.85rem;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 550;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.discovery-toast:empty {
+  display: none;
 }
 
 .camera-scale {
@@ -2846,6 +2881,10 @@ h1 {
     top: 3.3rem;
   }
 
+  .discovery-toast {
+    top: 7rem;
+  }
+
   .timeline-dock {
     grid-template-columns: auto 1fr;
   }
@@ -3007,6 +3046,15 @@ h1 {
     left: 0.55rem;
     justify-content: center;
     transform: none;
+  }
+
+  /* The selected-body card fills the middle of a phone, so the toast covers
+     the breadcrumb row above the camera dock instead of the card controls. */
+  .discovery-toast {
+    top: 0.4rem;
+    max-width: calc(100% - 1.1rem);
+    padding: 0.4rem 0.75rem;
+    font-size: 0.76rem;
   }
 
   .camera-scale {

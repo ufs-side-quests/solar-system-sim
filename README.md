@@ -111,6 +111,11 @@ The application places it in a clearly labelled hypothetical circular exhibit or
 The USS Defiant uses a textured high-detail free model at its 170.68 metre production reference length.
 It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
+
+These references, and the real Tesla Roadster, are easter eggs.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth and Mars for the Roadster), an egg in front of the camera and not behind that body shows a "? Unknown object" label.
+The first selection reveals the real name, shows a short "You found" message with the egg's origin, and plays a three-note chime through the interface sound effects setting.
+Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.

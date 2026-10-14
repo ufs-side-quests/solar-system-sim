@@ -17,6 +17,7 @@ import {
   LineBasicMaterial,
   LineLoop,
   LineSegments,
+  Line3,
   Matrix4,
   Material,
   Mesh,
@@ -45,6 +46,11 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 
+import {
+  easterEgg,
+  type EasterEggId,
+  UNKNOWN_OBJECT_LABEL,
+} from "../tour/easter-eggs";
 import { loadSbdbSnapshot } from "../catalogue/sbdb";
 import type { BodyState, SimulationState } from "../physics/contracts";
 import {
@@ -615,6 +621,7 @@ type SolarSystemSceneProps = Readonly<{
   deepSpacePresentation:
     "heliosphere-scale" | "oort-cloud-scale" | "interstellar-scale" | undefined;
   eclipseShadowVisible: boolean;
+  foundEasterEggIds: ReadonlySet<EasterEggId>;
   onSelectBody(bodyId: string): void;
   onFocusBody(bodyId: string): void;
   onOrientationChange(preset: CameraOrientationPreset): void;
@@ -676,6 +683,7 @@ export function SolarSystemScene({
   manualExposureEv,
   deepSpacePresentation,
   eclipseShadowVisible,
+  foundEasterEggIds,
   onSelectBody,
   onFocusBody,
   onOrientationChange,
@@ -710,6 +718,7 @@ export function SolarSystemScene({
   const cameraTargetBodyIdRef = useRef(cameraTargetBodyId);
   const observerCameraStyleRef = useRef(observerCameraStyle);
   const eclipseShadowVisibleRef = useRef(eclipseShadowVisible);
+  const foundEasterEggIdsRef = useRef(foundEasterEggIds);
   const cameraTransitionSequenceRef = useRef(cameraTransitionSequence);
   const cameraTransitionDurationMsRef = useRef(cameraTransitionDurationMs);
   const cameraNavigationCommandRef = useRef(cameraNavigationCommand);
@@ -759,6 +768,7 @@ export function SolarSystemScene({
   cameraTargetBodyIdRef.current = cameraTargetBodyId;
   observerCameraStyleRef.current = observerCameraStyle;
   eclipseShadowVisibleRef.current = eclipseShadowVisible;
+  foundEasterEggIdsRef.current = foundEasterEggIds;
   cameraTransitionSequenceRef.current = cameraTransitionSequence;
   cameraTransitionDurationMsRef.current = cameraTransitionDurationMs;
   cameraNavigationCommandRef.current = cameraNavigationCommand;
@@ -1415,6 +1425,44 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLocator.textContent = "Umbra";
     eclipseShadowLocator.hidden = true;
     labelLayer.append(eclipseShadowLocator);
+
+    // An easter egg near the focused or selected body shows its label as an
+    // unknown object, unless that body hides it from the camera.
+    const easterEggHintVisible = (
+      eggId: EasterEggId,
+      eggPosition: Vector3,
+    ): boolean =>
+      easterEgg(eggId).hintBodyIds.some((hintBodyId) => {
+        if (
+          focusBodyIdRef.current !== hintBodyId &&
+          selectedBodyIdRef.current !== hintBodyId
+        ) {
+          return false;
+        }
+        const hintMesh = bodyMeshes.get(hintBodyId);
+        if (hintMesh === undefined) {
+          throw new Error(`Easter egg hint body ${hintBodyId} is unavailable`);
+        }
+        return (
+          new Line3(camera.position, eggPosition)
+            .closestPointToPoint(hintMesh.position, true, new Vector3())
+            .distanceTo(hintMesh.position) >= hintMesh.scale.x
+        );
+      });
+    // The real name appears once the child has selected the egg.
+    const nameEasterEggLabel = (
+      label: HTMLButtonElement,
+      eggId: EasterEggId,
+      name: string,
+    ): void => {
+      const found = foundEasterEggIdsRef.current.has(eggId);
+      const text = found ? name : UNKNOWN_OBJECT_LABEL;
+      if (label.textContent !== text) {
+        label.textContent = text;
+        label.setAttribute("aria-label", `Focus ${text}`);
+        label.classList.toggle("is-unknown-object", !found);
+      }
+    };
 
     const monolithGeometry = new BoxGeometry(
       JOVIAN_MONOLITH_DIMENSIONS_M.thickness / ASTRONOMICAL_UNIT_M,
@@ -8041,7 +8089,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
-            selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID);
+            selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
+            easterEggHintVisible(JOVIAN_MONOLITH_BODY_ID, monolithPosition));
+        nameEasterEggLabel(
+          monolithLabel,
+          JOVIAN_MONOLITH_BODY_ID,
+          JOVIAN_MONOLITH_NAME,
+        );
         monolithLabel.hidden = !labelVisible;
         monolithLabel.classList.toggle(
           "is-selected",
@@ -8115,7 +8169,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
-            selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID);
+            selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
+            easterEggHintVisible(DISCOVERY_ONE_BODY_ID, position));
+        nameEasterEggLabel(
+          discoveryOneLabel,
+          DISCOVERY_ONE_BODY_ID,
+          DISCOVERY_ONE_NAME,
+        );
         discoveryOneLabel.hidden = !labelVisible;
         discoveryOneLabel.classList.toggle(
           "is-selected",
@@ -8207,7 +8267,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === orbiter.id ||
-            selectedBodyIdRef.current === orbiter.id);
+            selectedBodyIdRef.current === orbiter.id ||
+            easterEggHintVisible(orbiter.id, position));
+        nameEasterEggLabel(label, orbiter.id, orbiter.name);
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
@@ -8293,7 +8355,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
           layerVisible &&
           inCameraFrustum &&
           (focusBodyIdRef.current === object.id ||
-            selectedBodyIdRef.current === object.id);
+            selectedBodyIdRef.current === object.id ||
+            easterEggHintVisible(object.id, position));
+        nameEasterEggLabel(label, object.id, object.name);
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
@@ -8553,9 +8617,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           surfaceObserverRef.current === null &&
           (geometryVisible ||
             selectedBodyIdRef.current === spacecraft.id ||
-            focusBodyIdRef.current === spacecraft.id) &&
+            focusBodyIdRef.current === spacecraft.id ||
+            (spacecraft.id === ROADSTER_BODY_ID &&
+              easterEggHintVisible(ROADSTER_BODY_ID, position))) &&
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(spacecraft.id));
+        if (spacecraft.id === ROADSTER_BODY_ID) {
+          nameEasterEggLabel(label, ROADSTER_BODY_ID, spacecraft.name);
+        }
         label.hidden = !labelVisible;
         label.classList.toggle(
           "is-selected",
