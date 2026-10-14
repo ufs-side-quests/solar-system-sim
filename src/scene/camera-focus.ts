@@ -18,16 +18,24 @@ const RING_SYSTEM_OUTER_RADIUS_KM: Readonly<Record<string, number>> = {
   uranus: URANUS_MAIN_RING_OUTER_RADIUS_KM,
 };
 
+// The radius of everything a body shows, its rings included, when the body
+// itself is drawn with the given radius.
+export function visualExtentAu(
+  body: MajorBodyDefinition,
+  drawnRadiusAu: number,
+): number {
+  const ringOuterRadiusKm = RING_SYSTEM_OUTER_RADIUS_KM[body.id];
+  if (ringOuterRadiusKm === undefined) {
+    return drawnRadiusAu;
+  }
+  return (drawnRadiusAu * (ringOuterRadiusKm * 1_000)) / body.meanRadiusM;
+}
+
 function displayedVisualExtentAu(
   body: MajorBodyDefinition,
   visibilityBoost: number,
 ): number {
-  const bodyRadius = displayedRadiusAu(body, visibilityBoost);
-  const ringOuterRadiusKm = RING_SYSTEM_OUTER_RADIUS_KM[body.id];
-  if (ringOuterRadiusKm === undefined) {
-    return bodyRadius;
-  }
-  return (bodyRadius * (ringOuterRadiusKm * 1_000)) / body.meanRadiusM;
+  return visualExtentAu(body, displayedRadiusAu(body, visibilityBoost));
 }
 
 function physicalVisualExtentAu(body: MajorBodyDefinition): number {

@@ -88,6 +88,7 @@ import {
   focusNearPlaneAu,
   portraitFitDistanceAu,
   sunlitModelViewDirection,
+  visualExtentAu,
 } from "./camera-focus";
 import {
   applyCameraRelativeDirectionalShadows,
@@ -103,8 +104,17 @@ import type {
   GravityWellScale,
 } from "./gravity-potential";
 import type { SimulationFrame, TrailQueue } from "./interpolation";
-import { placeBodyLabel, type LabelRectangle } from "./label-placement";
-import { easeLensShiftPx, lensShiftTargetPx } from "./lens-shift";
+import {
+  cameraTargetLabelReachPx,
+  placeBodyLabel,
+  type LabelRectangle,
+} from "./label-placement";
+import {
+  easeLensShiftPx,
+  lensShiftTargetPx,
+  projectedSphereRadiusPx,
+  type PanelBox,
+} from "./lens-shift";
 import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
@@ -740,8 +750,9 @@ type SolarSystemSceneProps = Readonly<{
   objectVisibility: ObjectVisibility;
   surfaceObserver: SurfaceObserverConfiguration | null;
   surfaceObserverLookResetToken: number;
-  // The right edge in CSS px of an open left-hand panel over the scene, or 0.
-  leftPanelInsetPx: number;
+  // The shot frames more than its target body (the Earth-Moon system, the
+  // heliosphere), so the open sky keeps the whole frame height on screen.
+  subjectFillsFrame: boolean;
   visualQuality: VisualQuality;
   exposureMode: ExposureMode;
   manualExposureEv: number;
@@ -810,7 +821,7 @@ export function SolarSystemScene({
   objectVisibility,
   surfaceObserver,
   surfaceObserverLookResetToken,
-  leftPanelInsetPx,
+  subjectFillsFrame,
   visualQuality,
   exposureMode,
   manualExposureEv,
@@ -872,7 +883,7 @@ export function SolarSystemScene({
   const gravityWellScaleRef = useRef(gravityWellScale);
   const objectVisibilityRef = useRef(objectVisibility);
   const surfaceObserverRef = useRef(surfaceObserver);
-  const leftPanelInsetPxRef = useRef(leftPanelInsetPx);
+  const subjectFillsFrameRef = useRef(subjectFillsFrame);
   const surfaceObserverLookResetTokenRef = useRef(
     surfaceObserverLookResetToken,
   );
@@ -925,7 +936,7 @@ export function SolarSystemScene({
   gravityWellScaleRef.current = gravityWellScale;
   objectVisibilityRef.current = objectVisibility;
   surfaceObserverRef.current = surfaceObserver;
-  leftPanelInsetPxRef.current = leftPanelInsetPx;
+  subjectFillsFrameRef.current = subjectFillsFrame;
   surfaceObserverLookResetTokenRef.current = surfaceObserverLookResetToken;
   visualQualityRef.current = visualQuality;
   exposureModeRef.current = exposureMode;
@@ -4357,14 +4368,57 @@ float saturnRingTransmission(vec3 surfacePosition) {
     // the open sky beside a left-hand panel. It shifts the projection itself,
     // so labels, picking, guides and the GPU layer all follow it.
     let lensShiftPx = 0;
-    const applyLensShift = (width: number, height: number): void => {
+    // The scene size from the last resize. setViewOffset sets the camera
+    // aspect from the full size, so it takes the same size resize gave it.
+    let sceneWidthPx = 0;
+    let sceneHeightPx = 0;
+    const applyLensShift = (): void => {
       if (lensShiftPx === 0) {
         camera.clearViewOffset();
       } else {
-        camera.setViewOffset(width, height, -lensShiftPx, 0, width, height);
+        camera.setViewOffset(
+          sceneWidthPx,
+          sceneHeightPx,
+          -lensShiftPx,
+          0,
+          sceneWidthPx,
+          sceneHeightPx,
+        );
       }
-      setData(container, "lensShiftPx", lensShiftPx.toFixed(1));
+      setData(container, "lensShiftPx", lensShiftPx.toFixed(3));
     };
+    // Half the subject's size on screen. A shot that frames more than its
+    // target body fills the frame height. Otherwise the subject is the camera
+    // target: a body's disc and rings, or a model's bounding sphere. Any
+    // other target (a catalogue asteroid or comet) is drawn as a point.
+    const subjectRadiusOnScreenPx = (viewportHeight: number): number => {
+      if (subjectFillsFrameRef.current) {
+        return viewportHeight / 2;
+      }
+      const subjectBodyId =
+        cameraTargetBodyIdRef.current ?? focusBodyIdRef.current;
+      if (subjectBodyId === null) {
+        return 0;
+      }
+      const mesh = bodyMeshes.get(subjectBodyId);
+      const definition = majorBodyById.get(subjectBodyId);
+      const radiusAu =
+        mesh !== undefined && definition !== undefined
+          ? visualExtentAu(definition, mesh.scale.x)
+          : (spacecraftBoundingRadiusM(subjectBodyId) ?? 0) /
+            ASTRONOMICAL_UNIT_M;
+      const focalLengthPx =
+        (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+        camera.zoom;
+      return projectedSphereRadiusPx(
+        radiusAu,
+        camera.position.distanceTo(controls.target),
+        focalLengthPx,
+      );
+    };
+    const reducedMotionQuery = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
     // The render loop fails when this is not a positive size. It is read
     // only while the scene has a size: a scene out of the document has none.
     let labelFontPx = Number.NaN;
@@ -4376,8 +4430,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         return;
       }
       measureLabelFont();
+      sceneWidthPx = width;
+      sceneHeightPx = height;
       camera.aspect = width / height;
-      applyLensShift(width, height);
+      applyLensShift();
       renderer.setSize(width, height, false);
       lastSunGuideUpdateAt = Number.NEGATIVE_INFINITY;
     };
@@ -5734,21 +5790,34 @@ float saturnRingTransmission(vec3 surfacePosition) {
         animationFrame = requestAnimationFrame(render);
         return;
       }
-      if (Number.isNaN(labelFontPx)) {
+      if (sceneWidthPx === 0) {
         // The scene got its first size this frame, before the resize callback.
-        measureLabelFont();
+        resize(viewportWidth, viewportHeight);
       }
       // Guides stay out from under the bottom panels, which float over the
       // scene and draw above the guide labels: the time controls and the
       // short facts card. Beside a panel the sky stays open down to the
       // bottom edge. A panel never takes more than the lower half of the
       // scene. Measured here with the size, before this frame writes.
-      const sceneBox =
-        wayfinderModeRef.current === "off"
-          ? undefined
-          : container.getBoundingClientRect();
+      const sceneBox = container.getBoundingClientRect();
+      const panelBoxes = (selector: string): PanelBox[] =>
+        [...(container.parentElement?.querySelectorAll(selector) ?? [])]
+          .map((panel) => panel.getBoundingClientRect())
+          .filter((box) => box.width > 0 && box.height > 0)
+          .map((box) => ({
+            left: box.left - sceneBox.left,
+            right: box.right - sceneBox.left,
+            top: box.top - sceneBox.top,
+            bottom: box.bottom - sceneBox.top,
+          }));
+      // The open tour card or selected-body card, and the Display panel. A
+      // minimised or collapsed card leaves the centre clear.
+      const leftPanels = panelBoxes(
+        ".scale-tour:not(.is-minimised), .selected-body-detail:not(.is-collapsed)",
+      );
+      const rightPanels = panelBoxes(".display-panel");
       const guideObstacles =
-        sceneBox === undefined
+        wayfinderModeRef.current === "off"
           ? []
           : [
               ...(container.parentElement?.querySelectorAll(
@@ -5772,19 +5841,36 @@ float saturnRingTransmission(vec3 surfacePosition) {
       );
       lastRenderedAtMs = frameRenderStartedAtMs;
       frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
-      // Surface view keeps its deliberate framing. A drag holds the shift
-      // still, so the sky does not slide under the child's finger.
+      // Surface view keeps its deliberate framing, and on a phone the card
+      // lies along the bottom edge with no sky beside it. A drag holds the
+      // shift still, so the sky does not slide under the child's finger.
+      // Reduced motion moves the picture in one step.
       if (canvasPresses.size === 0) {
-        const nextLensShiftPx = easeLensShiftPx(
-          lensShiftPx,
-          surfaceObserverRef.current === null
-            ? lensShiftTargetPx(leftPanelInsetPxRef.current, viewportWidth)
-            : 0,
-          frameIntervalMs,
+        const subjectRadiusPx = subjectRadiusOnScreenPx(viewportHeight);
+        const targetLensShiftPx =
+          surfaceObserverRef.current === null && !phoneLayoutQuery.matches
+            ? lensShiftTargetPx({
+                sceneWidthPx: viewportWidth,
+                sceneHeightPx: viewportHeight,
+                subjectRadiusPx,
+                subjectLabelReachPx: cameraTargetLabelReachPx(labelFontPx),
+                leftPanels,
+                rightPanels,
+              })
+            : 0;
+        setData(
+          container,
+          "lensSubjectRadiusPx",
+          Number.isFinite(subjectRadiusPx)
+            ? subjectRadiusPx.toFixed(3)
+            : "infinite",
         );
+        const nextLensShiftPx = reducedMotionQuery.matches
+          ? targetLensShiftPx
+          : easeLensShiftPx(lensShiftPx, targetLensShiftPx, frameIntervalMs);
         if (nextLensShiftPx !== lensShiftPx) {
           lensShiftPx = nextLensShiftPx;
-          applyLensShift(viewportWidth, viewportHeight);
+          applyLensShift();
         }
       }
       const activeVisualQuality = visualQualityRef.current;

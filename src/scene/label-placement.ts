@@ -15,6 +15,13 @@ const LABEL_HALF_HEIGHT_EM = 1;
 // The right-side places clear the planet's own label start: 52 px at the
 // 0.56rem (8.96 px) font the offset was tuned at.
 const LABEL_SIDE_OFFSET_EM = 52 / 8.96;
+// The camera target's label sits this far below or above the body's centre.
+const CAMERA_TARGET_LABEL_OFFSET_Y_PX = 24;
+
+// How far above or below its body's centre a camera target's label reaches.
+export function cameraTargetLabelReachPx(fontPx: number): number {
+  return CAMERA_TARGET_LABEL_OFFSET_Y_PX + LABEL_HALF_HEIGHT_EM * fontPx;
+}
 
 export type LabelRole = "camera-target" | "overview-planet" | "other";
 
@@ -55,10 +62,10 @@ export function placeBodyLabel(
   const offsets: readonly (readonly [number, number])[] =
     input.role === "camera-target"
       ? [
-          [18, 24],
-          [18, -24],
-          [-width - 18, 24],
-          [-width - 18, -24],
+          [18, CAMERA_TARGET_LABEL_OFFSET_Y_PX],
+          [18, -CAMERA_TARGET_LABEL_OFFSET_Y_PX],
+          [-width - 18, CAMERA_TARGET_LABEL_OFFSET_Y_PX],
+          [-width - 18, -CAMERA_TARGET_LABEL_OFFSET_Y_PX],
         ]
       : input.role === "overview-planet"
         ? [
