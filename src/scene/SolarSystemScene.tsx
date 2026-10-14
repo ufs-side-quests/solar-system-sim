@@ -336,6 +336,7 @@ const LABEL_TITLE = "Select to see facts, select again to fly there";
 const FLY_HINT_ID = "body-label-fly-hint";
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
+// Fixed: applyMetreLogDepth maps this far plane to depth 1 in the shaders.
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
 const ORIENTATION_PRESET_TRANSITION_DURATION_MS = 1_200;
 // Scratch values for the per-frame camera moves, so a frame allocates none.

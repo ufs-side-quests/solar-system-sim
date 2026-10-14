@@ -141,7 +141,8 @@ test("keeps the focused model's sunlit hull out of saturation", async ({
 });
 
 // Scene units are AU, so a 4 m car stresses float32 depth and shadow lookups.
-// When either fails, far-side and shadowed faces cover the sunlit paint.
+// When depth fails, far-side and shadowed faces cover the sunlit paint. The
+// shadow lookup has its own test in au-scale-precision.spec.ts.
 test("draws the Roadster's sunlit paint in front of its far side", async ({
   page,
 }, testInfo) => {

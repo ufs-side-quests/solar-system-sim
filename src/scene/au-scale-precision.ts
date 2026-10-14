@@ -13,6 +13,8 @@ const WORLD_SPACE_LOOKUP =
 export const CAMERA_RELATIVE_LOOKUP =
   "shadowWorldPosition = vec4( ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz + shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias, 1.0 );";
 
+const cameraRelativeShadows = new WeakSet<DirectionalLight["shadow"]>();
+
 // Every directional shadow in the scene must use cameraRelativeShadowMatrix
 // once this runs, because the chunk is shared by all materials.
 export function applyCameraRelativeDirectionalShadows(
@@ -31,6 +33,9 @@ export function applyCameraRelativeDirectionalShadows(
     );
   }
   const shadow = light.shadow;
+  // A second wrap would add the camera translation twice.
+  if (cameraRelativeShadows.has(shadow)) return;
+  cameraRelativeShadows.add(shadow);
   const updateWorldSpaceMatrices = shadow.updateMatrices.bind(shadow);
   shadow.updateMatrices = (shadowLight) => {
     updateWorldSpaceMatrices(shadowLight);
@@ -58,7 +63,9 @@ export function cameraRelativeShadowMatrix(
 // shadowed faces draw over the near side in mesh order. The patch measures w
 // in metres and maps the fixed far plane to depth 1. With a 24-bit depth
 // buffer one step is then about 2.4 parts per million of the distance:
-// 0.03 mm at 12 m, 360 km at 1 AU.
+// 0.03 mm at 12 m, 360 km at 1 AU. Beyond about 0.5 AU from the camera this
+// is coarser than three's own mapping (10,600 km at 30 AU), so do not put
+// coplanar layers on distant bodies.
 const LOG_DEPTH_VERTEX = "vFragDepth = 1.0 + gl_Position.w;";
 const LOG_DEPTH_FRAGMENT = "log2( vFragDepth ) * logDepthBufFC * 0.5";
 
