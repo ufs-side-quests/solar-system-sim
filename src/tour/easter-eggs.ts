@@ -269,3 +269,11 @@ export function saveFoundEasterEggs(found: ReadonlySet<EasterEggId>): void {
     // Storage is unavailable: finds last for this session only.
   }
 }
+
+export function forgetFoundEasterEggs(): void {
+  try {
+    window.localStorage.removeItem(FOUND_EASTER_EGGS_STORAGE_KEY);
+  } catch {
+    // Storage is unavailable: no finds were kept on this computer.
+  }
+}

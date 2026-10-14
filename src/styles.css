@@ -159,24 +159,39 @@ p {
   bottom: 0.85rem;
 }
 
+/* Full screen keeps what a class watches: the tour panel, the shot caption
+   and, while a tour runs, the labels the tour names. */
 .app-shell.is-immersive .command-bar,
 .app-shell.is-immersive
   .workspace
   > :is(
     .focus-breadcrumb,
     .status-cluster,
-    .cinematic-shot-caption,
+    .global-simulation-clock,
     .camera-dock,
     .surface-observer-hud,
     .selected-body-detail,
     .display-panel,
-    .timeline-dock,
-    .scale-tour
+    .timeline-dock
   ),
-.app-shell.is-immersive
+.app-shell.is-immersive .reality-navigation-map,
+.app-shell.is-immersive .scene :is(.camera-journey, .gravity-field-legend),
+.app-shell.is-immersive:not(.is-touring)
   .scene
-  :is(.camera-journey, .gravity-field-legend, .body-label, .wayfinder-label) {
+  :is(.body-label, .wayfinder-label) {
   display: none !important;
+}
+
+.app-shell.is-immersive .scale-tour {
+  bottom: 0.85rem;
+}
+
+.blackout-cover {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  background: #000;
+  cursor: none;
 }
 
 .immersive-exit-button {
@@ -718,10 +733,6 @@ h1 {
   line-height: 1.25;
   pointer-events: none;
   white-space: nowrap;
-}
-
-.app-shell[data-immersive="true"] .reality-navigation-map {
-  display: none;
 }
 
 .major-body-layer {

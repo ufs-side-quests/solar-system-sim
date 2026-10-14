@@ -36,6 +36,8 @@ test("enters native fullscreen, hides every control surface, and restores the UI
     }),
   ).toBeVisible();
 
+  await expect(page.locator(".reality-navigation-map")).toBeVisible();
+  await expect(page.locator(".global-simulation-clock")).toBeVisible();
   await page.getByRole("button", { name: "Full screen" }).click();
   await expect(app).toHaveAttribute("data-immersive-mode", "true");
   await expect
@@ -43,6 +45,8 @@ test("enters native fullscreen, hides every control surface, and restores the UI
     .toBe("MAIN");
 
   await expect(page.locator("header.command-bar")).toBeHidden();
+  await expect(page.locator(".reality-navigation-map")).toBeHidden();
+  await expect(page.locator(".global-simulation-clock")).toBeHidden();
   await expect(
     page.getByRole("navigation", { name: "Camera navigation" }),
   ).toBeHidden();
