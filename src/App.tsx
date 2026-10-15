@@ -960,7 +960,6 @@ const REACT_PRESENTATION_INTERVAL_MS = 100;
 const MAXIMUM_PENDING_TRAIL_STATES = 64;
 
 type PresentedSimulation = Readonly<{
-  frame: SimulationFrame | undefined;
   state: SimulationState | undefined;
   // Achieved simulated seconds per second, measured by the playback loop.
   effectiveRate: number;
@@ -988,7 +987,6 @@ function useSimulationFrames(): Readonly<{
     mode: "auto",
   };
   const [presented, setPresented] = useState<PresentedSimulation>({
-    frame: undefined,
     state: undefined,
     effectiveRate: 0,
     viewMagnification: DEFAULT_CAMERA_ZOOM,
@@ -1008,7 +1006,6 @@ function useSimulationFrames(): Readonly<{
     presentTimerRef.current = undefined;
     lastPresentedAtRef.current = performance.now();
     setPresented({
-      frame: frameRef.current,
       state: stateRef.current,
       effectiveRate: effectiveRateRef.current,
       viewMagnification: viewMagnificationRef.current,
@@ -1120,13 +1117,7 @@ const DISCOVERY_TOAST_DURATION_MS = 6_000;
 export function App() {
   const audio = useInterfaceAudio();
   const {
-    presented: {
-      frame,
-      state,
-      effectiveRate,
-      viewMagnification,
-      exposureStatus,
-    },
+    presented: { state, effectiveRate, viewMagnification, exposureStatus },
     frameRef,
     stateRef: displayedStateRef,
     trailQueueRef,
@@ -2748,10 +2739,12 @@ export function App() {
     setControlPanelOpen(false);
   };
 
-  // The solver frame, not the displayed state: it changes in the same render
-  // that a new run starts from the epoch, so a restart is never repeated on a
-  // stale time.
-  const activeShotTimeSeconds = frame?.end.timeSeconds;
+  // The time on screen, not the solver frame: the frame reaches the loop end
+  // a keyframe before the screen does, and a restart then would cut the last
+  // day of the race from the clock and the planets. A new run's first frame
+  // jumps to the epoch, so the shown time changes in the same render that it
+  // starts and a restart is never repeated on a stale time.
+  const activeShotTimeSeconds = state?.timeSeconds;
   const activeShotLoopEndTimeSeconds =
     activeCinematicShot?.loopEndTimeSeconds ?? null;
   useEffect(() => {

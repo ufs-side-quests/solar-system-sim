@@ -243,6 +243,36 @@ test("the planets race starts at once from any date and repeats from the epoch",
       requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
+    // Every time the clock shows, including one shown for less than a
+    // frame: the time it showed just before each fall back to the epoch
+    // after the race started.
+    const loopEnds: number[] = [];
+    (window as unknown as { raceLoopEnds: number[] }).raceLoopEnds = loopEnds;
+    const output = document.querySelector(".time-readout output");
+    if (output === null) {
+      throw new Error("The clock readout is missing");
+    }
+    let raceStarted = false;
+    new MutationObserver((records) => {
+      const shownSeconds = [
+        ...records.map((record) => Number(record.oldValue)),
+        Number(output.getAttribute("data-time-seconds")),
+      ];
+      for (const [index, seconds] of shownSeconds.entries()) {
+        const previousSeconds = shownSeconds[index - 1];
+        if (previousSeconds === undefined || seconds >= 86_400) {
+          continue;
+        }
+        if (raceStarted && previousSeconds >= 86_400) {
+          loopEnds.push(previousSeconds);
+        }
+        raceStarted = true;
+      }
+    }).observe(output, {
+      attributes: true,
+      attributeFilter: ["data-time-seconds"],
+      attributeOldValue: true,
+    });
   });
   const tappedAtMs = await page.evaluate(() => performance.now());
   await page
@@ -307,6 +337,15 @@ test("the planets race starts at once from any date and repeats from the epoch",
   );
   expect(firstTapMs).toBeLessThan(2_000);
   expect(loopMs).toBeLessThan(2_000);
+  // The race shows its whole loop: the clock on screen reaches the loop end
+  // (REBOUND can land up to a second short of it) before it starts again.
+  const loopEnds = await page.evaluate(
+    () => (window as unknown as { raceLoopEnds: number[] }).raceLoopEnds,
+  );
+  expect(loopEnds.length).toBeGreaterThan(0);
+  for (const loopEndSeconds of loopEnds) {
+    expect(loopEndSeconds).toBeGreaterThanOrEqual(360 * 86_400 - 1);
+  }
   expect(longestSeekMs).toBeLessThan(2_000);
   expect(samples.filter((sample) => sample.outside)).toEqual([]);
   // Forward playback is clamped at the 360-day loop end, so even a slow
