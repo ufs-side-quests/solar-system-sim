@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import snapshotJson from "../data/operational-spacecraft.snapshot.json";
 import type { BodyState, SimulationState } from "./contracts";
+import { naifPhysicalSnapshot } from "./solar-system";
+import { propagateTwoBody } from "./two-body-propagator";
 
 const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 const sampleSchema = z.object({
@@ -9,7 +11,7 @@ const sampleSchema = z.object({
   positionM: vector3Schema,
   velocityMps: vector3Schema,
 });
-const spacecraftSchema = z.object({
+const spacecraftFields = {
   id: z.enum(["roadster", "hubble", "jwst"]),
   name: z.string().min(1),
   command: z.string().min(1),
@@ -22,16 +24,33 @@ const spacecraftSchema = z.object({
   sourceUrl: z.url(),
   sourceSha256: z.string().regex(/^[0-9a-f]{64}$/u),
   samples: z.array(sampleSchema).min(2),
-});
+};
+// Interplanetary spacecraft are sampled about the Solar System Barycenter and
+// interpolated with cubic Hermite. A low Earth orbit turns faster than any
+// practical barycentric sample step, and Horizons' Earth is not the
+// integrated Earth the scene draws, so Hubble is sampled about the geocentre
+// and placed on the simulation's Earth.
+const spacecraftSchema = z.discriminatedUnion("center", [
+  z.object({
+    ...spacecraftFields,
+    center: z.literal("500@0"),
+    stateModel: z.literal("cubic Hermite position and velocity"),
+  }),
+  z.object({
+    ...spacecraftFields,
+    center: z.literal("500@399"),
+    stateModel: z.literal(
+      "two-body propagation around Earth from the nearest sample",
+    ),
+  }),
+]);
 const snapshotSchema = z.object({
-  schemaVersion: z.literal("1.0.0"),
+  schemaVersion: z.literal("2.0.0"),
   generatedAt: z.iso.datetime(),
   epoch: z.object({
     julianDateTdb: z.literal(2_461_041.5),
     referenceFrame: z.literal("ICRF"),
-    center: z.literal("Solar System Barycenter (500@0)"),
   }),
-  interpolation: z.literal("cubic Hermite position and velocity"),
   spacecraft: z.array(spacecraftSchema).length(3),
 });
 
@@ -116,13 +135,75 @@ function samplePair(spacecraft: OperationalSpacecraft, timeSeconds: number) {
   return { first, second };
 }
 
-export function interpolateOperationalSpacecraft(
+const EARTH_BODY_ID = "earth";
+const earthGravitationalParameterM3S2 =
+  naifPhysicalSnapshot.bodies[EARTH_BODY_ID]?.gravitationalParameterM3S2 ??
+  (() => {
+    throw new Error("NAIF physical data is missing body earth");
+  })();
+
+/**
+ * Geocentric spacecraft: the simulation's Earth plus a two-body propagation
+ * from the nearest Horizons geocentric sample. J2 and drag are ignored; the
+ * sample step keeps the resulting error inside the bound that
+ * operational-spacecraft.test.ts checks against a one-minute Horizons day.
+ */
+function propagateFromNearestGeocentricSample(
+  spacecraft: OperationalSpacecraft,
+  timeSeconds: number,
+  earthState: BodyState,
+): BodyState {
+  const { first, second } = samplePair(spacecraft, timeSeconds);
+  const nearest =
+    timeSeconds - first.timeSeconds <= second.timeSeconds - timeSeconds
+      ? first
+      : second;
+  const relative = propagateTwoBody(
+    nearest,
+    earthGravitationalParameterM3S2,
+    timeSeconds - nearest.timeSeconds,
+  );
+  return {
+    id: spacecraft.id,
+    gravitationalParameterM3S2: 0,
+    positionM: [
+      earthState.positionM[0] + relative.positionM[0],
+      earthState.positionM[1] + relative.positionM[1],
+      earthState.positionM[2] + relative.positionM[2],
+    ],
+    velocityMps: [
+      earthState.velocityMps[0] + relative.velocityMps[0],
+      earthState.velocityMps[1] + relative.velocityMps[1],
+      earthState.velocityMps[2] + relative.velocityMps[2],
+    ],
+  };
+}
+
+/**
+ * The spacecraft state at `timeSeconds`. A geocentric spacecraft rides on the
+ * Earth state in `bodies`, so it stays on the Earth the scene draws.
+ */
+export function operationalSpacecraftState(
   bodyId: OperationalSpacecraft["id"],
   timeSeconds: number,
+  bodies: readonly BodyState[],
 ): BodyState {
   const spacecraft = operationalSpacecraftById.get(bodyId);
   if (spacecraft === undefined) {
     throw new Error(`Operational spacecraft ${bodyId} is unavailable`);
+  }
+  if (spacecraft.center === "500@399") {
+    const earthState = bodies.find((body) => body.id === EARTH_BODY_ID);
+    if (earthState === undefined) {
+      throw new Error(
+        `${spacecraft.name} needs the simulation's earth state, which is missing`,
+      );
+    }
+    return propagateFromNearestGeocentricSample(
+      spacecraft,
+      timeSeconds,
+      earthState,
+    );
   }
   const { first, second } = samplePair(spacecraft, timeSeconds);
   const duration = second.timeSeconds - first.timeSeconds;
@@ -179,7 +260,11 @@ export function withOperationalSpacecraft(
       isOperationalSpacecraftWithinValidity(spacecraft.id, state.timeSeconds),
     )
     .map((spacecraft) =>
-      interpolateOperationalSpacecraft(spacecraft.id, state.timeSeconds),
+      operationalSpacecraftState(
+        spacecraft.id,
+        state.timeSeconds,
+        integratedBodies,
+      ),
     );
   return { ...state, bodies: [...integratedBodies, ...operationalBodies] };
 }

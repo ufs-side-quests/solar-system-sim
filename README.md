@@ -116,7 +116,10 @@ Four warm floodlights at the ends of its main truss and its module stack are dec
 
 Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF states at the common 2026 epoch and then run inside REBOUND as massless test particles.
 Their official NASA model attitude continuously points the high-gain antenna's local boresight toward the live Earth position.
-Hubble and JWST use published NASA/JPL Horizons position and velocity samples with cubic Hermite interpolation only inside their installed 2026 coverage windows.
+JWST uses published NASA/JPL Horizons barycentric position and velocity samples with cubic Hermite interpolation only inside its installed 2026 coverage window.
+Hubble orbits Earth in about 95 minutes, faster than any practical barycentric sample step, so it uses NASA/JPL Horizons geocentric samples every 30 minutes.
+Its drawn position is the simulation's integrated Earth plus a two-body orbit around Earth from the nearest sample, so Hubble stays on the Earth the scene draws although that Earth sits 116 to 151 km from JPL's Earth over the window.
+The two-body orbit ignores Earth's oblateness (J2) and drag: over the 15 minutes from the nearest sample this gives at most about 5 km against one day of one-minute Horizons samples, inside a tested 10 km bound.
 Hubble and JWST are not passed through the N-body solver because their real operational trajectories include drag, stationkeeping, and manoeuvres that an uncommanded gravity-only model cannot reproduce.
 The Tesla Roadster and Starman use NASA/JPL Horizons solution 11 across its published 2018-2090 interval, including the fitted radial solar-radiation-pressure acceleration, and disappear rather than extrapolate outside that coverage.
 The Roadster visual uses the detailed MIT-licensed SpaceDock model by TheBigElon, with the Starman mesh credited to Oranhunter, normalized to the Roadster's 3.946 metre maximum dimension.
@@ -381,8 +384,9 @@ Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF state vectors at 
 They run inside REBOUND as massless test particles, so every massive body deflects their paths while the probes do not perturb the planets.
 Their shared official NASA 3D model uses the published maximum dimension at one physical scale; its attitude is illustrative rather than telemetry-derived.
 
-Hubble and JWST use fixed NASA/JPL Horizons vector snapshots with cubic Hermite interpolation between published position and velocity samples.
-Interpolation stops at the declared coverage boundaries instead of clamping or extrapolating an apparently plausible position.
+JWST uses a fixed NASA/JPL Horizons barycentric vector snapshot with cubic Hermite interpolation between published position and velocity samples.
+Hubble uses a fixed NASA/JPL Horizons geocentric vector snapshot, propagated as a two-body orbit around the simulation's Earth from the nearest published sample.
+Both stop at the declared coverage boundaries instead of clamping or extrapolating an apparently plausible position.
 The application currently installs six spacecraft and artificial payloads and does not claim to contain every active spacecraft or probe in the Solar System.
 
 Small bodies currently use a declared Sun-centred two-body Kepler model on the GPU.

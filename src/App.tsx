@@ -3178,7 +3178,9 @@ export function App() {
           ephemerisStatus:
             bodyId === "roadster"
               ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
-              : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+              : operationalSpacecraft.center === "500@399"
+                ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
+                : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
         };
       }
       if (isVoyager) {
