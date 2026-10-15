@@ -8,15 +8,20 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   DoubleSide,
   DynamicDrawUsage,
+  EquirectangularReflectionMapping,
   GridHelper,
   Group,
+  HalfFloatType,
   Line,
   LineBasicMaterial,
   LineLoop,
   LineSegments,
+  LinearFilter,
+  LinearSRGBColorSpace,
   Matrix4,
   Material,
   Mesh,
@@ -26,8 +31,10 @@ import {
   PointsMaterial,
   PointLight,
   PCFShadowMap,
+  PMREMGenerator,
   Quaternion,
   Raycaster,
+  RGBAFormat,
   RingGeometry,
   Scene,
   SphereGeometry,
@@ -40,6 +47,7 @@ import {
   Vector3,
   Vector2,
   WebGLRenderer,
+  type WebGLRenderTarget,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -188,6 +196,18 @@ import {
   modelLightsByBodyId,
   type ModelLightPoints,
 } from "./model-lights";
+import {
+  PLANETSHINE_MAP_HEIGHT,
+  PLANETSHINE_MAP_WIDTH,
+  PLANETSHINE_REBUILD_MIN_MS,
+  type PlanetshineGeometry,
+  planetshineFillRatio,
+  planetshineFrame,
+  planetshineNeedsRebuild,
+  planetshineSourceById,
+  planetshineSourceId,
+  writePlanetshineMap,
+} from "./planetshine";
 import {
   DEFIANT_PORTHOLE_MATERIAL,
   DEFIANT_WINDOW_MATERIAL,
@@ -1396,6 +1416,170 @@ export function SolarSystemScene({
     scene.add(localModelSunlight);
     scene.add(localModelSunlight.target);
     container.dataset["solarIlluminationModel"] = "inverse-square";
+    // Planetshine on the focused model only (planetshine.ts): its parent's
+    // sunlit disc as an environment map, filtered by PMREM. Planets and moons
+    // never get it, so no night side is lit.
+    const planetshineMapData = new Uint16Array(
+      PLANETSHINE_MAP_WIDTH * PLANETSHINE_MAP_HEIGHT * 4,
+    );
+    const planetshineMap = new DataTexture(
+      planetshineMapData,
+      PLANETSHINE_MAP_WIDTH,
+      PLANETSHINE_MAP_HEIGHT,
+      RGBAFormat,
+      HalfFloatType,
+    );
+    planetshineMap.mapping = EquirectangularReflectionMapping;
+    planetshineMap.colorSpace = LinearSRGBColorSpace;
+    planetshineMap.magFilter = LinearFilter;
+    planetshineMap.minFilter = LinearFilter;
+    const planetshinePmrem = new PMREMGenerator(renderer);
+    let planetshineTarget: WebGLRenderTarget | null = null;
+    let planetshineBuilt:
+      | (PlanetshineGeometry & {
+          sourceId: string;
+          irradiancePerIntensity: number;
+        })
+      | undefined;
+    let planetshineGroup: Object3D | undefined;
+    const planetshineMaterials = new Set<MeshStandardMaterial>();
+    const planetshineRotation = new Matrix4();
+    const sunlightLinearRgb = (): [number, number, number] => [
+      localModelSunlight.color.r,
+      localModelSunlight.color.g,
+      localModelSunlight.color.b,
+    ];
+    const clearPlanetshine = (): void => {
+      for (const material of planetshineMaterials) {
+        material.envMap = null;
+        material.envMapIntensity = 1;
+        material.needsUpdate = true;
+      }
+      planetshineMaterials.clear();
+      planetshineGroup = undefined;
+      delete container.dataset["modelPlanetshineRatio"];
+      delete container.dataset["modelPlanetshineSource"];
+      delete container.dataset["modelPlanetshineAngularRadiusDeg"];
+      delete container.dataset["modelPlanetshinePhaseDeg"];
+      delete container.dataset["modelPlanetshineMaterials"];
+    };
+    let planetshineBuildCount = 0;
+    let planetshineBuiltAtMs = Number.NEGATIVE_INFINITY;
+    // The parent's disc is redrawn only when it visibly changes; its turn
+    // and the inverse-square brightness follow the model every frame.
+    const updatePlanetshine = (
+      current: SimulationState,
+      bodyId: string,
+      group: Object3D,
+      modelPosition: Vector3,
+      sunPosition: Vector3,
+      solarIrradiance: number,
+    ): void => {
+      const sourceId = planetshineSourceId(bodyId, parentBodyId, (id) =>
+        majorBodyById.has(id),
+      );
+      if (sourceId === undefined) {
+        clearPlanetshine();
+        return;
+      }
+      const sourceState = bodyStateById(current, sourceId);
+      const source = planetshineSourceById.get(sourceId);
+      const sourceDefinition = majorBodyById.get(sourceId);
+      if (
+        sourceState === undefined ||
+        source === undefined ||
+        sourceDefinition === undefined
+      ) {
+        throw new Error(`Planetshine source ${sourceId} state is unavailable`);
+      }
+      const geometry = planetshineFrame(
+        modelPosition,
+        scenePosition(sourceState.positionM),
+        sunPosition,
+        sourceDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M,
+        planetshineRotation,
+      );
+      const nowMs = performance.now();
+      if (
+        planetshineBuilt?.sourceId !== sourceId ||
+        (nowMs - planetshineBuiltAtMs >= PLANETSHINE_REBUILD_MIN_MS &&
+          planetshineNeedsRebuild(planetshineBuilt, geometry))
+      ) {
+        planetshineBuiltAtMs = nowMs;
+        const irradiancePerIntensity = writePlanetshineMap(
+          planetshineMapData,
+          geometry,
+          source,
+          sunlightLinearRgb(),
+        );
+        planetshineMap.needsUpdate = true;
+        planetshineTarget = planetshinePmrem.fromEquirectangular(
+          planetshineMap,
+          planetshineTarget,
+        );
+        planetshineBuilt = { ...geometry, sourceId, irradiancePerIntensity };
+        planetshineBuildCount += 1;
+        setData(
+          container,
+          "modelPlanetshineBuildMs",
+          (performance.now() - nowMs).toFixed(2),
+        );
+        setData(
+          container,
+          "modelPlanetshineBuilds",
+          String(planetshineBuildCount),
+        );
+      }
+      if (planetshineGroup !== group) {
+        clearPlanetshine();
+        planetshineGroup = group;
+        const envMap = planetshineTarget?.texture ?? null;
+        group.traverse((object) => {
+          if (!(object instanceof Mesh)) return;
+          const meshMaterials: unknown[] = Array.isArray(object.material)
+            ? object.material
+            : [object.material];
+          for (const material of meshMaterials) {
+            if (!(material instanceof MeshStandardMaterial)) continue;
+            material.envMap = envMap;
+            material.needsUpdate = true;
+            planetshineMaterials.add(material);
+          }
+        });
+      }
+      let appliedIntensity = 0;
+      for (const material of planetshineMaterials) {
+        material.envMapIntensity = solarIrradiance;
+        material.envMapRotation.setFromRotationMatrix(planetshineRotation);
+        appliedIntensity = material.envMapIntensity;
+      }
+      setData(
+        container,
+        "modelPlanetshineRatio",
+        planetshineFillRatio(
+          appliedIntensity,
+          planetshineBuilt.irradiancePerIntensity,
+          solarIrradiance,
+          sunlightLinearRgb(),
+        ).toFixed(4),
+      );
+      setData(container, "modelPlanetshineSource", sourceId);
+      setData(
+        container,
+        "modelPlanetshineAngularRadiusDeg",
+        ((planetshineBuilt.angularRadiusRad * 180) / Math.PI).toFixed(2),
+      );
+      setData(
+        container,
+        "modelPlanetshinePhaseDeg",
+        ((planetshineBuilt.phaseAngleRad * 180) / Math.PI).toFixed(2),
+      );
+      setData(
+        container,
+        "modelPlanetshineMaterials",
+        String(planetshineMaterials.size),
+      );
+    };
 
     const starGeometry = new BufferGeometry();
     const starCount = hipparcosStarSnapshot.stars.length;
@@ -6916,9 +7100,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const localSunlightInRange =
               camera.position.distanceTo(localShadowPosition) <=
               localShadowRadiusAu * LOCAL_MODEL_SUNLIGHT_RANGE_RADII;
+            const localSolarIrradiance =
+              SOLAR_IRRADIANCE_AT_1_AU /
+              Math.max(localDistanceAu * localDistanceAu, 0.0016);
             localModelSunlight.intensity = localSunlightInRange
-              ? SOLAR_IRRADIANCE_AT_1_AU /
-                Math.max(localDistanceAu * localDistanceAu, 0.0016)
+              ? localSolarIrradiance
               : 0;
             sunlight.intensity = localSunlightInRange
               ? 0
@@ -6930,11 +7116,20 @@ float saturnRingTransmission(vec3 surfacePosition) {
               localShadowBodyId ?? "unavailable",
             );
             setData(container, "localShadowMap", "pcf-2048");
+            updatePlanetshine(
+              current,
+              localShadowState.id,
+              localShadowGroup,
+              localShadowPosition,
+              sunScenePosition,
+              localSolarIrradiance,
+            );
           } else {
             localModelSunlight.visible = false;
             sunlight.intensity = SOLAR_IRRADIANCE_AT_1_AU;
             delete container.dataset["localShadowBody"];
             setData(container, "localShadowMap", "inactive");
+            clearPlanetshine();
           }
           const solarOccluderCandidates = majorBodySnapshot.bodies
             .filter((body) => body.id !== "sun")
@@ -9997,6 +10192,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       );
       gpuLayer?.dispose();
       gravityWellLayer.dispose();
+      planetshineTarget?.dispose();
+      planetshinePmrem.dispose();
+      planetshineMap.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       for (const geometry of geometries) {
