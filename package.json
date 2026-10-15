@@ -29,6 +29,7 @@
     "data:nasa-assets": "node scripts/fetch-nasa-assets.mjs && node scripts/install-authority-surface-maps.mjs && node scripts/derive-authority-material-maps.mjs",
     "data:lineup-globes": "node scripts/render-lineup-globes.mjs",
     "data:stars": "node scripts/fetch-hipparcos-stars.mjs",
+    "data:body-albedo": "node scripts/fetch-body-albedo.mjs",
     "data:solar-photosphere": "node scripts/derive-solar-photosphere.mjs",
     "models:repair": "node scripts/repair-model-assets.mjs",
     "audio:tour": "node scripts/generate-tour-narration.mjs",
