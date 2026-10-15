@@ -13,13 +13,6 @@ import {
 } from "../physics/operational-spacecraft";
 import { interpolateDisplayedSimulationFrame } from "./display-interpolation";
 
-const sun = {
-  id: "sun",
-  gravitationalParameterM3S2: 1.327_124_400_412_794_2e20,
-  positionM: [0, 0, 0] as const,
-  velocityMps: [0, 0, 0] as const,
-};
-
 describe("display interpolation", () => {
   it("evaluates operational spacecraft at display time across a coverage boundary", () => {
     const hubble = operationalSpacecraftById.get("hubble");
@@ -30,12 +23,12 @@ describe("display interpolation", () => {
     const start = withOperationalSpacecraft({
       timeSeconds: finalSample.timeSeconds - 3_600,
       energy: 0,
-      bodies: [sun],
+      bodies: majorBodySystem.bodies,
     });
     const end = withOperationalSpacecraft({
       timeSeconds: finalSample.timeSeconds + 3_600,
       energy: 0,
-      bodies: [sun],
+      bodies: majorBodySystem.bodies,
     });
     expect(start.bodies.some((body) => body.id === "hubble")).toBe(true);
     expect(end.bodies.some((body) => body.id === "hubble")).toBe(false);

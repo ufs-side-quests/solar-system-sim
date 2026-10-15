@@ -114,9 +114,7 @@ export function propagateTwoBody(
   const radialVelocity0 = dot(initial.positionM, initial.velocityMps) / radius0;
   const orbit = boundTwoBodyOrbit(initial, gravitationalParameterM3S2);
   if (orbit === undefined) {
-    throw new Error(
-      "Known-moon two-body model requires a bound elliptic state",
-    );
+    throw new Error("Two-body model requires a bound elliptic state");
   }
   const alpha = orbit.inverseSemiMajorAxisPerM;
   const orbitalPeriodSeconds = orbit.periodSeconds;
@@ -174,7 +172,7 @@ export function propagateTwoBody(
     evaluateUniversalEquation(lowerAnomaly).value > 0 ||
     evaluateUniversalEquation(upperAnomaly).value < 0
   ) {
-    throw new Error("Known-moon two-body propagation root is not bracketed");
+    throw new Error("Two-body propagation root is not bracketed");
   }
   let universalAnomaly = Math.min(
     upperAnomaly,
@@ -211,7 +209,7 @@ export function propagateTwoBody(
     }
   }
   if (!converged) {
-    throw new Error("Known-moon two-body propagation did not converge");
+    throw new Error("Two-body propagation did not converge");
   }
   const anomalySquared = universalAnomaly * universalAnomaly;
   const z = alpha * anomalySquared;
@@ -234,9 +232,7 @@ export function propagateTwoBody(
     scale(initial.velocityMps, gDot),
   );
   if ([...positionM, ...velocityMps].some((value) => !Number.isFinite(value))) {
-    throw new Error(
-      "Known-moon two-body propagation returned non-finite state",
-    );
+    throw new Error("Two-body propagation returned non-finite state");
   }
   return { positionM, velocityMps };
 }
