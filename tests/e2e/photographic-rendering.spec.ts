@@ -2,6 +2,14 @@ import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import sharp from "sharp";
 
+import solarPhotosphereJson from "../../src/data/solar-photosphere.snapshot.json" with { type: "json" };
+
+import {
+  hueAndSaturation,
+  marsMapMeanLinear,
+  srgbDecode,
+} from "./colour-metrics";
+
 async function focusBody(
   page: Page,
   scene: Locator,
@@ -588,4 +596,99 @@ test("matches the reference image for the Death Star II local shadow", async ({
     path: testInfo.outputPath("reference-death-star-local-shadow.png"),
     animations: "disabled",
   });
+});
+
+test("shows Mars in the hue and saturation of its surface map", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  // The reference: the area-weighted (cosine of latitude) mean of the
+  // installed map in linear sRGB, as scripts/fetch-body-albedo.mjs takes it,
+  // lit by the scene's sunlight colour.
+  const mapMean = await marsMapMeanLinear();
+  const reference = hueAndSaturation(
+    mapMean.map(
+      (mean, channel) =>
+        mean * (solarPhotosphereJson.discMeanLinearSrgb[channel] ?? Number.NaN),
+    ),
+  );
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await focusBody(page, scene, "Mars", "mars");
+  const label = page.locator('.body-label[data-body-id="mars"]');
+  await expect(label).toHaveAttribute("data-surface-asset-state", "loaded", {
+    timeout: 60_000,
+  });
+  await expect
+    .poll(
+      async () =>
+        Math.abs(
+          Number(await scene.getAttribute("data-camera-exposure")) /
+            Number(await scene.getAttribute("data-camera-exposure-target")) -
+            1,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(0.005);
+  await page.addStyleTag({
+    content: ".body-label-layer { visibility: hidden; }",
+  });
+  const centreX = Number(await label.getAttribute("data-screen-x"));
+  const centreY = Number(await label.getAttribute("data-screen-y"));
+  const radius = Number(await label.getAttribute("data-radius-pixels"));
+  expect(radius).toBeGreaterThan(100);
+  const frame = await page
+    .locator("canvas.major-body-layer")
+    .screenshot({ animations: "disabled" });
+  await testInfo.attach("mars", { body: frame, contentType: "image/png" });
+  const { data, info } = await sharp(frame)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  // The sunlit part of the disc: inside 90% of the radius, clear of the
+  // limb, and at least a quarter of the brightest luma there, clear of the
+  // terminator.
+  const inside: number[] = [];
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if ((x - centreX) ** 2 + (y - centreY) ** 2 <= (0.9 * radius) ** 2) {
+        inside.push((y * info.width + x) * info.channels);
+      }
+    }
+  }
+  const luma = (offset: number): number =>
+    0.2126 * (data[offset] ?? Number.NaN) +
+    0.7152 * (data[offset + 1] ?? Number.NaN) +
+    0.0722 * (data[offset + 2] ?? Number.NaN);
+  const peak = inside.reduce(
+    (brightest, offset) => Math.max(brightest, luma(offset)),
+    0,
+  );
+  const lit = inside.filter((offset) => luma(offset) >= 0.25 * peak);
+  expect(lit.length).toBeGreaterThan(10_000);
+  const rendered = hueAndSaturation(
+    [0, 1, 2].map(
+      (channel) =>
+        lit.reduce(
+          (sum, offset) =>
+            sum + srgbDecode(data[offset + channel] ?? Number.NaN),
+          0,
+        ) / lit.length,
+    ),
+  );
+  // Measured at 1280 by 800: ACES Filmic drew this disc 9.2 degrees towards
+  // yellow. The hue-keeping tone mapping draws it 0.3 degrees away.
+  // Saturation is not checked against the map here: the shaded scene has
+  // only 0.91 of it before any tone curve, likely from the surface's
+  // specular reflection of white sunlight. tone-mapping.spec.ts checks that
+  // the curve itself keeps saturation.
+  expect(Math.abs(rendered.hueDeg - reference.hueDeg)).toBeLessThan(3);
 });

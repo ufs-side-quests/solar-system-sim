@@ -195,6 +195,11 @@ The light takes the mean colour of the parent's installed surface map, and its s
 On a surface that faces a fully lit parent the fill is about 0.26 of the direct sunlight at the ISS, 0.51 at Discovery One, 0.34 at Death Star II, 0.16 at Death Star I and 0.008 at Deep Space Nine, which stays nearly black.
 The map is redrawn only when the parent's apparent size changes by 1% or its phase by 1 degree, and at most four times a second.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
+Lit surfaces and models use a hue-keeping tone curve: ACES Filmic's curve applied to one brightness number per colour, so the colour's channel ratios, and with them its hue and saturation, stay as the scene shades them.
+Mars stays orange red, Io yellow and Saturn butterscotch, where ACES Filmic, used before, drew Mars 9 degrees towards yellow and Io and Saturn nearly white.
+Every grey lit by the Sun shows exactly as under ACES, so an 18% grey facing the Sun is still sRGB 177 and light-grey hulls keep ACES's long highlight roll-off.
+Only colours brighter than the sunlight's own luminance on screen (0.899) are mixed towards white, so a lamp core still reads white hot.
+The Sun's disc, the corona, the atmospheres, the rings, the stars and the lamp glow are not tone mapped.
 One finite solar-disc model darkens every major-body surface and atmosphere during partial, annular, or total occlusion.
 Atmospheres integrate view and solar optical depth through body-specific exponential Rayleigh and Mie density profiles.
 The Earth uses NASA Black Marble night emission and Blue Marble-derived roughness, while the Moon uses a LOLA-derived normal map.
@@ -279,6 +284,8 @@ The eclipse-story journey checks all seven 12 August 2026 scenes at their exact 
 It verifies London contact geometry, apparent solar and lunar diameters, live disc overlap, and a physical centre-line comparison in northern Spain.
 The gravity-field journey verifies positive-GM superposition, sourced-radius surface capping, physical joules-per-kilogram diagnostics, contour and surface rendering, local-detail and absolute-comparison scaling, and synchronization with simulation time.
 The photographic-rendering journey verifies the three rendering profiles, bounded device-pixel ratios, inverse-square illumination metadata, smooth auto-exposure, Sun-facing close-view framing, live atmosphere and Saturn-ring lighting models, and measured browser frame diagnostics before capturing Earth, Saturn, and the close Sun.
+It also checks that the sunlit disc of Mars keeps the hue of its installed map within 3 degrees and its saturation within 10%, in OKLab.
+The tone-mapping journey draws an 18% grey facing the Sun through the app's tone curve and ACES Filmic on the GPU and checks they agree within 2 sRGB levels.
 The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
 It also decodes each picture and measures the opaque globe across and down against the frame half width and the sourced radii within 2 px, so a render with a wrong camera scale fails.
 The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.

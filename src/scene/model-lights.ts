@@ -40,14 +40,15 @@ import {
 // times a window, and a sunlit mid-grey hull at 1 AU (about 21,000 cd/m2) is
 // below every lamp. The core of the lamp is that radiance at the lamp's
 // physical size, tone mapped like any surface: a beacon core reads white hot
-// under ACES at every exposure the app uses.
+// at every exposure the app uses, because tone-mapping.ts mixes a colour at
+// the top of its shoulder to white, as ACES did.
 //
 // There is no bloom pass, so each lamp also draws a glow: the stand-in for a
 // camera's glare around a bright source. Glare is a display effect, not light
 // at the lamp, so the glow is set in display terms: it is added after tone
 // mapping, with a peak of LAMP_GLOW_DISPLAY_PEAK in the lamp's hue, scaled
-// down only when the core itself is not bright on screen. ACES would turn a
-// bright coloured glow white; added after it, the glow keeps the lamp's
+// down only when the core itself is not bright on screen. Tone mapping would
+// turn a bright coloured glow white; added after it, the glow keeps the lamp's
 // colour while the auto exposure changes by a factor of 27 between 1 AU and
 // Jupiter. The glow also fades as the camera drops below the horizon of the
 // hull the lamp sits on, so a lamp on the far side shows no halo around the
