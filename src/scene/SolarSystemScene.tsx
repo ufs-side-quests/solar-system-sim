@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import {
-  ACESFilmicToneMapping,
   AdditiveBlending,
   Box3,
   BoxGeometry,
@@ -102,6 +101,7 @@ import {
   applyCameraRelativeDirectionalShadows,
   applyMetreLogDepth,
 } from "./au-scale-precision";
+import { applyHueKeepingToneMapping } from "./tone-mapping";
 import {
   GravityWellLayer,
   type GravityWellDiagnostics,
@@ -1031,7 +1031,7 @@ export function SolarSystemScene({
     });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = SRGBColorSpace;
-    renderer.toneMapping = ACESFilmicToneMapping;
+    applyHueKeepingToneMapping(renderer);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = PCFShadowMap;
     renderer.toneMappingExposure =
