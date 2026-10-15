@@ -428,6 +428,18 @@ const majorBodyById = new Map(
   majorBodySnapshot.bodies.map((body) => [body.id, body]),
 );
 
+// Each Horizons spacecraft and the state model the snapshot gives it.
+const OPERATIONAL_SPACECRAFT_PHYSICS = operationalSpacecraftSnapshot.spacecraft
+  .map(
+    (spacecraft) =>
+      `${spacecraft.id}=${
+        spacecraft.center === "500@399"
+          ? "geocentric-two-body"
+          : "barycentric-cubic-Hermite"
+      }`,
+  )
+  .join(" ");
+
 // The overview turns about the Sun's centre, so its zoom stops outside the Sun.
 const OVERVIEW_MINIMUM_DISTANCE_AU = (() => {
   const sun = majorBodyById.get("sun");
@@ -9845,7 +9857,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       setData(
         container,
         "operationalSpacecraftPhysics",
-        "NASA-JPL-Horizons-cubic-Hermite",
+        OPERATIONAL_SPACECRAFT_PHYSICS,
       );
       setData(container, "visibleBodyLabels", String(visibleLabelCount));
       setData(container, "orreryMarkerCount", String(visibleOrreryMarkerCount));
