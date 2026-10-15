@@ -151,7 +151,8 @@ These dusty systems remain appropriately faint in Reality; Orrery applies a disc
 
 Two high-detail Death Star references orbit Callisto and Ganymede at physical scale.
 Death Star I uses the original integrated model.
-Death Star II uses an optimised CC BY model with complete colour, normal, occlusion, metallic, roughness, and emissive maps.
+Death Star II uses a CC BY model, modified for this scene: its colour, normal, and roughness maps show at full value on a painted, non-metallic hull, its windows glow at the calibrated 300 cd/m2 interior luminance, and its superlaser dish faces the viewer.
+The model has no superlaser glow, and its occlusion map has no visible effect because the scene has no ambient light.
 
 An optimised CC BY physical-scale Discovery One model orbits Io, where 2010 places the ship.
 Its command sphere, pod bays, truss spine, external tanks, high-gain antenna, and propulsion module are lit by the same inverse-square Sun source as the real objects.

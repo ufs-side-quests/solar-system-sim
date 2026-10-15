@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import { fictionalModelAssets } from "./fictional-model-assets";
@@ -34,10 +35,19 @@ type GltfJson = Readonly<{
   }[];
   materials: readonly {
     name?: string;
-    pbrMetallicRoughness?: { metallicFactor?: number };
+    pbrMetallicRoughness?: {
+      baseColorFactor?: readonly number[];
+      metallicFactor?: number;
+    };
     emissiveFactor?: readonly number[];
     emissiveTexture?: { index: number; texCoord?: number };
   }[];
+  textures?: readonly {
+    source?: number;
+    extensions?: { EXT_texture_webp?: { source: number } };
+  }[];
+  images?: readonly { bufferView?: number }[];
+  bufferViews?: readonly { byteOffset?: number; byteLength: number }[];
 }>;
 
 function modelBytes(modelUrl: string): Buffer {
@@ -53,6 +63,56 @@ function gltfJson(modelUrl: string): GltfJson {
   const jsonLength = bytes.readUInt32LE(12);
   const json: unknown = JSON.parse(bytes.toString("utf8", 20, 20 + jsonLength));
   return json as GltfJson;
+}
+
+/** The bytes of a texture's image in a binary glTF file's BIN chunk. */
+function textureImageBytes(
+  modelUrl: string,
+  gltf: GltfJson,
+  textureIndex: number,
+): Buffer {
+  const texture = gltf.textures?.[textureIndex];
+  const imageIndex =
+    texture?.extensions?.EXT_texture_webp?.source ?? texture?.source;
+  const viewIndex =
+    imageIndex === undefined
+      ? undefined
+      : gltf.images?.[imageIndex]?.bufferView;
+  const view =
+    viewIndex === undefined ? undefined : gltf.bufferViews?.[viewIndex];
+  if (view === undefined) {
+    throw new Error(
+      `${modelUrl} texture ${String(textureIndex)} has no image bytes`,
+    );
+  }
+  const bytes = modelBytes(modelUrl);
+  const binStart = 20 + bytes.readUInt32LE(12) + 8;
+  const start = binStart + (view.byteOffset ?? 0);
+  return bytes.subarray(start, start + view.byteLength);
+}
+
+/** Linear Rec. 709 luminance of the brightest texel of an sRGB image. */
+async function maximumTexelLuminance(image: Buffer): Promise<number> {
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const linear = (byte: number): number => {
+    const encoded = byte / 255;
+    return encoded <= 0.04045
+      ? encoded / 12.92
+      : ((encoded + 0.055) / 1.055) ** 2.4;
+  };
+  let maximum = 0;
+  for (let offset = 0; offset < data.length; offset += info.channels) {
+    maximum = Math.max(
+      maximum,
+      0.2126 * linear(data[offset] ?? Number.NaN) +
+        0.7152 * linear(data[offset + 1] ?? Number.NaN) +
+        0.0722 * linear(data[offset + 2] ?? Number.NaN),
+    );
+  }
+  return maximum;
 }
 
 describe("installed 3D model files", () => {
@@ -161,6 +221,99 @@ describe("installed 3D model files", () => {
         ),
       );
     }
+  });
+
+  it("gives Death Star II painted, non-metallic materials at full texture value", () => {
+    const materials = gltfJson("/models/community/death-star-ii.glb").materials;
+    expect(materials).toHaveLength(11);
+    for (const material of materials) {
+      // An absent factor is the glTF default: 1 for base colour, 1 (bare
+      // metal) for metallic. The Sketchfab export set base colour 0 to 0.17
+      // and left metallic unset.
+      expect(
+        material.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1, 1],
+        material.name,
+      ).toEqual([1, 1, 1, 1]);
+      expect(
+        material.pbrMetallicRoughness?.metallicFactor ?? 1,
+        material.name,
+      ).toBe(0);
+    }
+  });
+
+  it("lights Death Star II's windows at the calibrated level", async () => {
+    const modelUrl = "/models/community/death-star-ii.glb";
+    const gltf = gltfJson(modelUrl);
+    const windows = gltf.materials.filter(
+      (material) => material.emissiveTexture !== undefined,
+    );
+    // The decks and the outer hull panels; the export's factors were 1 and 0.8.
+    expect(windows.map((material) => material.name)).toEqual([
+      "05_-_Defaultasdasd windows",
+      "06_-_Default windows",
+    ]);
+    const textureIndices = new Set(
+      windows.map((material) => material.emissiveTexture?.index),
+    );
+    expect(textureIndices.size).toBe(1);
+    const [textureIndex = Number.NaN] = textureIndices;
+    const brightestTexel = await maximumTexelLuminance(
+      textureImageBytes(modelUrl, gltf, textureIndex),
+    );
+    const luminance = (factor: readonly number[] | undefined): number =>
+      0.2126 * (factor?.[0] ?? Number.NaN) +
+      0.7152 * (factor?.[1] ?? Number.NaN) +
+      0.0722 * (factor?.[2] ?? Number.NaN);
+    const [decks, panels] = windows;
+    expect(luminance(decks?.emissiveFactor) * brightestTexel).toBeCloseTo(
+      LIT_WINDOW_RADIANCE,
+      6,
+    );
+    expect(
+      luminance(panels?.emissiveFactor) / luminance(decks?.emissiveFactor),
+    ).toBeCloseTo(0.8, 6);
+  });
+
+  it("turns Death Star II's superlaser dish to +z", () => {
+    const gltf = gltfJson("/models/community/death-star-ii.glb");
+    for (const node of gltf.nodes) {
+      expect(node.rotation).toBeUndefined();
+      expect(node.scale).toBeUndefined();
+      expect(node.matrix).toBeUndefined();
+    }
+    const bounds = (
+      primitives: readonly { attributes: Record<string, number> }[],
+    ) => {
+      const accessors = primitives.map(
+        (primitive) => gltf.accessors[primitive.attributes["POSITION"] ?? -1],
+      );
+      return [0, 1, 2].map((axis) => ({
+        min: Math.min(...accessors.map((entry) => entry?.min?.[axis] ?? NaN)),
+        max: Math.max(...accessors.map((entry) => entry?.max?.[axis] ?? NaN)),
+      }));
+    };
+    const station = bounds(gltf.meshes.flatMap((mesh) => mesh.primitives));
+    const dishMaterial = gltf.materials.findIndex(
+      (material) => material.name === "03_-_Defaultasdsad",
+    );
+    // The dish material also covers the polar caps, which sit on the axis.
+    const dish = bounds(
+      gltf.meshes
+        .flatMap((mesh) => mesh.primitives)
+        .filter((primitive) => primitive.material === dishMaterial),
+    );
+    const radius = Math.max(
+      ...station.map((extent) => (extent.max - extent.min) / 2),
+    );
+    const offset = (axis: number) =>
+      ((dish[axis]?.min ?? NaN) +
+        (dish[axis]?.max ?? NaN) -
+        (station[axis]?.min ?? NaN) -
+        (station[axis]?.max ?? NaN)) /
+      2 /
+      radius;
+    expect(offset(2)).toBeGreaterThan(0.2);
+    expect(Math.abs(offset(0))).toBeLessThan(0.05);
   });
 });
 

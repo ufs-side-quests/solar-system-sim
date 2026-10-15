@@ -39,10 +39,10 @@ export const fictionalModelAssets = fictionalModelAssetSchema.array().parse([
       "https://sketchfab.com/3d-models/death-star-ii-17ccca0dbb6b4e338fa999202f9e6685",
     archiveUrl: "https://objaverse.allenai.org/",
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
-    sha256: "c721f3f11d2d6dee1497efca0c401de60df6de0b1fe8325069b8ee4b8ae126b3",
-    byteLength: 3_261_412,
+    sha256: "0cffcbf4da2f9873a201e999b3e627588ad878523a33ef949f2f19184cb4e3c2",
+    byteLength: 3_282_656,
     maximumDimensionM: 200_000,
-    credit: "Death Star II by N8 · CC BY 4.0 · Sketchfab",
+    credit: "Death Star II by N8 · CC BY 4.0 · modified · Sketchfab",
   },
   {
     bodyId: "deep-space-nine",
