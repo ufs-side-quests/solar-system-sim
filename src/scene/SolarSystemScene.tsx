@@ -6201,6 +6201,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
           updateTrail(trailStep.state, trailStep.jumped);
         }
       }
+      // The trails change only above (a clear or new states), so their point
+      // counts are reported in the frame they change, even when the shown
+      // time, and with it the drawn geometry, waits for the next frame.
+      setData(container, "moonTrailPoints", String(moonTrailPoints.length));
+      setData(
+        container,
+        "planetTrailPoints",
+        String(planetTrails.get("earth")?.points.length ?? 0),
+      );
       const current = displayedStateRef.current;
       if (requestedFrame !== undefined && current !== undefined) {
         const frameDurationSeconds =
@@ -7423,7 +7432,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
           planetTrailGeometryStale = false;
         }
         eclipticGrid.visible = showEclipticPlaneRef.current;
-        setData(container, "moonTrailPoints", String(moonTrailPoints.length));
         setData(container, "moonTrailVisible", String(moonTrail.visible));
         setData(container, "moonTrailFrame", referenceFrameRef.current);
         setData(container, "referenceFrame", referenceFrameRef.current);
@@ -7433,11 +7441,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
           String(trailDurationSecondsRef.current),
         );
         setData(container, "trailFade", trailFadeRef.current.toFixed(2));
-        setData(
-          container,
-          "planetTrailPoints",
-          String(planetTrails.get("earth")?.points.length ?? 0),
-        );
         setData(container, "planetTrailCount", String(visiblePlanetTrailCount));
         setData(
           container,
