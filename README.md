@@ -185,6 +185,12 @@ Typing an egg's full name and pressing Enter still selects it, as a way in for a
 The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
+A focused spacecraft or fictional model also gets planetshine: the sunlit planet or moon it orbits lights its shadow side, as Earth lights the side of the real ISS that faces it.
+The light comes from an environment map of the model's sky that holds only the parent's disc at its true angular radius, asin(R / d), so no planet or moon gets it and no night side is lit.
+Each point of the disc has the brightness that the parent's reflectance law gives for the live Sun and view directions: a Lambert surface with the NSSDCA Bond albedo for Earth and Jupiter, and the Lommel-Seeliger law of airless regolith with the NSSDCA visual geometric albedo for Io, Ganymede and Callisto.
+The light takes the mean colour of the parent's installed surface map, and its strength follows the same inverse-square sunlight as the model, so metal hulls reflect the parent and ambient occlusion maps darken its light in crevices.
+On a surface that faces a fully lit parent the fill is about 0.26 of the direct sunlight at the ISS, 0.51 at Discovery One, 0.34 at Death Star II, 0.16 at Death Star I and 0.008 at Deep Space Nine, which stays nearly black.
+The map is redrawn only when the parent's apparent size changes by 1% or its phase by 1 degree, and at most four times a second.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
 One finite solar-disc model darkens every major-body surface and atmosphere during partial, annular, or total occlusion.
 Atmospheres integrate view and solar optical depth through body-specific exponential Rayleigh and Mie density profiles.
