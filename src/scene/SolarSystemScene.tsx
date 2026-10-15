@@ -352,6 +352,10 @@ const TAP_SLOP_PX = 8;
 const LABEL_TITLE = "Select to see facts, select again to fly there";
 const FLY_HINT_ID = "body-label-fly-hint";
 const SPACECRAFT_FOCUS_CLEARANCE = 6;
+// Zoom stops this many radii from a focused body's centre, so the camera
+// never enters it. A spacecraft's radius is half its largest dimension, and
+// the margin also covers the corners of a box-shaped craft.
+const MINIMUM_CAMERA_DISTANCE_RADII = 1.2;
 const DEFAULT_CAMERA_NEAR_AU = 0.000_001;
 // Fixed: applyMetreLogDepth maps this far plane to depth 1 in the shaders.
 const DEFAULT_CAMERA_FAR_AU = 1_000_000;
@@ -403,6 +407,17 @@ const SOLAR_SYSTEM_EPOCH_JULIAN_YEAR =
 const majorBodyById = new Map(
   majorBodySnapshot.bodies.map((body) => [body.id, body]),
 );
+
+// The overview turns about the Sun's centre, so its zoom stops outside the Sun.
+const OVERVIEW_MINIMUM_DISTANCE_AU = (() => {
+  const sun = majorBodyById.get("sun");
+  if (sun === undefined) {
+    throw new Error("The major body snapshot has no Sun");
+  }
+  return (
+    (sun.meanRadiusM / ASTRONOMICAL_UNIT_M) * MINIMUM_CAMERA_DISTANCE_RADII
+  );
+})();
 
 function spacecraftBoundingRadiusM(bodyId: string): number | undefined {
   if (bodyId === JOVIAN_MONOLITH_BODY_ID) {
@@ -1311,6 +1326,7 @@ export function SolarSystemScene({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.target.set(0, 0, 0);
+    controls.minDistance = OVERVIEW_MINIMUM_DISTANCE_AU;
     let interruptCameraTransition: () => void = () => undefined;
     // A press that begins on the canvas counts as a tap until it moves past
     // TAP_SLOP_PX: children touch the screen while they watch, and a tap must
@@ -4971,7 +4987,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         camera.position.copy(SOLAR_SYSTEM_CAMERA_POSITION);
         controls.target.set(0, 0, 0);
         viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
-        controls.minDistance = 0;
+        controls.minDistance = OVERVIEW_MINIMUM_DISTANCE_AU;
         controls.maxDistance = Number.POSITIVE_INFINITY;
         // The overview holds its position, as a flight that settles there.
         container.dataset["cameraTracking"] = "position-only";
@@ -5130,12 +5146,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
       controls.minDistance = Math.max(
         isSpacecraftFocus
-          ? (spacecraftBoundingRadiusM(requestedFocusBodyId) ?? 1) /
-              ASTRONOMICAL_UNIT_M /
-              8
+          ? (spacecraftFocusDistanceAu(requestedFocusBodyId) /
+              SPACECRAFT_FOCUS_CLEARANCE) *
+              MINIMUM_CAMERA_DISTANCE_RADII
           : focusDefinition === undefined
             ? camera.near * 2
-            : focusDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M / 2,
+            : (focusDefinition.meanRadiusM / ASTRONOMICAL_UNIT_M) *
+              MINIMUM_CAMERA_DISTANCE_RADII,
         camera.near * 2,
       );
       controls.maxDistance = DEFAULT_CAMERA_FAR_AU * 0.9;
