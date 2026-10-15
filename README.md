@@ -112,6 +112,7 @@ Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in U
 Selecting the ISS seeks to the installed 2 August 2026 element epoch because the Solar System snapshot begins on 1 January 2026.
 The station is not drawn outside the declared seven-day element window.
 Its official NASA 3D model is normalized to NASA's 109 metre maximum end-to-end dimension on the same physical scale as its orbit, so it disappears below one pixel from an Earth-system view and becomes visible only from a close spacecraft focus.
+Four warm floodlights at the ends of its main truss and its module stack are decorative: the real station carries floodlights and camera lights, but no public source places them on this model.
 
 Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF states at the common 2026 epoch and then run inside REBOUND as massless test particles.
 Their official NASA model attitude continuously points the high-gain antenna's local boresight toward the live Earth position.
@@ -119,6 +120,7 @@ Hubble and JWST use published NASA/JPL Horizons position and velocity samples wi
 Hubble and JWST are not passed through the N-body solver because their real operational trajectories include drag, stationkeeping, and manoeuvres that an uncommanded gravity-only model cannot reproduce.
 The Tesla Roadster and Starman use NASA/JPL Horizons solution 11 across its published 2018-2090 interval, including the fitted radial solar-radiation-pressure acceleration, and disappear rather than extrapolate outside that coverage.
 The Roadster visual uses the detailed MIT-licensed SpaceDock model by TheBigElon, with the Starman mesh credited to Oranhunter, normalized to the Roadster's 3.946 metre maximum dimension.
+Its headlights and tail lights are lit as a playful fiction: the real car in space has no power, so its lamps are dark.
 Horizons tracks the car, payload fitting, and attached Falcon Heavy upper-stage stack rather than the car alone.
 ISS, both Voyagers, Hubble, and JWST use checksummed official NASA 3D models at sourced physical dimensions.
 The model loader fails visibly instead of replacing a missing authority asset with procedural geometry.
@@ -153,10 +155,15 @@ Death Star II uses an optimised CC BY model with complete colour, normal, occlus
 
 An optimised CC BY physical-scale Discovery One model orbits Io, where 2010 places the ship.
 Its command sphere, pod bays, truss spine, external tanks, high-gain antenna, and propulsion module are lit by the same inverse-square Sun source as the real objects.
+A red port lamp and a green starboard lamp on the command sphere and a white beacon on the propulsion module are authored, because the film shows no running lights.
 Because no precise trajectory is published, its displayed 400 kilometre circular orbit is clearly identified as an authored massless two-body reference rather than historical ephemeris.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 
 Deep Space Nine uses a high-detail CC BY model at its 1.45 kilometre reference diameter.
+Red beacons blink at the tips of its six docking pylons, the upper and lower pylons in turn, and steady lamps light Ops, the base of the core and the docking ring.
+These lamps, and those on the Roadster, Discovery One and the ISS, are drawn at runtime on the unmodified model files and follow each model's position and turn.
+Each is a hot core at its assumed luminance (50,000 to 1,000,000 cd/m2, against 300 cd/m2 for a lit window) inside a glow in the lamp's colour, and the hull in front of a lamp hides it.
+The lamps blink on the wall clock, not the simulation clock, and stay on under reduced motion.
 The application places it in a clearly labelled hypothetical circular exhibit orbit around Callisto because its fictional Bajoran system is outside this Solar System model.
 The USS Defiant uses a textured high-detail free model at its 170.68 metre production reference length.
 It follows an explicit 30 minute defensive patrol around the station.

@@ -183,6 +183,12 @@ import {
 } from "./deep-space-nine";
 import { fictionalModelAssets } from "./fictional-model-assets";
 import {
+  createModelLightPoints,
+  modelLightIsOn,
+  modelLightsByBodyId,
+  type ModelLightPoints,
+} from "./model-lights";
+import {
   DEFIANT_PORTHOLE_MATERIAL,
   DEFIANT_WINDOW_MATERIAL,
   LIT_WINDOW_LUMINANCE_CD_M2,
@@ -501,6 +507,14 @@ function setData(
   if (element.dataset[key] !== value) {
     element.dataset[key] = value;
   }
+}
+
+/** Whether an object and every ancestor are visible. */
+function shownInScene(object: Object3D): boolean {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    if (!node.visible) return false;
+  }
+  return true;
 }
 
 function setHidden(element: HTMLElement, hidden: boolean): void {
@@ -3162,6 +3176,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
     }
     const modelLoadPromises = new Map<string, Promise<void>>();
+    // Lamps on a loaded model, by body id; they live inside the model.
+    const modelLightSets = new Map<string, ModelLightPoints>();
     let sourcedModelsLoadedCount = 0;
     const loadSourcedModel = (asset: (typeof sourcedModelAssets)[number]) => {
       const activePromise = modelLoadPromises.get(asset.bodyId);
@@ -3304,6 +3320,16 @@ float saturnRingTransmission(vec3 surfacePosition) {
           if (modelTextures.length > 0) {
             modelTexturesByBodyId.set(asset.bodyId, modelTextures);
             reportModelTextureAnisotropy(asset.bodyId);
+          }
+          const lights = modelLightsByBodyId.get(asset.bodyId);
+          if (lights !== undefined) {
+            // Lamp anchors are in the glTF scene's coordinates, so the lamps
+            // take the model's centring and physical scale with it.
+            const lightSet = createModelLightPoints(lights);
+            model.add(lightSet.points);
+            geometries.push(lightSet.points.geometry);
+            materials.push(lightSet.points.material);
+            modelLightSets.set(asset.bodyId, lightSet);
           }
           group.add(model);
           loadedModelBodyIds.add(asset.bodyId);
@@ -5779,6 +5805,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
 
     let animationFrame = 0;
     let startupTimer = 0;
+    const lampScratch = new Vector2();
+    const lampWorld = new Vector3();
+    const lampNormal = new Vector3();
+    const lampToCamera = new Vector3();
     const render = (): void => {
       // One layout read per frame: every later read would follow DOM writes
       // and force another style recalculation.
@@ -9766,7 +9796,73 @@ float saturnRingTransmission(vec3 surfacePosition) {
         delete container.dataset["focusSunlightRatio"];
         delete container.dataset["parentSunlightRatio"];
       }
+      // Lamps blink on the wall clock: they are lamps, not orbital physics.
+      const lampWallClockSeconds = performance.now() / 1_000;
+      const lampReducedMotion = reducedMotionQuery.matches;
+      const drawingBufferSize = renderer.getDrawingBufferSize(lampScratch);
+      const lampFocalPx =
+        (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+        camera.zoom;
+      for (const [bodyId, lightSet] of modelLightSets) {
+        if (!shownInScene(lightSet.points)) continue;
+        const asset = sourcedModelAssetByBodyId.get(bodyId);
+        if (asset === undefined) {
+          throw new Error(`${bodyId} model asset is unavailable for its lamps`);
+        }
+        const modelDistanceAu = Math.max(
+          lightSet.points
+            .getWorldPosition(lampWorld)
+            .distanceTo(camera.position),
+          1e-15,
+        );
+        lightSet.update({
+          wallClockSeconds: lampWallClockSeconds,
+          reducedMotion: lampReducedMotion,
+          pixelRatio: renderer.getPixelRatio(),
+          drawingBufferHeightPx: drawingBufferSize.y,
+          modelRadiusPx:
+            (asset.maximumDimensionM /
+              2 /
+              ASTRONOMICAL_UNIT_M /
+              modelDistanceAu) *
+            lampFocalPx,
+        });
+      }
       renderer.render(scene, camera);
+      // The focused model's lamps as drawn this frame, for tests.
+      const lampFocusId = focusBodyIdRef.current;
+      const focusLightSet =
+        lampFocusId === null ? undefined : modelLightSets.get(lampFocusId);
+      if (
+        lampFocusId !== null &&
+        focusLightSet !== undefined &&
+        shownInScene(focusLightSet.points)
+      ) {
+        const lampMatrix = focusLightSet.points.matrixWorld;
+        const report = focusLightSet.lights.map((light) => {
+          lampWorld.fromArray(light.position).applyMatrix4(lampMatrix);
+          const facing = lampNormal
+            .fromArray(light.normal)
+            .transformDirection(lampMatrix)
+            .dot(lampToCamera.copy(camera.position).sub(lampWorld).normalize());
+          lampWorld.project(camera);
+          return {
+            name: light.name,
+            color: light.colorSrgbHex,
+            x: Number((((lampWorld.x + 1) * viewportWidth) / 2).toFixed(1)),
+            y: Number((((-lampWorld.y + 1) * viewportHeight) / 2).toFixed(1)),
+            on: modelLightIsOn(light, lampWallClockSeconds, lampReducedMotion),
+            facing: Number(facing.toFixed(3)),
+          };
+        });
+        setData(container, "modelLightBody", lampFocusId);
+        setData(container, "modelLightCount", String(report.length));
+        setData(container, "modelLights", JSON.stringify(report));
+      } else {
+        setData(container, "modelLightCount", "0");
+        delete container.dataset["modelLightBody"];
+        delete container.dataset["modelLights"];
+      }
       setData(
         container,
         "shaderProgramCount",
