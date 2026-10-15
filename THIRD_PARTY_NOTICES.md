@@ -136,7 +136,9 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/death-star-ii-17ccca0dbb6b4e338fa999202f9e6685>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `c721f3f11d2d6dee1497efca0c401de60df6de0b1fe8325069b8ee4b8ae126b3`
+- Installed SHA-256: `0cffcbf4da2f9873a201e999b3e627588ad878523a33ef949f2f19184cb4e3c2`
+- Modified from the original: `scripts/repair-model-assets.mjs` applies the node transforms to the vertices, turns the station about its axis so the superlaser dish faces +z, shows every material's colour texture at full value with metallicFactor 0 (the export dims them to between 0 and 17 % and leaves them metallic), sets the window emission to the calibrated lit-window luminance of 300 cd/m2, removes the window texture from two materials that do not emit, drops unused texture coordinates, and compresses the file with WebP textures and Draco.
+  The original's SHA-256 is `f4e2003cac1abc5887d0a631d8bc51a00091920fd76235f4e38244ca36a13ed1`, from <https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-084/17ccca0dbb6b4e338fa999202f9e6685.glb>.
 
 ### Deep Space Nine
 

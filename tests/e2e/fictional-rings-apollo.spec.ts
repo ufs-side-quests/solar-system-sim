@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import sharp from "sharp";
 
 type SceneHarness = Readonly<{
   scene: Locator;
@@ -161,6 +162,117 @@ for (const [search, bodyId, geometryAttribute] of [
     harness.assertNoBrowserErrors();
   });
 }
+
+/** Rec. 709 luma of each pixel of a screenshot inside a disc. */
+async function discLuma(
+  image: Buffer,
+  centreX: number,
+  centreY: number,
+  radius: number,
+): Promise<{ left: number[]; right: number[] }> {
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const left: number[] = [];
+  const right: number[] = [];
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const localX = x - centreX;
+      const localY = y - centreY;
+      if (localX * localX + localY * localY > radius * radius) continue;
+      const offset = (y * info.width + x) * info.channels;
+      const luma =
+        (data[offset] ?? Number.NaN) * 0.2126 +
+        (data[offset + 1] ?? Number.NaN) * 0.7152 +
+        (data[offset + 2] ?? Number.NaN) * 0.0722;
+      (localX < 0 ? left : right).push(luma);
+    }
+  }
+  return { left, right };
+}
+
+test("shows Death Star II's sunlit hull and lit windows, steady while the camera is still", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const harness = await openPausedScene(page);
+  const { scene } = harness;
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Death Star II (fictional)");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "death-star-2");
+  await expect(scene).toHaveAttribute("data-deathstar2-model-loaded", "true", {
+    timeout: 60_000,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-local-shadow-body",
+    "death-star-2",
+    {
+      timeout: 60_000,
+    },
+  );
+  // Measure the settled automatic exposure, not one still adapting.
+  await expect
+    .poll(
+      async () =>
+        Math.abs(
+          Number(await scene.getAttribute("data-camera-exposure")) /
+            Number(await scene.getAttribute("data-camera-exposure-target")) -
+            1,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(0.005);
+  await page.addStyleTag({
+    content: ".body-label-layer { visibility: hidden; }",
+  });
+  const label = page.locator('.body-label[data-body-id="death-star-2"]');
+  const centreX = Number(await label.getAttribute("data-screen-x"));
+  const centreY = Number(await label.getAttribute("data-screen-y"));
+  const radius = Number(await label.getAttribute("data-radius-pixels"));
+  expect(radius).toBeGreaterThan(100);
+  const canvas = page.locator("canvas.major-body-layer");
+  const first = await canvas.screenshot({ animations: "disabled" });
+  const second = await canvas.screenshot({ animations: "disabled" });
+  await testInfo.attach("death-star-2", {
+    body: first,
+    contentType: "image/png",
+  });
+  const firstLuma = await discLuma(first, centreX, centreY, radius);
+  const secondLuma = await discLuma(second, centreX, centreY, radius);
+
+  // The Sun lights one half of the disc. The painted hull there is grey,
+  // not the near-black of dimmed bare metal: the Sketchfab export's base
+  // colour and metallic factors put the mean luma of that half at 11, the
+  // repaired file at 53.
+  const mean = (values: readonly number[]) =>
+    values.reduce((sum, value) => sum + value, 0) / values.length;
+  expect(Math.max(mean(firstLuma.left), mean(firstLuma.right))).toBeGreaterThan(
+    30,
+  );
+
+  // With the camera still, two frames match: no alpha-tested or shadowed
+  // texel flickers between them.
+  const firstPixels = [...firstLuma.left, ...firstLuma.right];
+  const secondPixels = [...secondLuma.left, ...secondLuma.right];
+  expect(secondPixels).toHaveLength(firstPixels.length);
+  const changedPixels = firstPixels.filter(
+    (luma, index) => Math.abs(luma - (secondPixels[index] ?? Number.NaN)) > 30,
+  ).length;
+  expect(changedPixels / firstPixels.length).toBeLessThan(0.001);
+
+  // The file's two window materials emit at the calibrated level.
+  await expect(scene).toHaveAttribute(
+    "data-deathstar2-lit-window-materials",
+    "2",
+  );
+  await expect(scene).toHaveAttribute(
+    "data-deathstar2-window-luminance-cd-m2",
+    "300",
+  );
+  harness.assertNoBrowserErrors();
+});
 
 test("reports a Death Star I texture that fails to load", async ({ page }) => {
   test.setTimeout(120_000);

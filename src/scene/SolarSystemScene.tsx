@@ -3238,8 +3238,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           const litDefiantMaterials = new Set<string>();
           // Materials lit at the calibrated window level: the Defiant's, set
           // below, and the "windows" materials of the repaired Deep Space
-          // Nine file (scripts/repair-model-assets.mjs).
-          let litWindowMaterialCount = 0;
+          // Nine and Death Star II files (scripts/repair-model-assets.mjs).
+          // A material counts once, however many meshes share it, and only
+          // when it emits.
+          const litWindowMaterials = new Set<Material>();
           model.traverse((object) => {
             object.userData["bodyId"] = asset.bodyId;
             if (object.type === "Mesh") {
@@ -3252,15 +3254,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 ? mesh.material
                 : [mesh.material];
               for (const material of loadedMaterials) {
-                if (
-                  asset.bodyId === "death-star-2" &&
-                  material instanceof MeshStandardMaterial
-                ) {
-                  material.emissive.set(0x000000);
-                  material.emissiveIntensity = 0;
-                  material.emissiveMap = null;
-                  material.needsUpdate = true;
-                }
                 if (
                   asset.bodyId === USS_DEFIANT_BODY_ID &&
                   material instanceof MeshStandardMaterial
@@ -3276,10 +3269,18 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   }
                 }
                 if (
-                  litDefiantMaterials.has(material.name) ||
-                  material.name.endsWith(" windows")
+                  (litDefiantMaterials.has(material.name) ||
+                    material.name.endsWith(" windows")) &&
+                  material instanceof MeshStandardMaterial &&
+                  material.emissiveIntensity *
+                    Math.max(
+                      material.emissive.r,
+                      material.emissive.g,
+                      material.emissive.b,
+                    ) >
+                    0
                 ) {
-                  litWindowMaterialCount += 1;
+                  litWindowMaterials.add(material);
                 }
                 materials.push(material);
                 for (const propertyName of Object.keys(material)) {
@@ -3309,9 +3310,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
               }
             }
           }
-          if (litWindowMaterialCount > 0) {
+          if (litWindowMaterials.size > 0) {
             container.dataset[`${datasetKey}LitWindowMaterials`] = String(
-              litWindowMaterialCount,
+              litWindowMaterials.size,
             );
             container.dataset[`${datasetKey}WindowLuminanceCdM2`] = String(
               LIT_WINDOW_LUMINANCE_CD_M2,

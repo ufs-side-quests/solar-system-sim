@@ -564,6 +564,12 @@ test("matches the reference image for the Death Star II local shadow", async ({
   await page.getByRole("tab", { name: "Camera" }).click();
   await page.getByRole("button", { name: "Day and night" }).click();
   await expect(scene).toHaveAttribute("data-camera-orientation", "terminator");
+  // Measure the terminator view, not a frame of the turn towards it.
+  await expect(scene).toHaveAttribute(
+    "data-orientation-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
   await page.getByRole("button", { name: "Close" }).click();
   const modelFrame = await canvas.screenshot({ animations: "disabled" });
   expect(modelFrame.byteLength).toBeGreaterThan(10_000);
