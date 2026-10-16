@@ -7,26 +7,32 @@ import {
   Points,
   ShaderMaterial,
   SRGBColorSpace,
+  Vector3,
 } from "three";
 import { z } from "zod";
 
 import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
+import deathStarIIHullLampsJson from "./death-star-ii-hull-lamps.json";
 import {
   LUMINOUS_SOLAR_CONSTANT_LX,
   SUNLIGHT_LUMINANCE_AT_1_AU,
 } from "./window-lighting";
 
-// Lamps on four models: running lights, headlights and floodlights drawn at
-// runtime on the loaded model, so every GLB file stays unmodified. Each lamp
-// is a point anchored at a position in the model's own glTF scene
-// coordinates (the frame of the loaded gltf.scene, before the app centres and
-// scales it). The point is a child of that scene, so it moves, turns and
-// scales with the model and shows only while the model itself shows.
+// Lamps on every sourced model: running lights, headlights, beacons and hull
+// lamps drawn at runtime on the loaded model, so every GLB file stays
+// unmodified. The Jovian monolith has none: the film's monolith shows no
+// light. Each lamp is a point anchored at a position in the model's own glTF
+// scene coordinates (the frame of the loaded gltf.scene, before the app
+// centres and scales it). The point is a child of that scene, so it moves,
+// turns and scales with the model and shows only while the model itself
+// shows.
 //
-// Every anchor was found on the real geometry: a ray cast in Blender 4 from
-// outside the hull onto the model (scripts kept out of the repository), or
-// the vertex clusters of a named material read with @gltf-transform. The
-// unit test checks that each anchor lies on the hull of the installed GLB.
+// Every anchor was found on the real geometry: a ray cast from outside the
+// hull onto the model (in Blender 4, or in Node over the triangles that
+// @gltf-transform reads; scripts kept out of the repository), the vertex
+// clusters of a named material, or, on a part too thin for a ray, the
+// model's extreme vertex in one direction. The unit test checks that each
+// anchor lies on the hull of the installed GLB.
 //
 // Brightness follows window-lighting.ts: 1 scene radiance unit is about
 // 21,000 cd/m2, so a lamp of luminance L cd/m2 has radiance
@@ -35,7 +41,8 @@ import {
 // measurements of any fixture:
 //   beacon or headlamp lens  1,000,000 cd/m2 = about 48 units;
 //   floodlight lens            200,000 cd/m2 = about 9.5 units;
-//   brake-level tail lamp       50,000 cd/m2 = about 2.4 units.
+//   brake-level tail lamp       50,000 cd/m2 = about 2.4 units;
+//   hull lamp                   50,000 cd/m2 = about 2.4 units.
 // A lit window is 300 cd/m2 (0.014 units), so the dimmest lamp is about 170
 // times a window, and a sunlit mid-grey hull at 1 AU (about 21,000 cd/m2) is
 // below every lamp. The core of the lamp is that radiance at the lamp's
@@ -53,11 +60,39 @@ import {
 // Jupiter. The glow also fades as the camera drops below the horizon of the
 // hull the lamp sits on, so a lamp on the far side shows no halo around the
 // hull's edge.
+//
+// A far lamp is drawn larger than its lens, at LAMP_MINIMUM_CORE_RADIUS_PX,
+// so that a child sees it. A field of many such lamps would carpet a hull,
+// so two fields of each lamp set how it shows in a field:
+//   glowScale: the share of the standard glow radius the lamp draws. A
+//   beacon draws all of it; a hull lamp in a field draws less, so the glows
+//   of neighbouring lamps do not merge into a haze over the model.
+//   onSunlitHull: "fade" for a lamp that shows only where the hull under it
+//   is dark, as city lights show only on a planet's night side. On a sunlit
+//   hull such a lamp, drawn larger than its lens, would dot the hull with
+//   spots that a lamp of its true size could not make. "show" for a beacon
+//   or a running light, which shows in sunlight too.
+//
+// Death Star II: its lit windows are calibrated at 300 cd/m2
+// (window-lighting.ts), but they are the lit dots of a mostly black texture:
+// the brightest texel holds that luminance and the texture's mean is about
+// 1/490 of it (0.43 % of texels lit). At the default focus distance each dot
+// is far smaller than a screen pixel, so the filtered texture shows the
+// mean, and the night side reads black. A field of hull lamps, a green
+// superlaser dish and red polar beacons give it lights at every distance.
 
 const BEACON_LUMINANCE_CD_M2 = 1_000_000;
 const HEADLAMP_LUMINANCE_CD_M2 = 1_000_000;
 const FLOODLIGHT_LUMINANCE_CD_M2 = 200_000;
 const TAIL_LAMP_LUMINANCE_CD_M2 = 50_000;
+const HULL_LAMP_LUMINANCE_CD_M2 = 50_000;
+
+/**
+ * The cosine between a lamp's hull normal and the direction to the Sun
+ * where a lamp with onSunlitHull "fade" starts to fade, and where it is gone.
+ */
+const SUNLIT_FADE_START_COSINE = -0.1;
+const SUNLIT_FADE_END_COSINE = 0.15;
 
 /** Scene radiance of a surface of the given luminance, as window-lighting.ts. */
 export function lampRadianceFromLuminance(luminanceCdM2: number): number {
@@ -88,7 +123,18 @@ const LAMP_MAXIMUM_GLOW_SHARE_OF_MODEL = 0.1;
 const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
 const modelLightSchema = z.object({
-  bodyId: z.enum(["deep-space-nine", "roadster", "discovery-one", "iss"]),
+  bodyId: z.enum([
+    "deep-space-nine",
+    "roadster",
+    "discovery-one",
+    "iss",
+    "death-star-2",
+    "uss-defiant",
+    "hubble",
+    "jwst",
+    "voyager-1",
+    "voyager-2",
+  ]),
   name: z.string().min(1),
   /** Anchor on the hull, in the model's glTF scene coordinates. */
   position: vector3Schema,
@@ -113,6 +159,10 @@ const modelLightSchema = z.object({
       onFraction: z.number().gt(0).lt(1),
     }),
   ]),
+  /** Share of the standard glow radius: 1 for a lone lamp, less in a field. */
+  glowScale: z.number().gt(0).max(1),
+  /** Whether the lamp shows on a sunlit hull, or fades there. */
+  onSunlitHull: z.enum(["show", "fade"]),
   /**
    * authored-fiction: a fictional ship's lamp placed by the app.
    * playful-fiction: a real object with lamps it does not show in space.
@@ -127,8 +177,13 @@ const modelLightSchema = z.object({
 });
 
 export type ModelLight = z.infer<typeof modelLightSchema>;
+type ModelLightInput = z.input<typeof modelLightSchema>;
+
+/** A lamp that stands alone: the whole glow, and shown in sunlight. */
+const LONE_LAMP = { glowScale: 1, onSunlitHull: "show" } as const;
 
 const DS9_BEACON = {
+  ...LONE_LAMP,
   colorSrgbHex: "#ff2a1a",
   radiusM: 4,
   luminanceCdM2: BEACON_LUMINANCE_CD_M2,
@@ -137,6 +192,45 @@ const DS9_BEACON = {
 
 const PYLON_BLINK_PERIOD_S = 2;
 const PYLON_ON_FRACTION = 0.4;
+
+type Vec3 = [number, number, number];
+type LampPlace = [name: string, position: Vec3, normal: Vec3];
+
+/**
+ * The playful lamps of a real spacecraft: a white blinking beacon, and a
+ * red and a green lamp, each with a lens 0.1 m in radius.
+ */
+function playfulLampSet(
+  bodyId: "hubble" | "jwst" | "voyager-1" | "voyager-2",
+  beacon: LampPlace,
+  red: LampPlace,
+  green: LampPlace,
+): ModelLightInput[] {
+  return (
+    [
+      [beacon, "#ffffff"],
+      [red, "#ff2020"],
+      [green, "#19ff7a"],
+    ] as const
+  ).map(([[name, position, normal], colorSrgbHex]) => ({
+    bodyId,
+    name,
+    position,
+    normal,
+    colorSrgbHex,
+    radiusM: 0.1,
+    luminanceCdM2:
+      colorSrgbHex === "#ffffff"
+        ? BEACON_LUMINANCE_CD_M2
+        : FLOODLIGHT_LUMINANCE_CD_M2,
+    pattern:
+      colorSrgbHex === "#ffffff"
+        ? { kind: "blink", periodSeconds: 2, phase: 0, onFraction: 0.15 }
+        : { kind: "steady" },
+    basis: "playful-fiction",
+    ...LONE_LAMP,
+  }));
+}
 
 export const modelLights: readonly ModelLight[] = modelLightSchema
   .array()
@@ -182,6 +276,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     },
     {
       bodyId: "deep-space-nine",
@@ -193,6 +288,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     },
     ...(
       [
@@ -210,6 +306,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     })),
 
     // Tesla Roadster. The real car in space has no power, so its lamps are
@@ -245,6 +342,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: HEADLAMP_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "playful-fiction",
+      ...LONE_LAMP,
     })),
     ...(
       [
@@ -279,6 +377,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: TAIL_LAMP_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "playful-fiction",
+      ...LONE_LAMP,
     })),
 
     // Discovery One (2001: A Space Odyssey, fictional). The command sphere is
@@ -297,6 +396,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     },
     {
       bodyId: "discovery-one",
@@ -308,6 +408,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     },
     {
       bodyId: "discovery-one",
@@ -324,6 +425,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
         onFraction: 0.15,
       },
       basis: "authored-fiction",
+      ...LONE_LAMP,
     },
 
     // ISS. The real station carries floodlights and camera lights, not
@@ -349,7 +451,280 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "decorative-not-documented",
+      ...LONE_LAMP,
     })),
+
+    // Death Star II (fictional). The repaired mesh (repair-model-assets.mjs)
+    // has its superlaser dish near +z and its axis along y. A sphere fitted
+    // to rays cast from outside onto the hull has its centre at (17.699,
+    // -1.375, -14.581) and radius 371.8 units. Hull lamps: rays cast toward
+    // the centre along a Fibonacci lattice of 320 directions. A ray that
+    // ends more than 4 % inside that radius (in the open frame of the
+    // unfinished part), lands within 17.6 degrees of the dish axis, or meets
+    // a wall turned more than 60 degrees from the ray gets no lamp; 172 rays
+    // remain (death-star-ii-hull-lamps.json: position, then normal). The
+    // dish axis is the mean direction of the dish material's vertices on the
+    // +z side, away from the polar caps that material also covers; its rim
+    // lies 14 to 16 degrees off the axis. A ray down the axis found the
+    // central lens; rays at 9.6 degrees off it, every 45 degrees around it,
+    // found eight emitters on the dish. Rays along y through the centre found
+    // the poles.
+    ...z
+      .tuple([
+        z.number(),
+        z.number(),
+        z.number(),
+        z.number(),
+        z.number(),
+        z.number(),
+      ])
+      .array()
+      .parse(deathStarIIHullLampsJson)
+      .map(([px, py, pz, nx, ny, nz], index) => ({
+        bodyId: "death-star-2",
+        name: `hull lamp ${String(index + 1)}`,
+        position: [px, py, pz],
+        normal: [nx, ny, nz],
+        colorSrgbHex: "#ffe2a8",
+        radiusM: 150,
+        luminanceCdM2: HULL_LAMP_LUMINANCE_CD_M2,
+        pattern: { kind: "steady" },
+        basis: "authored-fiction",
+        glowScale: 0.4,
+        onSunlitHull: "fade",
+      })),
+    {
+      bodyId: "death-star-2",
+      name: "superlaser lens",
+      position: [12.9834, 149.4056, 299.8032],
+      normal: [-0.0761, 0.3646, 0.9281],
+      colorSrgbHex: "#40ff50",
+      radiusM: 2_500,
+      luminanceCdM2: BEACON_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    },
+    ...(
+      [
+        [
+          [72.7582, 151.636, 305.3514],
+          [-0.1003, 0.4079, 0.9075],
+        ],
+        [
+          [55.5783, 190.169, 287.3783],
+          [-0.1425, 0.2886, 0.9468],
+        ],
+        [
+          [13.2991, 205.7297, 278.7566],
+          [-0.0298, 0.3486, 0.9368],
+        ],
+        [
+          [-29.0084, 189.3065, 284.7524],
+          [0.0259, 0.3698, 0.9288],
+        ],
+        [
+          [-46.5461, 150.7248, 301.6615],
+          [0.0463, 0.421, 0.9059],
+        ],
+        [
+          [-29.3162, 112.6002, 319.55],
+          [0.032, 0.4561, 0.8894],
+        ],
+        [
+          [12.5593, 97.0219, 328.0763],
+          [-0.0368, 0.4815, 0.8757],
+        ],
+        [
+          [54.8311, 113.0917, 322.2562],
+          [-0.0818, 0.4595, 0.8844],
+        ],
+      ] as const
+    ).map(([position, normal], index) => ({
+      bodyId: "death-star-2",
+      name: `superlaser emitter ${String(index + 1)}`,
+      position,
+      normal,
+      colorSrgbHex: "#40ff50",
+      radiusM: 1_200,
+      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    })),
+    ...(
+      [
+        [
+          "north pole beacon",
+          [17.6992, 371.8115, -14.5812],
+          [0.045, 0.9989, -0.0109],
+          0,
+        ],
+        [
+          "south pole beacon",
+          [17.6992, -374.9731, -14.5812],
+          [0.0166, -0.9984, 0.0549],
+          0.5,
+        ],
+      ] as const
+    ).map(([name, position, normal, phase]) => ({
+      ...DS9_BEACON,
+      bodyId: "death-star-2",
+      name,
+      position,
+      normal,
+      radiusM: 1_500,
+      pattern: {
+        kind: "blink",
+        periodSeconds: PYLON_BLINK_PERIOD_S,
+        phase,
+        onFraction: PYLON_ON_FRACTION,
+      },
+    })),
+
+    // USS Defiant (fictional). Its licence keeps the file unmodified, so its
+    // lamps are drawn here. The app flies the ship along model +z (the bow:
+    // the "defront" texture covers the +z ends of the nacelle section and
+    // "deback1" a -z face), with +y up, so port (left) is +x. Rays cast
+    // inward along x at z = 0.3, where the nacelles are widest, found a red
+    // port and a green starboard lamp; rays cast forward at x = +/-2.8 found
+    // the aft faces of the nacelles for two white strobes; a ray cast aft at
+    // y = -0.1 found the grille on the front of the bow module for the blue
+    // deflector; rays cast forward at x = +/-0.5 found the stern's aft face
+    // (z = -4.79) for two red impulse engines. The lenses are small: a
+    // lamp's core reads white hot, so a large lens would show a white disc,
+    // and the small ones leave the hue to the glow.
+    ...(
+      [
+        [
+          "port navigation lamp",
+          [3.329, 0, 0.3],
+          [0.9596, 0.2792, -0.0359],
+          "#ff2020",
+        ],
+        [
+          "starboard navigation lamp",
+          [-3.3784, 0, 0.3],
+          [-0.96, 0.2786, -0.0278],
+          "#19ff7a",
+        ],
+      ] as const
+    ).map(([name, position, normal, colorSrgbHex]) => ({
+      bodyId: "uss-defiant",
+      name,
+      position,
+      normal,
+      colorSrgbHex,
+      radiusM: 0.75,
+      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    })),
+    ...(
+      [
+        ["port strobe", [2.8, 0, -1.4813], [-0.1059, 0.0011, -0.9944]],
+        ["starboard strobe", [-2.8, 0, -1.476], [0.1056, 0.0013, -0.9944]],
+      ] as const
+    ).map(([name, position, normal]) => ({
+      bodyId: "uss-defiant",
+      name,
+      position,
+      normal,
+      colorSrgbHex: "#ffffff",
+      radiusM: 0.75,
+      luminanceCdM2: BEACON_LUMINANCE_CD_M2,
+      pattern: {
+        kind: "blink",
+        periodSeconds: 1.5,
+        phase: 0,
+        onFraction: 0.1,
+      },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    })),
+    {
+      bodyId: "uss-defiant",
+      name: "deflector",
+      position: [0, -0.1, 4.7773],
+      normal: [0.1619, -0.5386, 0.8268],
+      colorSrgbHex: "#3a8bff",
+      radiusM: 0.8,
+      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    },
+    ...(
+      [
+        [
+          "port impulse engine",
+          [0.5, 0.05, -4.7915],
+          [-0.0465, 0.0153, -0.9988],
+        ],
+        [
+          "starboard impulse engine",
+          [-0.5, 0.05, -4.7911],
+          [-0.0023, -0.0091, -1],
+        ],
+      ] as const
+    ).map(([name, position, normal]) => ({
+      bodyId: "uss-defiant",
+      name,
+      position,
+      normal,
+      colorSrgbHex: "#ff3010",
+      radiusM: 0.6,
+      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      ...LONE_LAMP,
+    })),
+
+    // Hubble, JWST and Voyager. The real spacecraft show no lamps in space,
+    // so these few lamps are a playful fiction, as on the Roadster, and no
+    // facts text claims them. Each set is a white blinking beacon and a red
+    // and a green lamp at the two ends of the widest part.
+    //
+    // Hubble: the tube runs along y, with the aperture at +y; the solar
+    // arrays lie in the plane y = -26. A ray cast along -z at y = 240 found
+    // the forward shell for the beacon; rays cast inward along x in the
+    // array plane found the outer edges of the two arrays.
+    //
+    // JWST: the mirror faces +z and the sunshield is the diamond in the x-z
+    // plane. A ray cast along -z at y = 3.5 found the back of the secondary
+    // mirror, at the tip of its tripod, for the beacon; the sunshield's two
+    // short points are its extreme vertices along x.
+    //
+    // Voyager 1 and 2 share one model: the dish is the disc in the x-z plane
+    // and the magnetometer boom ends at the model's extreme vertex along +z,
+    // where the beacon sits (rounded inward, inside the model's bounds);
+    // the dish rim's extreme vertices along x carry the red and green lamps.
+    // The boom and rim are too thin for a ray.
+    ...playfulLampSet(
+      "hubble",
+      ["aperture beacon", [0, 240, 57.3795], [0, 0, 1]],
+      ["array tip red", [228.5265, -26, 0], [0.924, 0.3824, 0]],
+      ["array tip green", [-228.4513, -26, 0], [-0.9296, 0.3686, 0]],
+    ),
+    ...playfulLampSet(
+      "jwst",
+      ["secondary mirror beacon", [0, 3.5, 8.545], [0, 0, 1]],
+      ["sunshield tip red", [6.43562, -1.0832, 0.10674], [1, 0, 0]],
+      ["sunshield tip green", [-6.43531, -1.0832, 0.10674], [-1, 0, 0]],
+    ),
+    ...(["voyager-1", "voyager-2"] as const).flatMap((bodyId) =>
+      playfulLampSet(
+        bodyId,
+        [
+          "magnetometer boom beacon",
+          [0.00004, 0.15244, 0.23314],
+          [0.0001, 0.5472, 0.837],
+        ],
+        ["dish rim red", [0.05, 0.04347, 0], [1, 0, 0]],
+        ["dish rim green", [-0.05, 0.04347, 0], [-1, 0, 0]],
+      ),
+    ),
   ]);
 
 export const modelLightsByBodyId: ReadonlyMap<string, readonly ModelLight[]> =
@@ -375,6 +750,25 @@ export function modelLightIsOn(
   return (cycle < 0 ? cycle + 1 : cycle) < onFraction;
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * How much of a lamp shows, from 0 to 1, given the cosine between its hull
+ * normal and the direction to the Sun. The shader applies the same rule.
+ */
+export function modelLightSunlitShare(
+  light: ModelLight,
+  sunCosine: number,
+): number {
+  if (light.onSunlitHull === "show") return 1;
+  return (
+    1 - smoothstep(SUNLIT_FADE_START_COSINE, SUNLIT_FADE_END_COSINE, sunCosine)
+  );
+}
+
 export type ModelLightPoints = Readonly<{
   lights: readonly ModelLight[];
   points: Points<BufferGeometry, ShaderMaterial>;
@@ -387,6 +781,8 @@ export type ModelLightPoints = Readonly<{
       drawingBufferHeightPx: number;
       /** The model's projected radius in CSS pixels. */
       modelRadiusPx: number;
+      /** Unit vector from the model to the Sun, in world coordinates. */
+      sunDirection: Readonly<{ x: number; y: number; z: number }>;
     }>,
   ) => void;
 }>;
@@ -403,6 +799,8 @@ export function createModelLightPoints(
   const glowColor = new Float32Array(lights.length * 3);
   const normals = new Float32Array(lights.length * 3);
   const radiusAu = new Float32Array(lights.length);
+  const glowScale = new Float32Array(lights.length);
+  const fadesInSunlight = new Float32Array(lights.length);
   const lit = new Float32Array(lights.length);
   const color = new Color();
   lights.forEach((light, index) => {
@@ -423,6 +821,8 @@ export function createModelLightPoints(
       index * 3,
     );
     radiusAu[index] = light.radiusM / ASTRONOMICAL_UNIT_M;
+    glowScale[index] = light.glowScale;
+    fadesInSunlight[index] = light.onSunlitHull === "fade" ? 1 : 0;
     lit[index] = 1;
   });
   const geometry = new BufferGeometry();
@@ -431,6 +831,11 @@ export function createModelLightPoints(
   geometry.setAttribute("lampRadiance", new BufferAttribute(radiance, 3));
   geometry.setAttribute("lampGlowColor", new BufferAttribute(glowColor, 3));
   geometry.setAttribute("lampRadiusAu", new BufferAttribute(radiusAu, 1));
+  geometry.setAttribute("lampGlowScale", new BufferAttribute(glowScale, 1));
+  geometry.setAttribute(
+    "lampFadesInSunlight",
+    new BufferAttribute(fadesInSunlight, 1),
+  );
   const litAttribute = new BufferAttribute(lit, 1);
   litAttribute.setUsage(DynamicDrawUsage);
   geometry.setAttribute("lampLit", litAttribute);
@@ -438,6 +843,7 @@ export function createModelLightPoints(
     drawingBufferHeight: { value: 1 },
     pixelRatio: { value: 1 },
     maximumGlowRadiusPx: { value: LAMP_MAXIMUM_GLOW_RADIUS_PX },
+    sunDirection: { value: new Vector3(1, 0, 0) },
   };
   const material = new ShaderMaterial({
     uniforms,
@@ -450,15 +856,34 @@ export function createModelLightPoints(
       attribute vec3 lampRadiance;
       attribute vec3 lampGlowColor;
       attribute float lampRadiusAu;
+      attribute float lampGlowScale;
+      attribute float lampFadesInSunlight;
       attribute float lampLit;
       uniform float drawingBufferHeight;
       uniform float pixelRatio;
       uniform float maximumGlowRadiusPx;
+      uniform vec3 sunDirection;
       varying vec3 vRadiance;
       varying vec3 vGlowColor;
       varying float vCoreShare;
       varying float vGlareShown;
+      varying float vSunlitShare;
       void main() {
+        // A lamp that fades in sunlight shows only where the hull under it
+        // faces away from the Sun (modelLightSunlitShare).
+        float sunCosine = dot(
+          normalize(mat3(modelMatrix) * lampNormal),
+          sunDirection
+        );
+        float sunlitShare = mix(
+          1.0,
+          1.0 - smoothstep(
+            ${SUNLIT_FADE_START_COSINE.toFixed(2)},
+            ${SUNLIT_FADE_END_COSINE.toFixed(2)},
+            sunCosine
+          ),
+          lampFadesInSunlight
+        );
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         float depth = -mvPosition.z;
         // The glare fades as the camera drops below the horizon of the hull
@@ -483,12 +908,15 @@ export function createModelLightPoints(
           ${LAMP_MINIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio,
           ${LAMP_MAXIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio
         );
-        glowPx = min(glowPx, maximumGlowRadiusPx * pixelRatio);
+        glowPx = min(glowPx, maximumGlowRadiusPx * pixelRatio) * lampGlowScale;
         corePx = min(corePx, glowPx);
         gl_PointSize = 2.0 * glowPx;
-        // A lamp that is off goes outside the clip volume: a point of size 0
-        // may still draw one pixel.
-        if (lampLit < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        // A lamp that is off, or wholly faded in sunlight, goes outside the
+        // clip volume: a point of size 0 may still draw one pixel.
+        if (lampLit < 0.5 || sunlitShare <= 0.0) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        }
+        vSunlitShare = sunlitShare;
         vCoreShare = corePx / glowPx;
         vRadiance = lampRadiance;
         vGlowColor = lampGlowColor;
@@ -501,6 +929,7 @@ export function createModelLightPoints(
       varying vec3 vGlowColor;
       varying float vCoreShare;
       varying float vGlareShown;
+      varying float vSunlitShare;
       void main() {
         float r = length(gl_PointCoord - vec2(0.5)) * 2.0;
         if (r >= 1.0) discard;
@@ -518,7 +947,10 @@ export function createModelLightPoints(
         // Alpha 0 with premultiplied additive blending adds the light and
         // leaves the canvas alpha alone, so the page behind a transparent
         // canvas still shows through the glow.
-        gl_FragColor = vec4(toneMapping(vRadiance * core) + glow, 0.0);
+        gl_FragColor = vec4(
+          (toneMapping(vRadiance * core) + glow) * vSunlitShare,
+          0.0
+        );
         #include <logdepthbuf_fragment>
         #include <colorspace_fragment>
       }
@@ -542,6 +974,7 @@ export function createModelLightPoints(
       pixelRatio,
       drawingBufferHeightPx,
       modelRadiusPx,
+      sunDirection,
     }) => {
       let changed = false;
       for (const [index, light] of lights.entries()) {
@@ -558,6 +991,11 @@ export function createModelLightPoints(
       uniforms.pixelRatio.value = pixelRatio;
       uniforms.maximumGlowRadiusPx.value =
         modelRadiusPx * LAMP_MAXIMUM_GLOW_SHARE_OF_MODEL;
+      uniforms.sunDirection.value.set(
+        sunDirection.x,
+        sunDirection.y,
+        sunDirection.z,
+      );
     },
   };
 }
