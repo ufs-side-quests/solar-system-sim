@@ -72,7 +72,10 @@ import {
 // so two fields of each lamp set how it shows in a field:
 //   glowScale: the share of the standard glow radius the lamp draws. A
 //   beacon draws all of it; a hull lamp in a field draws less, so the glows
-//   of neighbouring lamps do not merge into a haze over the model.
+//   of neighbouring lamps do not merge into a haze over the model; a running
+//   lamp on a small ship draws more, up to LAMP_MAXIMUM_GLOW_SCALE, so it
+//   reads as a coloured lamp and not a speck. No glow is ever wider than
+//   LAMP_MAXIMUM_GLOW_RADIUS_PX.
 //   onSunlitHull: "fade" for a lamp that shows only where the hull under it
 //   is dark, as city lights show only on a planet's night side. On a sunlit
 //   hull such a lamp, drawn larger than its lens, would dot the hull with
@@ -123,9 +126,12 @@ const LAMP_MINIMUM_GLOW_RADIUS_PX = 7;
 const LAMP_MAXIMUM_GLOW_RADIUS_PX = 28;
 /**
  * Largest glow radius as a share of the model's projected radius, so lamps
- * never swamp a model that is small on screen.
+ * never swamp a model that is small on screen. A lamp's glowScale applies
+ * after this limit.
  */
 const LAMP_MAXIMUM_GLOW_SHARE_OF_MODEL = 0.1;
+/** Largest glowScale: the glow of a running lamp on a small ship. */
+const LAMP_MAXIMUM_GLOW_SCALE = 2.5;
 
 const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
@@ -167,8 +173,11 @@ const modelLightSchema = z.object({
       onFraction: z.number().gt(0).lt(1),
     }),
   ]),
-  /** Share of the standard glow radius: 1 for a lone lamp, less in a field. */
-  glowScale: z.number().gt(0).max(1),
+  /**
+   * Share of the standard glow radius: 1 for a lone lamp, less in a field,
+   * more for a running lamp on a small ship.
+   */
+  glowScale: z.number().gt(0).max(LAMP_MAXIMUM_GLOW_SCALE),
   /** Whether the lamp shows on a sunlit hull, or fades there. */
   onSunlitHull: z.enum(["show", "fade"]),
   /**
@@ -189,6 +198,18 @@ type ModelLightInput = z.input<typeof modelLightSchema>;
 
 /** A lamp that stands alone: the whole glow, and shown in sunlight. */
 const LONE_LAMP = { glowScale: 1, onSunlitHull: "show" } as const;
+
+/**
+ * The USS Defiant's running lamps: shown in sunlight, with the widest glow.
+ * At the default focus distance a lone lamp's glow has a radius of about 8
+ * pixels, and on the dark hull of this small ship its hue showed only as a
+ * speck. The wider glow puts a disc of the lamp's colour around a core of
+ * the same size, so the lamp does not read as a white disc.
+ */
+const DEFIANT_LAMP = {
+  glowScale: LAMP_MAXIMUM_GLOW_SCALE,
+  onSunlitHull: "show",
+} as const;
 
 const DS9_BEACON = {
   ...LONE_LAMP,
@@ -733,7 +754,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
     ...(
       [
@@ -755,7 +776,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
         onFraction: 0.1,
       },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
     {
       bodyId: "uss-defiant",
@@ -767,7 +788,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     },
     ...(
       [
@@ -792,7 +813,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
 
     // Hubble, JWST and Voyager. The real spacecraft show no lamps in space,
@@ -1022,7 +1043,12 @@ export function createModelLightPoints(
           ${LAMP_MINIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio,
           ${LAMP_MAXIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio
         );
-        glowPx = min(glowPx, maximumGlowRadiusPx * pixelRatio) * lampGlowScale;
+        // A glowScale above 1 may widen the glow past the model's share,
+        // but never past the largest glow.
+        glowPx = min(
+          min(glowPx, maximumGlowRadiusPx * pixelRatio) * lampGlowScale,
+          ${LAMP_MAXIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio
+        );
         corePx = min(corePx, glowPx);
         gl_PointSize = 2.0 * glowPx;
         // A lamp that is off, or wholly faded in sunlight, goes outside the
