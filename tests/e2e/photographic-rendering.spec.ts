@@ -562,6 +562,19 @@ test("matches the reference image for the Death Star II local shadow", async ({
   const canvas = page.locator("canvas.major-body-layer");
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Pause", exact: true }).click();
+  // The clock runs at 1 hour / second until the pause, so the pause time
+  // depends on how fast the page loaded, and the station turns along its
+  // orbit: a pause between 530 s and 1,100 s gave ratios from 1.56 down to
+  // 1.21. Steps of 1 minute back put every run in one window, 420 s to 480 s.
+  const renderedTime = async (): Promise<number> =>
+    Number(await scene.getAttribute("data-rendered-time-seconds"));
+  await page.getByRole("slider", { name: "Playback rate" }).fill("1");
+  for (let time = await renderedTime(); time > 480;) {
+    await page.getByRole("button", { name: "Step backward" }).click();
+    await expect.poll(renderedTime).toBeCloseTo(time - 60, 0);
+    time = await renderedTime();
+  }
+  expect(await renderedTime()).toBeGreaterThan(420);
   await focusBody(page, scene, "Death Star II (fictional)", "death-star-2");
   await expect(scene).toHaveAttribute("data-deathstar2-model-loaded", "true", {
     timeout: 60_000,
@@ -588,6 +601,10 @@ test("matches the reference image for the Death Star II local shadow", async ({
     Number(await modelLabel.getAttribute("data-screen-y")),
     Number(await modelLabel.getAttribute("data-radius-pixels")),
   );
+  testInfo.annotations.push({
+    type: "Death Star II hemisphere luma",
+    description: `left ${modelLuminance.left.toFixed(2)}, right ${modelLuminance.right.toFixed(2)}, simulation time ${String(await renderedTime())} s`,
+  });
   expect(
     Math.max(modelLuminance.left, modelLuminance.right) /
       Math.max(1, Math.min(modelLuminance.left, modelLuminance.right)),
