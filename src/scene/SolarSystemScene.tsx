@@ -194,6 +194,7 @@ import {
   createModelLightPoints,
   modelLightIsOn,
   modelLightsByBodyId,
+  modelLightSunlitShare,
   type ModelLightPoints,
 } from "./model-lights";
 import {
@@ -6023,6 +6024,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     const lampWorld = new Vector3();
     const lampNormal = new Vector3();
     const lampToCamera = new Vector3();
+    const lampSunDirection = new Vector3();
     const render = (): void => {
       // One layout read per frame: every later read would follow DOM writes
       // and force another style recalculation.
@@ -10043,7 +10045,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
             .distanceTo(camera.position),
           1e-15,
         );
+        // The Sun's direction from the model, from the light that shades it.
+        lampSunDirection.copy(sunlight.position).sub(lampWorld).normalize();
         lightSet.update({
+          sunDirection: lampSunDirection,
           wallClockSeconds: lampWallClockSeconds,
           reducedMotion: lampReducedMotion,
           pixelRatio: renderer.getPixelRatio(),
@@ -10073,6 +10078,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
             .fromArray(light.normal)
             .transformDirection(lampMatrix)
             .dot(lampToCamera.copy(camera.position).sub(lampWorld).normalize());
+          const sunCosine = lampNormal.dot(
+            lampSunDirection.copy(sunlight.position).sub(lampWorld).normalize(),
+          );
           lampWorld.project(camera);
           return {
             name: light.name,
@@ -10081,6 +10089,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
             y: Number((((-lampWorld.y + 1) * viewportHeight) / 2).toFixed(1)),
             on: modelLightIsOn(light, lampWallClockSeconds, lampReducedMotion),
             facing: Number(facing.toFixed(3)),
+            sunlitShare: Number(
+              modelLightSunlitShare(light, sunCosine).toFixed(3),
+            ),
           };
         });
         setData(container, "modelLightBody", lampFocusId);

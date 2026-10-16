@@ -12,6 +12,7 @@ import {
   modelLightIsOn,
   modelLights,
   modelLightsByBodyId,
+  modelLightSunlitShare,
   type ModelLight,
 } from "./model-lights";
 import { spacecraftAssets } from "./spacecraft-assets";
@@ -264,5 +265,169 @@ describe("model lamps", () => {
     }
     expect(modelLightsByBodyId.get("roadster")?.length).toBe(8);
     expect(modelLightsByBodyId.get("iss")?.length).toBe(4);
+  });
+});
+
+describe("model lamps on every model", () => {
+  it("gives every sourced model lamps", () => {
+    for (const bodyId of assets.keys()) {
+      expect(modelLightsByBodyId.get(bodyId)?.length, bodyId).toBeGreaterThan(
+        0,
+      );
+    }
+  });
+
+  it("covers Death Star II with a field of hull lamps that fade in sunlight", async () => {
+    const asset = assets.get("death-star-2");
+    if (asset === undefined) throw new Error("Death Star II is not installed");
+    const hull = await readHull(asset.modelUrl);
+    const lights = modelLightsByBodyId.get("death-star-2") ?? [];
+    const field = lights.filter((light) => light.name.startsWith("hull lamp"));
+    expect(field.length).toBeGreaterThanOrEqual(150);
+    const centre: Vec3 = [17.699, -1.375, -14.581];
+    const directions = field.map((light) => {
+      const offset = sub(light.position, centre);
+      const length = Math.hypot(...offset);
+      // On the outer hull, with the normal turned outward.
+      expect(length, light.name).toBeGreaterThan(0.96 * 371.8);
+      expect(dot(offset, light.normal) / length, light.name).toBeGreaterThan(
+        0.5,
+      );
+      expect(light.onSunlitHull, light.name).toBe("fade");
+      expect(light.glowScale, light.name).toBeLessThan(1);
+      const direction: Vec3 = [
+        offset[0] / length,
+        offset[1] / length,
+        offset[2] / length,
+      ];
+      return direction;
+    });
+    // Spread over the station: lamps in all six directions from the centre.
+    for (const axis of [0, 1, 2] as const) {
+      for (const sign of [1, -1]) {
+        expect(
+          directions.some((direction) => sign * direction[axis] > 0.9),
+          `axis ${String(axis)} sign ${String(sign)}`,
+        ).toBe(true);
+      }
+    }
+    // The superlaser: a green lens and eight green emitters, all inside the
+    // dish rim (16 degrees off the dish axis).
+    const dishAxis: Vec3 = [-0.0135, 0.4324, 0.9016];
+    const dish = lights.filter((light) => light.name.startsWith("superlaser"));
+    expect(dish).toHaveLength(9);
+    for (const light of dish) {
+      const offset = sub(light.position, centre);
+      expect(light.colorSrgbHex, light.name).toBe("#40ff50");
+      expect(
+        dot(offset, dishAxis) / Math.hypot(...offset),
+        light.name,
+      ).toBeGreaterThan(Math.cos((16 * Math.PI) / 180));
+      expect(light.onSunlitHull, light.name).toBe("show");
+    }
+    // Red beacons on the two poles, blinking in turn.
+    const poles = lights.filter((light) => light.name.includes("pole"));
+    expect(poles).toHaveLength(2);
+    const height = hull.max[1] - hull.min[1];
+    for (const light of poles) {
+      const tipY = light.position[1] > 0 ? hull.max[1] : hull.min[1];
+      expect(Math.abs(light.position[1] - tipY), light.name).toBeLessThan(
+        0.005 * height,
+      );
+      expect(light.pattern.kind, light.name).toBe("blink");
+    }
+    expect(
+      poles
+        .map((light) =>
+          light.pattern.kind === "blink" ? light.pattern.phase : NaN,
+        )
+        .sort(),
+    ).toEqual([0, 0.5]);
+  }, 60_000);
+
+  it("fades a lamp only on a sunlit hull, and only when it is set to", () => {
+    const [fading] = (modelLightsByBodyId.get("death-star-2") ?? []).filter(
+      (light) => light.onSunlitHull === "fade",
+    );
+    if (fading === undefined) throw new Error("No lamp fades in sunlight");
+    expect(modelLightSunlitShare(fading, -1)).toBe(1);
+    expect(modelLightSunlitShare(fading, -0.1)).toBe(1);
+    expect(modelLightSunlitShare(fading, 0)).toBeGreaterThan(0);
+    expect(modelLightSunlitShare(fading, 0)).toBeLessThan(1);
+    expect(modelLightSunlitShare(fading, 0.15)).toBe(0);
+    expect(modelLightSunlitShare(fading, 1)).toBe(0);
+    for (const light of modelLights.filter(
+      (entry) => entry.onSunlitHull === "show",
+    )) {
+      expect(modelLightSunlitShare(light, 1), light.name).toBe(1);
+    }
+    // Only Death Star II's hull field fades.
+    expect(
+      new Set(
+        modelLights
+          .filter((light) => light.onSunlitHull === "fade")
+          .map((light) => light.bodyId),
+      ),
+    ).toEqual(new Set(["death-star-2"]));
+  });
+
+  it("gives the USS Defiant navigation lamps, strobes, a deflector and impulse engines", async () => {
+    const asset = assets.get("uss-defiant");
+    if (asset === undefined) throw new Error("USS Defiant is not installed");
+    const hull = await readHull(asset.modelUrl);
+    const lights = modelLightsByBodyId.get("uss-defiant") ?? [];
+    const byName = (name: string): ModelLight => {
+      const light = lights.find((entry) => entry.name === name);
+      if (light === undefined) throw new Error(`${name} is missing`);
+      return light;
+    };
+    // The bow is +z and up is +y, so port is +x: red there, green to
+    // starboard, each on the ship's widest point.
+    const port = byName("port navigation lamp");
+    const starboard = byName("starboard navigation lamp");
+    expect(port.colorSrgbHex).toBe("#ff2020");
+    expect(starboard.colorSrgbHex).toBe("#19ff7a");
+    const width = hull.max[0] - hull.min[0];
+    expect(hull.max[0] - port.position[0]).toBeLessThan(0.02 * width);
+    expect(starboard.position[0] - hull.min[0]).toBeLessThan(0.02 * width);
+    // White strobes that blink.
+    for (const name of ["port strobe", "starboard strobe"]) {
+      const strobe = byName(name);
+      expect(strobe.colorSrgbHex, name).toBe("#ffffff");
+      expect(strobe.pattern.kind, name).toBe("blink");
+    }
+    // The blue deflector at the bow, the red impulse engines at the stern.
+    const length = hull.max[2] - hull.min[2];
+    const deflector = byName("deflector");
+    expect(deflector.colorSrgbHex).toBe("#3a8bff");
+    expect(hull.max[2] - deflector.position[2]).toBeLessThan(0.05 * length);
+    for (const name of ["port impulse engine", "starboard impulse engine"]) {
+      const engine = byName(name);
+      expect(engine.colorSrgbHex, name).toBe("#ff3010");
+      expect(engine.position[2] - hull.min[2], name).toBeLessThan(
+        0.05 * length,
+      );
+      expect(engine.normal[2], name).toBeLessThan(-0.9);
+    }
+    expect(lights).toHaveLength(7);
+    for (const light of lights) {
+      expect(light.basis, light.name).toBe("authored-fiction");
+    }
+  }, 60_000);
+
+  it("marks the few Hubble, JWST and Voyager lamps as play", () => {
+    for (const bodyId of ["hubble", "jwst", "voyager-1", "voyager-2"]) {
+      const lights = modelLightsByBodyId.get(bodyId) ?? [];
+      expect(lights, bodyId).toHaveLength(3);
+      expect(lights.map((light) => light.colorSrgbHex).sort(), bodyId).toEqual([
+        "#19ff7a",
+        "#ff2020",
+        "#ffffff",
+      ]);
+      for (const light of lights) {
+        expect(light.basis, light.name).toBe("playful-fiction");
+        expect(light.radiusM, light.name).toBeLessThanOrEqual(0.1);
+      }
+    }
   });
 });
