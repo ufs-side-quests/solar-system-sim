@@ -587,11 +587,13 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
     // the "defront" texture covers the +z ends of the nacelle section and
     // "deback1" a -z face), with +y up, so port (left) is +x. Rays cast
     // inward along x at z = 0.3, where the nacelles are widest, found a red
-    // port and a green starboard lamp; rays cast forward at x = +/-2.8 found
-    // the aft faces of the nacelles for two white strobes; a ray cast aft at
-    // y = -0.1 found the grille on the front of the bow module for the blue
-    // deflector; rays cast forward at x = +/-0.5 found the stern's aft face
-    // (z = -4.79) for two red impulse engines. The lenses are small: a
+    // port and a green starboard lamp; the extreme vertices along
+    // (+/-0.5, 0, -0.866) are the two aft corners of the stern, where two
+    // white strobes face out along that bisector (the aft faces of the
+    // nacelles sit in a recess that hides a lamp from oblique views); a ray
+    // cast aft at y = -0.1 found the grille on the front of the bow module
+    // for the blue deflector; rays cast forward at x = +/-0.5 found the
+    // stern's aft face (z = -4.79) for two red impulse engines. The lenses are small: a
     // lamp's core reads white hot, so a large lens would show a white disc,
     // and the small ones leave the hue to the glow.
     ...(
@@ -623,8 +625,8 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
     })),
     ...(
       [
-        ["port strobe", [2.8, 0, -1.4813], [-0.1059, 0.0011, -0.9944]],
-        ["starboard strobe", [-2.8, 0, -1.476], [0.1056, 0.0013, -0.9944]],
+        ["port strobe", [0.9555, -0.0431, -4.8466], [0.5, 0, -0.866]],
+        ["starboard strobe", [-1.0098, -0.0431, -4.8466], [-0.5, 0, -0.866]],
       ] as const
     ).map(([name, position, normal]) => ({
       bodyId: "uss-defiant",
