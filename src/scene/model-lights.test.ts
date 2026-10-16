@@ -4,9 +4,21 @@ import { fileURLToPath } from "node:url";
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import draco3d from "draco3dgltf";
-import { describe, expect, it } from "vitest";
+import sharp from "sharp";
+import {
+  CylinderGeometry,
+  Group,
+  Mesh,
+  type Object3D,
+  Texture,
+  TextureLoader,
+  Vector3,
+} from "three";
+import { describe, expect, it, vi } from "vitest";
 
+import { createDeathStarModel } from "./death-star-model";
 import { fictionalModelAssets } from "./fictional-model-assets";
+import { fictionalOrbiterById } from "./fictional-orbiters";
 import {
   lampRadianceFromLuminance,
   modelLightIsOn,
@@ -156,8 +168,22 @@ const assets: ReadonlyMap<
   ]),
 );
 
+// Death Star I is procedural (death-star-model.ts), with no installed model
+// file: its own test below checks its lamps against its built geometry.
+const PROCEDURAL_MODEL_BODY_IDS = ["death-star-1"];
+
 describe("model lamps", () => {
-  it.each([...modelLightsByBodyId.keys()])(
+  it("lights only installed models and the procedural Death Star I", () => {
+    expect(new Set(modelLightsByBodyId.keys())).toEqual(
+      new Set([...assets.keys(), ...PROCEDURAL_MODEL_BODY_IDS]),
+    );
+  });
+
+  it.each(
+    [...modelLightsByBodyId.keys()].filter(
+      (bodyId) => !PROCEDURAL_MODEL_BODY_IDS.includes(bodyId),
+    ),
+  )(
     "anchors every %s lamp on the hull of its installed model",
     async (bodyId) => {
       const asset = assets.get(bodyId);
@@ -361,14 +387,192 @@ describe("model lamps on every model", () => {
     )) {
       expect(modelLightSunlitShare(light, 1), light.name).toBe(1);
     }
-    // Only Death Star II's hull field fades.
+    // Only the two Death Stars' hull fields fade.
     expect(
       new Set(
         modelLights
           .filter((light) => light.onSunlitHull === "fade")
           .map((light) => light.bodyId),
       ),
-    ).toEqual(new Set(["death-star-2"]));
+    ).toEqual(new Set(["death-star-1", "death-star-2"]));
+  });
+
+  it("covers Death Star I with hull lamps, a superlaser and pole beacons from its own geometry", async () => {
+    const station = fictionalOrbiterById.get("death-star-1");
+    if (station === undefined) throw new Error("Death Star I is not defined");
+    // The model in its own frame. Its textures are not under test, and Node
+    // has no image decoder, so a blank texture stands in for each.
+    const load = vi
+      .spyOn(TextureLoader.prototype, "load")
+      .mockImplementation(() => new Texture());
+    const model: Group = createDeathStarModel(station, (url) => {
+      throw new Error(`${url} failed to load`);
+    });
+    load.mockRestore();
+    model.scale.setScalar(1);
+    model.updateMatrixWorld(true);
+    const meshesUnder = (root: Object3D): Mesh[] => {
+      const found: Mesh[] = [];
+      root.traverse((object) => {
+        // instanceof is the check; three types the result Mesh<any>.
+        if (object instanceof Mesh) found.push(object as Mesh);
+      });
+      return found;
+    };
+    const meshesNamed = (name: string): Mesh[] =>
+      meshesUnder(model).filter((mesh) => mesh.name === name);
+    const [hullMesh] = meshesNamed(`${station.name} main hull`);
+    if (hullMesh === undefined) throw new Error("Death Star I has no hull");
+    hullMesh.geometry.computeBoundingSphere();
+    const hullRadius = hullMesh.geometry.boundingSphere?.radius ?? NaN;
+    const metresPerUnit = station.diameterM / 2 / hullRadius;
+    const lights = modelLightsByBodyId.get("death-star-1") ?? [];
+    const position = (light: ModelLight): Vector3 =>
+      new Vector3(...light.position);
+
+    // The dish axis, and the widest angle from it of any part of the dish.
+    const dishRoot = model.getObjectByName("Recessed superlaser assembly");
+    if (dishRoot === undefined) throw new Error("Death Star I has no dish");
+    const axis = new Vector3(0, 0, 1).transformDirection(dishRoot.matrixWorld);
+    let dishAngle = 0;
+    for (const mesh of meshesUnder(dishRoot)) {
+      const corners = mesh.geometry.getAttribute("position");
+      for (let index = 0; index < corners.count; index += 1) {
+        const corner = new Vector3()
+          .fromBufferAttribute(corners, index)
+          .applyMatrix4(mesh.matrixWorld);
+        dishAngle = Math.max(dishAngle, corner.angleTo(axis));
+      }
+    }
+
+    // The trench: rows of the hull texture whose mean is under half the
+    // median row's, as latitudes (the texture runs from pole to pole).
+    const { data, info } = await sharp(
+      fileURLToPath(
+        new URL(
+          "../../public/textures/fictional/death-star-hull-v2.webp",
+          import.meta.url,
+        ),
+      ),
+    )
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const rowMeans = Array.from({ length: info.height }, (_, row) => {
+      let sum = 0;
+      for (let x = 0; x < info.width; x += 1) {
+        sum += data[row * info.width + x] ?? NaN;
+      }
+      return sum / info.width;
+    });
+    const median = [...rowMeans].sort((a, b) => a - b)[info.height >> 1] ?? NaN;
+    let trenchHalfLatitude = 0;
+    rowMeans.forEach((mean, row) => {
+      if (mean >= 0.5 * median) return;
+      for (const edge of [row, row + 1]) {
+        trenchHalfLatitude = Math.max(
+          trenchHalfLatitude,
+          Math.abs(Math.PI / 2 - (Math.PI * edge) / info.height),
+        );
+      }
+    });
+    expect(trenchHalfLatitude).toBeGreaterThan(0);
+    expect(trenchHalfLatitude).toBeLessThan(0.1);
+
+    // Hull lamps: on the hull, facing out, clear of the trench and the dish,
+    // spread over the whole station, fading on the sunlit hull.
+    const field = lights.filter((light) => light.name.startsWith("hull lamp"));
+    expect(field.length).toBeGreaterThanOrEqual(250);
+    for (const light of field) {
+      const place = position(light);
+      const lampAngle = light.radiusM / metresPerUnit / hullRadius;
+      expect(place.length(), light.name).toBeCloseTo(hullRadius, 5);
+      expect(
+        new Vector3(...light.normal).dot(place) / place.length(),
+        light.name,
+      ).toBeGreaterThan(0.999);
+      expect(
+        Math.abs(Math.asin(place.y / place.length())) - lampAngle,
+        light.name,
+      ).toBeGreaterThan(trenchHalfLatitude);
+      expect(place.angleTo(axis) - lampAngle, light.name).toBeGreaterThan(
+        dishAngle,
+      );
+      expect(light.onSunlitHull, light.name).toBe("fade");
+      expect(light.glowScale, light.name).toBeLessThan(1);
+    }
+    for (const axisIndex of [0, 1, 2] as const) {
+      for (const sign of [1, -1]) {
+        expect(
+          field.some(
+            (light) => (sign * light.position[axisIndex]) / hullRadius > 0.9,
+          ),
+          `axis ${String(axisIndex)} sign ${String(sign)}`,
+        ).toBe(true);
+      }
+    }
+
+    // The superlaser: a green lamp over the central emitter and over each of
+    // the eight focusing nodes, each the size of its part's front face and
+    // facing out along the dish axis.
+    const dish = lights.filter((light) => light.name.startsWith("superlaser"));
+    expect(dish).toHaveLength(9);
+    const parts = [
+      ...meshesNamed("Superlaser central emitter"),
+      ...meshesNamed("Superlaser perimeter focusing node"),
+    ];
+    expect(parts).toHaveLength(9);
+    for (const part of parts) {
+      if (!(part.geometry instanceof CylinderGeometry)) {
+        throw new Error(`${part.name} is not a cylinder`);
+      }
+      const frontRadius = part.geometry.parameters.radiusTop;
+      const centre = part.getWorldPosition(new Vector3());
+      const over = dish.filter((light) => {
+        const offset = position(light).sub(centre);
+        return (
+          offset.sub(axis.clone().multiplyScalar(offset.dot(axis))).length() <
+          frontRadius
+        );
+      });
+      expect(over, part.name).toHaveLength(1);
+      const [light] = over;
+      if (light === undefined) continue;
+      expect(
+        light.radiusM / (frontRadius * metresPerUnit),
+        light.name,
+      ).toBeCloseTo(1, 5);
+      expect(position(light).length(), light.name).toBeCloseTo(hullRadius, 5);
+      expect(
+        new Vector3(...light.normal).dot(axis),
+        light.name,
+      ).toBeGreaterThan(0.999);
+      expect(light.colorSrgbHex, light.name).toBe("#40ff50");
+      expect(light.onSunlitHull, light.name).toBe("show");
+    }
+
+    // Red beacons on the two poles, blinking in turn.
+    const poles = lights.filter((light) => light.name.includes("pole"));
+    expect(poles).toHaveLength(2);
+    for (const light of poles) {
+      expect(Math.abs(light.position[1]), light.name).toBeCloseTo(
+        hullRadius,
+        5,
+      );
+      expect(light.colorSrgbHex, light.name).toBe("#ff2a1a");
+      expect(light.pattern.kind, light.name).toBe("blink");
+    }
+    expect(
+      poles
+        .map((light) =>
+          light.pattern.kind === "blink" ? light.pattern.phase : NaN,
+        )
+        .sort(),
+    ).toEqual([0, 0.5]);
+    expect(lights).toHaveLength(field.length + 11);
+    for (const light of lights) {
+      expect(light.basis, light.name).toBe("authored-fiction");
+    }
   });
 
   it("gives the USS Defiant navigation lamps, strobes, a deflector and impulse engines", async () => {

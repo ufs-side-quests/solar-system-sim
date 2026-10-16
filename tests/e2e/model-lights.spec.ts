@@ -216,6 +216,12 @@ const MODELS = [
     hueLamps: [],
   },
   {
+    name: "Death Star I (fictional)",
+    bodyId: "death-star-1",
+    lampCount: 315,
+    hueLamps: [],
+  },
+  {
     name: "Death Star II (fictional)",
     bodyId: "death-star-2",
     lampCount: 183,
@@ -429,44 +435,62 @@ async function turnToNightSide(page: Page, scene: Locator): Promise<number> {
   throw new Error("The camera did not reach the night side");
 }
 
-test("shows lamps on the night side of Death Star II, far and near", async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  const scene = await openScene(page, true);
-  await focusBody(page, scene, "Death Star II (fictional)", "death-star-2");
-  await expect(scene).toHaveAttribute("data-deathstar2-model-loaded", "true", {
-    timeout: 60_000,
+// Each Death Star, and the scene attribute that says its model is built.
+const DEATH_STARS = [
+  {
+    title: "Death Star I",
+    name: "Death Star I (fictional)",
+    bodyId: "death-star-1",
+    loadedAttribute: "data-deathstar1-model-loaded",
+  },
+  {
+    title: "Death Star II",
+    name: "Death Star II (fictional)",
+    bodyId: "death-star-2",
+    loadedAttribute: "data-deathstar2-model-loaded",
+  },
+] as const;
+
+for (const station of DEATH_STARS) {
+  test(`shows lamps on the night side of ${station.title}, far and near`, async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const scene = await openScene(page, true);
+    await focusBody(page, scene, station.name, station.bodyId);
+    await expect(scene).toHaveAttribute(station.loadedAttribute, "true", {
+      timeout: 60_000,
+    });
+    await settleView(page, scene);
+    await turnToNightSide(page, scene);
+    const label = page.locator(`.body-label[data-body-id="${station.bodyId}"]`);
+    // The inner 80 % of the disc: the thin sunlit crescent at the limb is
+    // outside it, so only light on the night side counts.
+    const nightSidePixels = async (): Promise<number> => {
+      await cameraAtRest(scene);
+      return brightPixelsInDisc(
+        await canvasFrame(page),
+        Number(await label.getAttribute("data-screen-x")),
+        Number(await label.getAttribute("data-screen-y")),
+        0.8 * Number(await label.getAttribute("data-radius-pixels")),
+        160,
+      );
+    };
+    // At the default focus distance, and two zoom steps closer.
+    const far = await nightSidePixels();
+    for (let press = 0; press < 2; press += 1) {
+      // The style above hides the controls, so the click is dispatched.
+      await page.locator('button[aria-label="Zoom in"]').dispatchEvent("click");
+    }
+    const near = await nightSidePixels();
+    test.info().annotations.push({
+      type: "night-side bright pixels",
+      description: `far ${String(far)}, near ${String(near)}`,
+    });
+    expect(far, "far").toBeGreaterThanOrEqual(200);
+    expect(near, "near").toBeGreaterThanOrEqual(200);
   });
-  await settleView(page, scene);
-  await turnToNightSide(page, scene);
-  const label = page.locator('.body-label[data-body-id="death-star-2"]');
-  // The inner 80 % of the disc: the thin sunlit crescent at the limb is
-  // outside it, so only light on the night side counts.
-  const nightSidePixels = async (): Promise<number> => {
-    await cameraAtRest(scene);
-    return brightPixelsInDisc(
-      await canvasFrame(page),
-      Number(await label.getAttribute("data-screen-x")),
-      Number(await label.getAttribute("data-screen-y")),
-      0.8 * Number(await label.getAttribute("data-radius-pixels")),
-      160,
-    );
-  };
-  // At the default focus distance, and two zoom steps closer.
-  const far = await nightSidePixels();
-  for (let press = 0; press < 2; press += 1) {
-    // The style above hides the controls, so the click is dispatched.
-    await page.locator('button[aria-label="Zoom in"]').dispatchEvent("click");
-  }
-  const near = await nightSidePixels();
-  test.info().annotations.push({
-    type: "night-side bright pixels",
-    description: `far ${String(far)}, near ${String(near)}`,
-  });
-  expect(far, "far").toBeGreaterThanOrEqual(200);
-  expect(near, "near").toBeGreaterThanOrEqual(200);
-});
+}
 
 test("leaves the sunlit hull of Death Star II free of hull lamps", async ({
   page,
@@ -488,5 +512,61 @@ test("leaves the sunlit hull of Death Star II free of hull lamps", async ({
   expect(sunlitLamps.length, JSON.stringify(lamps)).toBeGreaterThanOrEqual(20);
   for (const lamp of sunlitLamps) {
     expect(saturatedPixels(frame, lamp), lamp.name).toBe(0);
+  }
+});
+
+/**
+ * Pixels within 12 pixels of a lamp that are lit (the brightest channel at
+ * least 120) and of the lamp's hue: each channel, as a share of the
+ * brightest, within 0.3 of the lamp colour's. For a white lamp that is any
+ * near-white pixel. This is the lamp as a child sees it: core and glow.
+ */
+function lampGlowPixels(frame: Frame, lamp: ReportedLamp): number {
+  const rgb = lampRgb(lamp);
+  const lampPeak = Math.max(...rgb);
+  return pixelsNear(frame, lamp, 12).filter((pixel) => {
+    const peak = Math.max(...pixel);
+    return (
+      peak >= 120 &&
+      pixel.every(
+        (channel, index) =>
+          Math.abs(channel / peak - (rgb[index] ?? Number.NaN) / lampPeak) <=
+          0.3,
+      )
+    );
+  }).length;
+}
+
+test("shows each USS Defiant lamp on its night side at the default distance", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const scene = await openScene(page, true);
+  await focusModel(page, scene, "USS Defiant (fictional)", "uss-defiant");
+  await turnToNightSide(page, scene);
+  await cameraAtRest(scene);
+  const lamps = await reportedLamps(scene);
+  const frame = await canvasFrame(page);
+  // Lamps turned toward the camera, as in the test of every model above. A
+  // lamp on the far side is hidden by the hull, or shows only at its edge.
+  const seen = lamps.filter((lamp) => lamp.facing >= 0.1);
+  expect(seen.length, JSON.stringify(lamps)).toBeGreaterThanOrEqual(2);
+  const counts = seen.map((lamp) => ({
+    lamp,
+    pixels: lampGlowPixels(frame, lamp),
+  }));
+  test.info().annotations.push({
+    type: "Defiant lamp pixels",
+    description: counts
+      .map(
+        ({ lamp, pixels }) =>
+          `${lamp.name} (facing ${String(lamp.facing)}): ${String(pixels)}`,
+      )
+      .join("; "),
+  });
+  // A disc about 10 pixels across of the lamp's colour: a lamp, not a speck.
+  for (const { lamp, pixels } of counts) {
+    expect(lamp.on, lamp.name).toBe(true);
+    expect(pixels, lamp.name).toBeGreaterThanOrEqual(80);
   }
 });

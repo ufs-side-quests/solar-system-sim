@@ -14,6 +14,12 @@ import { z } from "zod";
 import { ASTRONOMICAL_UNIT_M } from "../physics/solar-system";
 import deathStarIIHullLampsJson from "./death-star-ii-hull-lamps.json";
 import {
+  DEATH_STAR_HULL_RADIUS,
+  DEATH_STAR_TRENCH_HALF_LATITUDE_RAD,
+  deathStarSuperlaserAnchors,
+} from "./death-star-model";
+import { fictionalOrbiterById } from "./fictional-orbiters";
+import {
   LUMINOUS_SOLAR_CONSTANT_LX,
   SUNLIGHT_LUMINANCE_AT_1_AU,
 } from "./window-lighting";
@@ -66,7 +72,10 @@ import {
 // so two fields of each lamp set how it shows in a field:
 //   glowScale: the share of the standard glow radius the lamp draws. A
 //   beacon draws all of it; a hull lamp in a field draws less, so the glows
-//   of neighbouring lamps do not merge into a haze over the model.
+//   of neighbouring lamps do not merge into a haze over the model; a running
+//   lamp on a small ship draws more, up to LAMP_MAXIMUM_GLOW_SCALE, so it
+//   reads as a coloured lamp and not a speck. No glow is ever wider than
+//   LAMP_MAXIMUM_GLOW_RADIUS_PX.
 //   onSunlitHull: "fade" for a lamp that shows only where the hull under it
 //   is dark, as city lights show only on a planet's night side. On a sunlit
 //   hull such a lamp, drawn larger than its lens, would dot the hull with
@@ -80,6 +89,7 @@ import {
 // is far smaller than a screen pixel, so the filtered texture shows the
 // mean, and the night side reads black. A field of hull lamps, a green
 // superlaser dish and red polar beacons give it lights at every distance.
+// Death Star I has no lit windows at all, and gets the same set.
 
 const BEACON_LUMINANCE_CD_M2 = 1_000_000;
 const HEADLAMP_LUMINANCE_CD_M2 = 1_000_000;
@@ -116,9 +126,12 @@ const LAMP_MINIMUM_GLOW_RADIUS_PX = 7;
 const LAMP_MAXIMUM_GLOW_RADIUS_PX = 28;
 /**
  * Largest glow radius as a share of the model's projected radius, so lamps
- * never swamp a model that is small on screen.
+ * never swamp a model that is small on screen. A lamp's glowScale applies
+ * after this limit.
  */
 const LAMP_MAXIMUM_GLOW_SHARE_OF_MODEL = 0.1;
+/** Largest glowScale: the glow of a running lamp on a small ship. */
+const LAMP_MAXIMUM_GLOW_SCALE = 2.5;
 
 const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
@@ -128,6 +141,7 @@ const modelLightSchema = z.object({
     "roadster",
     "discovery-one",
     "iss",
+    "death-star-1",
     "death-star-2",
     "uss-defiant",
     "hubble",
@@ -159,8 +173,11 @@ const modelLightSchema = z.object({
       onFraction: z.number().gt(0).lt(1),
     }),
   ]),
-  /** Share of the standard glow radius: 1 for a lone lamp, less in a field. */
-  glowScale: z.number().gt(0).max(1),
+  /**
+   * Share of the standard glow radius: 1 for a lone lamp, less in a field,
+   * more for a running lamp on a small ship.
+   */
+  glowScale: z.number().gt(0).max(LAMP_MAXIMUM_GLOW_SCALE),
   /** Whether the lamp shows on a sunlit hull, or fades there. */
   onSunlitHull: z.enum(["show", "fade"]),
   /**
@@ -181,6 +198,18 @@ type ModelLightInput = z.input<typeof modelLightSchema>;
 
 /** A lamp that stands alone: the whole glow, and shown in sunlight. */
 const LONE_LAMP = { glowScale: 1, onSunlitHull: "show" } as const;
+
+/**
+ * The USS Defiant's running lamps: shown in sunlight, with the widest glow.
+ * At the default focus distance a lone lamp's glow has a radius of about 8
+ * pixels, and on the dark hull of this small ship its hue showed only as a
+ * speck. The wider glow puts a disc of the lamp's colour around a core of
+ * the same size, so the lamp does not read as a white disc.
+ */
+const DEFIANT_LAMP = {
+  glowScale: LAMP_MAXIMUM_GLOW_SCALE,
+  onSunlitHull: "show",
+} as const;
 
 const DS9_BEACON = {
   ...LONE_LAMP,
@@ -230,6 +259,153 @@ function playfulLampSet(
     basis: "playful-fiction",
     ...LONE_LAMP,
   }));
+}
+
+type LampAnchor = readonly [position: Vec3, normal: Vec3];
+
+/**
+ * The lamps of a Death Star: a field of warm hull lamps that fade on the
+ * sunlit hull, a green superlaser lens with its emitters around it, and a
+ * red beacon on each pole, blinking in turn.
+ */
+function deathStarLampSet(
+  bodyId: "death-star-1" | "death-star-2",
+  parts: Readonly<{
+    hullLamps: readonly LampAnchor[];
+    lens: LampAnchor;
+    lensRadiusM: number;
+    emitters: readonly LampAnchor[];
+    emitterRadiusM: number;
+    northPole: LampAnchor;
+    southPole: LampAnchor;
+  }>,
+): ModelLightInput[] {
+  const superlaser = {
+    bodyId,
+    colorSrgbHex: "#40ff50",
+    pattern: { kind: "steady" },
+    basis: "authored-fiction",
+    ...LONE_LAMP,
+  } as const;
+  return [
+    ...parts.hullLamps.map(([position, normal], index): ModelLightInput => ({
+      bodyId,
+      name: `hull lamp ${String(index + 1)}`,
+      position,
+      normal,
+      colorSrgbHex: "#ffe2a8",
+      radiusM: DEATH_STAR_HULL_LAMP_RADIUS_M,
+      luminanceCdM2: HULL_LAMP_LUMINANCE_CD_M2,
+      pattern: { kind: "steady" },
+      basis: "authored-fiction",
+      glowScale: 0.4,
+      onSunlitHull: "fade",
+    })),
+    {
+      ...superlaser,
+      name: "superlaser lens",
+      position: parts.lens[0],
+      normal: parts.lens[1],
+      radiusM: parts.lensRadiusM,
+      luminanceCdM2: BEACON_LUMINANCE_CD_M2,
+    },
+    ...parts.emitters.map(([position, normal], index): ModelLightInput => ({
+      ...superlaser,
+      name: `superlaser emitter ${String(index + 1)}`,
+      position,
+      normal,
+      radiusM: parts.emitterRadiusM,
+      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
+    })),
+    ...(
+      [
+        ["north pole beacon", parts.northPole, 0],
+        ["south pole beacon", parts.southPole, 0.5],
+      ] as const
+    ).map(([name, [position, normal], phase]): ModelLightInput => ({
+      ...DS9_BEACON,
+      bodyId,
+      name,
+      position,
+      normal,
+      radiusM: DEATH_STAR_POLE_BEACON_RADIUS_M,
+      pattern: {
+        kind: "blink",
+        periodSeconds: PYLON_BLINK_PERIOD_S,
+        phase,
+        onFraction: PYLON_ON_FRACTION,
+      },
+    })),
+  ];
+}
+
+const DEATH_STAR_HULL_LAMP_RADIUS_M = 150;
+const DEATH_STAR_POLE_BEACON_RADIUS_M = 1_500;
+/** Directions in each Death Star's lattice of hull lamps. */
+const DEATH_STAR_HULL_LATTICE_SIZE = 320;
+
+/**
+ * Death Star I's lamps, from its procedural model (death-star-model.ts): in
+ * the model's frame the hull is a sphere of DEATH_STAR_HULL_RADIUS about the
+ * origin with its poles on y, and the model's group scales it to the
+ * station's diameter. The hull lamps lie on a Fibonacci lattice of the same
+ * 320 directions as Death Star II's, less any lamp whose lens reaches the
+ * equatorial trench or the superlaser dish's rim. The superlaser lamps sit
+ * over the central emitter and the eight focusing nodes, each with the
+ * part's own front radius, facing out along the dish axis.
+ */
+function deathStarILamps(): ModelLightInput[] {
+  const station = fictionalOrbiterById.get("death-star-1");
+  if (station === undefined) throw new Error("Death Star I is not defined");
+  const metresPerUnit = station.diameterM / 2 / DEATH_STAR_HULL_RADIUS;
+  const lampAngleRad =
+    DEATH_STAR_HULL_LAMP_RADIUS_M / metresPerUnit / DEATH_STAR_HULL_RADIUS;
+  const superlaser = deathStarSuperlaserAnchors();
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const hullLamps = Array.from(
+    { length: DEATH_STAR_HULL_LATTICE_SIZE },
+    (_, index) => {
+      const y = 1 - (2 * (index + 0.5)) / DEATH_STAR_HULL_LATTICE_SIZE;
+      const ring = Math.sqrt(1 - y * y);
+      return new Vector3(
+        Math.cos(goldenAngle * index) * ring,
+        y,
+        Math.sin(goldenAngle * index) * ring,
+      );
+    },
+  )
+    .filter(
+      (direction) =>
+        Math.abs(Math.asin(direction.y)) - lampAngleRad >
+          DEATH_STAR_TRENCH_HALF_LATITUDE_RAD &&
+        direction.angleTo(superlaser.axis) - lampAngleRad >
+          superlaser.rimAngleRad,
+    )
+    .map((direction): LampAnchor => [
+      direction.clone().multiplyScalar(DEATH_STAR_HULL_RADIUS).toArray(),
+      direction.toArray(),
+    ]);
+  const axis = superlaser.axis.toArray();
+  const [node] = superlaser.nodes;
+  if (node === undefined) throw new Error("The superlaser has no nodes");
+  return deathStarLampSet("death-star-1", {
+    hullLamps,
+    lens: [superlaser.emitter.position.toArray(), axis],
+    lensRadiusM: superlaser.emitter.radius * metresPerUnit,
+    emitters: superlaser.nodes.map(({ position }) => [
+      position.toArray(),
+      axis,
+    ]),
+    emitterRadiusM: node.radius * metresPerUnit,
+    northPole: [
+      [0, DEATH_STAR_HULL_RADIUS, 0],
+      [0, 1, 0],
+    ],
+    southPole: [
+      [0, -DEATH_STAR_HULL_RADIUS, 0],
+      [0, -1, 0],
+    ],
+  });
 }
 
 export const modelLights: readonly ModelLight[] = modelLightSchema
@@ -469,44 +645,28 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
     // central lens; rays at 9.6 degrees off it, every 45 degrees around it,
     // found eight emitters on the dish. Rays along y through the centre found
     // the poles.
-    ...z
-      .tuple([
-        z.number(),
-        z.number(),
-        z.number(),
-        z.number(),
-        z.number(),
-        z.number(),
-      ])
-      .array()
-      .parse(deathStarIIHullLampsJson)
-      .map(([px, py, pz, nx, ny, nz], index) => ({
-        bodyId: "death-star-2",
-        name: `hull lamp ${String(index + 1)}`,
-        position: [px, py, pz],
-        normal: [nx, ny, nz],
-        colorSrgbHex: "#ffe2a8",
-        radiusM: 150,
-        luminanceCdM2: HULL_LAMP_LUMINANCE_CD_M2,
-        pattern: { kind: "steady" },
-        basis: "authored-fiction",
-        glowScale: 0.4,
-        onSunlitHull: "fade",
-      })),
-    {
-      bodyId: "death-star-2",
-      name: "superlaser lens",
-      position: [12.9834, 149.4056, 299.8032],
-      normal: [-0.0761, 0.3646, 0.9281],
-      colorSrgbHex: "#40ff50",
-      radiusM: 2_500,
-      luminanceCdM2: BEACON_LUMINANCE_CD_M2,
-      pattern: { kind: "steady" },
-      basis: "authored-fiction",
-      ...LONE_LAMP,
-    },
-    ...(
-      [
+    ...deathStarLampSet("death-star-2", {
+      hullLamps: z
+        .tuple([
+          z.number(),
+          z.number(),
+          z.number(),
+          z.number(),
+          z.number(),
+          z.number(),
+        ])
+        .array()
+        .parse(deathStarIIHullLampsJson)
+        .map(([px, py, pz, nx, ny, nz]) => [
+          [px, py, pz],
+          [nx, ny, nz],
+        ]),
+      lens: [
+        [12.9834, 149.4056, 299.8032],
+        [-0.0761, 0.3646, 0.9281],
+      ],
+      lensRadiusM: 2_500,
+      emitters: [
         [
           [72.7582, 151.636, 305.3514],
           [-0.1003, 0.4079, 0.9075],
@@ -539,48 +699,21 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
           [54.8311, 113.0917, 322.2562],
           [-0.0818, 0.4595, 0.8844],
         ],
-      ] as const
-    ).map(([position, normal], index) => ({
-      bodyId: "death-star-2",
-      name: `superlaser emitter ${String(index + 1)}`,
-      position,
-      normal,
-      colorSrgbHex: "#40ff50",
-      radiusM: 1_200,
-      luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
-      pattern: { kind: "steady" },
-      basis: "authored-fiction",
-      ...LONE_LAMP,
-    })),
-    ...(
-      [
-        [
-          "north pole beacon",
-          [17.6992, 371.8115, -14.5812],
-          [0.045, 0.9989, -0.0109],
-          0,
-        ],
-        [
-          "south pole beacon",
-          [17.6992, -374.9731, -14.5812],
-          [0.0166, -0.9984, 0.0549],
-          0.5,
-        ],
-      ] as const
-    ).map(([name, position, normal, phase]) => ({
-      ...DS9_BEACON,
-      bodyId: "death-star-2",
-      name,
-      position,
-      normal,
-      radiusM: 1_500,
-      pattern: {
-        kind: "blink",
-        periodSeconds: PYLON_BLINK_PERIOD_S,
-        phase,
-        onFraction: PYLON_ON_FRACTION,
-      },
-    })),
+      ],
+      emitterRadiusM: 1_200,
+      northPole: [
+        [17.6992, 371.8115, -14.5812],
+        [0.045, 0.9989, -0.0109],
+      ],
+      southPole: [
+        [17.6992, -374.9731, -14.5812],
+        [0.0166, -0.9984, 0.0549],
+      ],
+    }),
+
+    // Death Star I (fictional): procedural, so its lamps come from its own
+    // geometry (deathStarILamps).
+    ...deathStarILamps(),
 
     // USS Defiant (fictional). Its licence keeps the file unmodified, so its
     // lamps are drawn here. The app flies the ship along model +z (the bow:
@@ -621,7 +754,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
     ...(
       [
@@ -643,7 +776,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
         onFraction: 0.1,
       },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
     {
       bodyId: "uss-defiant",
@@ -655,7 +788,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     },
     ...(
       [
@@ -680,7 +813,7 @@ export const modelLights: readonly ModelLight[] = modelLightSchema
       luminanceCdM2: FLOODLIGHT_LUMINANCE_CD_M2,
       pattern: { kind: "steady" },
       basis: "authored-fiction",
-      ...LONE_LAMP,
+      ...DEFIANT_LAMP,
     })),
 
     // Hubble, JWST and Voyager. The real spacecraft show no lamps in space,
@@ -910,7 +1043,12 @@ export function createModelLightPoints(
           ${LAMP_MINIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio,
           ${LAMP_MAXIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio
         );
-        glowPx = min(glowPx, maximumGlowRadiusPx * pixelRatio) * lampGlowScale;
+        // A glowScale above 1 may widen the glow past the model's share,
+        // but never past the largest glow.
+        glowPx = min(
+          min(glowPx, maximumGlowRadiusPx * pixelRatio) * lampGlowScale,
+          ${LAMP_MAXIMUM_GLOW_RADIUS_PX.toFixed(1)} * pixelRatio
+        );
         corePx = min(corePx, glowPx);
         gl_PointSize = 2.0 * glowPx;
         // A lamp that is off, or wholly faded in sunlight, goes outside the
