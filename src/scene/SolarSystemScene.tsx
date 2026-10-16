@@ -2046,6 +2046,26 @@ reflectedLight.directSpecular *= solarTransmission;`,
     // Bodies whose on-demand 3D model is in the scene. Until then an Orrery
     // marker stays, so a focused object never shows only a label.
     const loadedModelBodyIds = new Set<string>();
+    // Lamps on a loaded model, by body id; they live inside the model.
+    const modelLightSets = new Map<
+      string,
+      Readonly<{ lightSet: ModelLightPoints; modelRadiusM: number }>
+    >();
+    // The lamp anchors are in the model's own coordinates, so the lamps take
+    // the model's centring and physical scale with it.
+    const attachModelLights = (
+      bodyId: string,
+      model: Object3D,
+      modelRadiusM: number,
+    ): void => {
+      const lights = modelLightsByBodyId.get(bodyId);
+      if (lights === undefined) return;
+      const lightSet = createModelLightPoints(lights);
+      model.add(lightSet.points);
+      geometries.push(lightSet.points.geometry);
+      materials.push(lightSet.points.material);
+      modelLightSets.set(bodyId, { lightSet, modelRadiusM });
+    };
     // Death Star I is built, and its textures requested, only when the frame
     // loop first needs to draw it.
     const ensureDeathStarModel = (): void => {
@@ -2083,6 +2103,8 @@ reflectedLight.directSpecular *= solarTransmission;`,
           }
         }
       });
+      attachModelLights("death-star-1", model, orbiter.diameterM / 2);
+      container.dataset["deathstar1ModelLoaded"] = "true";
     };
     for (const orbiter of FICTIONAL_ORBITERS) {
       const group = new Group();
@@ -3389,8 +3411,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
       }
     }
     const modelLoadPromises = new Map<string, Promise<void>>();
-    // Lamps on a loaded model, by body id; they live inside the model.
-    const modelLightSets = new Map<string, ModelLightPoints>();
     let sourcedModelsLoadedCount = 0;
     const loadSourcedModel = (asset: (typeof sourcedModelAssets)[number]) => {
       const activePromise = modelLoadPromises.get(asset.bodyId);
@@ -3535,16 +3555,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             modelTexturesByBodyId.set(asset.bodyId, modelTextures);
             reportModelTextureAnisotropy(asset.bodyId);
           }
-          const lights = modelLightsByBodyId.get(asset.bodyId);
-          if (lights !== undefined) {
-            // Lamp anchors are in the glTF scene's coordinates, so the lamps
-            // take the model's centring and physical scale with it.
-            const lightSet = createModelLightPoints(lights);
-            model.add(lightSet.points);
-            geometries.push(lightSet.points.geometry);
-            materials.push(lightSet.points.material);
-            modelLightSets.set(asset.bodyId, lightSet);
-          }
+          attachModelLights(asset.bodyId, model, asset.maximumDimensionM / 2);
           group.add(model);
           loadedModelBodyIds.add(asset.bodyId);
           container.dataset[`${asset.bodyId.replaceAll("-", "")}ModelLoaded`] =
@@ -10033,12 +10044,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       const lampFocalPx =
         (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
         camera.zoom;
-      for (const [bodyId, lightSet] of modelLightSets) {
+      for (const { lightSet, modelRadiusM } of modelLightSets.values()) {
         if (!shownInScene(lightSet.points)) continue;
-        const asset = sourcedModelAssetByBodyId.get(bodyId);
-        if (asset === undefined) {
-          throw new Error(`${bodyId} model asset is unavailable for its lamps`);
-        }
         const modelDistanceAu = Math.max(
           lightSet.points
             .getWorldPosition(lampWorld)
@@ -10054,10 +10061,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           pixelRatio: renderer.getPixelRatio(),
           drawingBufferHeightPx: drawingBufferSize.y,
           modelRadiusPx:
-            (asset.maximumDimensionM /
-              2 /
-              ASTRONOMICAL_UNIT_M /
-              modelDistanceAu) *
+            (modelRadiusM / ASTRONOMICAL_UNIT_M / modelDistanceAu) *
             lampFocalPx,
         });
       }
@@ -10065,7 +10069,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // The focused model's lamps as drawn this frame, for tests.
       const lampFocusId = focusBodyIdRef.current;
       const focusLightSet =
-        lampFocusId === null ? undefined : modelLightSets.get(lampFocusId);
+        lampFocusId === null
+          ? undefined
+          : modelLightSets.get(lampFocusId)?.lightSet;
       if (
         lampFocusId !== null &&
         focusLightSet !== undefined &&

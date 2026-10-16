@@ -7,6 +7,7 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  Quaternion,
   RingGeometry,
   SRGBColorSpace,
   SphereGeometry,
@@ -90,17 +91,115 @@ function createInteriorMaterial(
   });
 }
 
-function createDishSurface(radius: number): RingGeometry {
-  const geometry = new RingGeometry(0, radius, 96, 12);
+// The superlaser dish, in the model's frame: the hull is a sphere of radius
+// DEATH_STAR_HULL_RADIUS about the origin. The dish frame has its origin on
+// the dish axis at SUPERLASER_RIM_DISTANCE from the centre, and its +z along
+// the axis, out of the dish.
+const SUPERLASER_AXIS = new Vector3(0.36, 0.3, 0.884).normalize();
+const SUPERLASER_RIM_DISTANCE = 1.002;
+const SUPERLASER_DISH_RADIUS = 0.185;
+const SUPERLASER_RIM_TUBE_RADIUS = 0.006;
+const SUPERLASER_DISH_DEPTH = 0.068;
+const SUPERLASER_NODE_RADIUS = 0.138;
+const SUPERLASER_NODE_COUNT = 8;
+/** Front (outward) and back radii and the height of each focusing node. */
+const SUPERLASER_NODE_SIZE = [0.007, 0.009, 0.014] as const;
+/** Front and back radii and the height of the central emitter. */
+const SUPERLASER_EMITTER_SIZE = [0.031, 0.039, 0.022] as const;
+/** The emitter and the nodes stand this far above the dish surface. */
+const SUPERLASER_HUB_LIFT = 0.009;
+
+/** The hull sphere's radius in model units: the group scales it to metres. */
+export const DEATH_STAR_HULL_RADIUS = 1;
+
+/**
+ * Half the latitude span of the equatorial trench. The hull texture
+ * (death-star-hull-v2.webp, 1,024 rows from pole to pole) draws the trench
+ * floor in rows 501 to 522 and its lit lips in rows 499, 500 and 523: 12
+ * rows either side of the equator, 2.1 degrees.
+ */
+export const DEATH_STAR_TRENCH_HALF_LATITUDE_RAD = (12 / 1_024) * Math.PI;
+
+function superlaserDishDepthAt(radius: number): number {
+  return (
+    -SUPERLASER_DISH_DEPTH *
+    (1 - Math.min(radius / SUPERLASER_DISH_RADIUS, 1) ** 2)
+  );
+}
+
+function superlaserNodeAngle(index: number): number {
+  return (index / SUPERLASER_NODE_COUNT) * Math.PI * 2 + Math.PI / 8;
+}
+
+/** The dish frame's rotation from the model frame. */
+function superlaserFrameQuaternion(): Quaternion {
+  return new Quaternion().setFromUnitVectors(
+    new Vector3(0, 0, 1),
+    SUPERLASER_AXIS,
+  );
+}
+
+export type DeathStarSuperlaserAnchors = Readonly<{
+  /** Unit vector along the dish axis, out of the dish. */
+  axis: Vector3;
+  /** Angle between the dish axis and the outer edge of the rim. */
+  rimAngleRad: number;
+  /** Where the hull sphere covers the central emitter, and its front radius. */
+  emitter: Readonly<{ position: Vector3; radius: number }>;
+  /** Where the hull sphere covers each focusing node, and its front radius. */
+  nodes: readonly Readonly<{ position: Vector3; radius: number }>[];
+}>;
+
+/**
+ * The superlaser's emitter and focusing nodes, in the model's frame. The
+ * dish is drawn over the hull without a depth test, while the hull sphere
+ * still writes depth across it. So each anchor is the point of the hull
+ * sphere straight above its part along the dish axis: a lamp there covers
+ * the part when the dish faces the camera, and the hull's depth does not
+ * hide it.
+ */
+export function deathStarSuperlaserAnchors(): DeathStarSuperlaserAnchors {
+  const toModel = superlaserFrameQuaternion();
+  const onHull = (x: number, y: number): Vector3 =>
+    new Vector3(x, y, 0)
+      .applyQuaternion(toModel)
+      .addScaledVector(
+        SUPERLASER_AXIS,
+        Math.sqrt(DEATH_STAR_HULL_RADIUS ** 2 - x * x - y * y),
+      );
+  return {
+    axis: SUPERLASER_AXIS.clone(),
+    rimAngleRad: Math.asin(
+      (SUPERLASER_DISH_RADIUS + SUPERLASER_RIM_TUBE_RADIUS) /
+        SUPERLASER_RIM_DISTANCE,
+    ),
+    emitter: { position: onHull(0, 0), radius: SUPERLASER_EMITTER_SIZE[0] },
+    nodes: Array.from({ length: SUPERLASER_NODE_COUNT }, (_, index) => {
+      const angle = superlaserNodeAngle(index);
+      return {
+        position: onHull(
+          Math.cos(angle) * SUPERLASER_NODE_RADIUS,
+          Math.sin(angle) * SUPERLASER_NODE_RADIUS,
+        ),
+        radius: SUPERLASER_NODE_SIZE[0],
+      };
+    }),
+  };
+}
+
+function createDishSurface(): RingGeometry {
+  const geometry = new RingGeometry(0, SUPERLASER_DISH_RADIUS, 96, 12);
   const positions = geometry.attributes["position"];
   if (positions === undefined) {
     throw new Error("Superlaser dish geometry has no positions");
   }
   for (let index = 0; index < positions.count; index += 1) {
-    const x = positions.getX(index);
-    const y = positions.getY(index);
-    const normalizedRadius = Math.min(Math.hypot(x, y) / radius, 1);
-    positions.setZ(index, -0.068 * (1 - normalizedRadius * normalizedRadius));
+    positions.setZ(
+      index,
+      superlaserDishDepthAt(
+        Math.hypot(positions.getX(index), positions.getY(index)),
+      ),
+    );
   }
   positions.needsUpdate = true;
   geometry.computeVertexNormals();
@@ -116,42 +215,40 @@ function addSuperlaserAssembly(
   const dishRoot = new Group();
   dishRoot.name = "Recessed superlaser assembly";
   dishRoot.userData["bodyId"] = bodyId;
-  const direction = new Vector3(0.36, 0.3, 0.884).normalize();
-  dishRoot.position.copy(direction).multiplyScalar(1.002);
-  dishRoot.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), direction);
+  dishRoot.position
+    .copy(SUPERLASER_AXIS)
+    .multiplyScalar(SUPERLASER_RIM_DISTANCE);
+  dishRoot.quaternion.copy(superlaserFrameQuaternion());
   root.add(dishRoot);
 
-  const dishRadius = 0.185;
-  const dishDepthAt = (radius: number): number =>
-    -0.068 * (1 - Math.min(radius / dishRadius, 1) ** 2);
-  const dish = selectableMesh(
-    createDishSurface(dishRadius),
-    dishMaterial,
-    bodyId,
-  );
+  const dish = selectableMesh(createDishSurface(), dishMaterial, bodyId);
   dish.name = "Concave superlaser reflector";
   dish.renderOrder = 4;
   dishRoot.add(dish);
 
-  for (const radius of [0.047, 0.089, 0.135, dishRadius]) {
+  for (const radius of [0.047, 0.089, 0.135, SUPERLASER_DISH_RADIUS]) {
     const ring = selectableMesh(
-      new TorusGeometry(radius, radius === dishRadius ? 0.006 : 0.0022, 8, 96),
+      new TorusGeometry(
+        radius,
+        radius === SUPERLASER_DISH_RADIUS ? SUPERLASER_RIM_TUBE_RADIUS : 0.0022,
+        8,
+        96,
+      ),
       structureMaterial,
       bodyId,
     );
     ring.name = "Superlaser concentric support";
-    ring.position.z = dishDepthAt(radius) + 0.004;
+    ring.position.z = superlaserDishDepthAt(radius) + 0.004;
     ring.renderOrder = 5;
     dishRoot.add(ring);
   }
-  const hub = new Vector3(0, 0, dishDepthAt(0) + 0.009);
-  for (let index = 0; index < 8; index += 1) {
-    const angle = (index / 8) * Math.PI * 2 + Math.PI / 8;
-    const nodeRadius = 0.138;
+  const hub = new Vector3(0, 0, superlaserDishDepthAt(0) + SUPERLASER_HUB_LIFT);
+  for (let index = 0; index < SUPERLASER_NODE_COUNT; index += 1) {
+    const angle = superlaserNodeAngle(index);
     const nodePosition = new Vector3(
-      Math.cos(angle) * nodeRadius,
-      Math.sin(angle) * nodeRadius,
-      dishDepthAt(nodeRadius) + 0.009,
+      Math.cos(angle) * SUPERLASER_NODE_RADIUS,
+      Math.sin(angle) * SUPERLASER_NODE_RADIUS,
+      superlaserDishDepthAt(SUPERLASER_NODE_RADIUS) + SUPERLASER_HUB_LIFT,
     );
     const beamVector = nodePosition.clone().sub(hub);
     const spoke = selectableMesh(
@@ -168,7 +265,7 @@ function addSuperlaserAssembly(
     spoke.renderOrder = 5;
     dishRoot.add(spoke);
     const focusingNode = selectableMesh(
-      new CylinderGeometry(0.007, 0.009, 0.014, 12),
+      new CylinderGeometry(...SUPERLASER_NODE_SIZE, 12),
       structureMaterial,
       bodyId,
     );
@@ -179,7 +276,7 @@ function addSuperlaserAssembly(
     dishRoot.add(focusingNode);
   }
   const emitter = selectableMesh(
-    new CylinderGeometry(0.031, 0.039, 0.022, 32),
+    new CylinderGeometry(...SUPERLASER_EMITTER_SIZE, 32),
     structureMaterial,
     bodyId,
   );
@@ -362,7 +459,13 @@ export function createDeathStarModel(
   const spherePhiStart =
     orbiter.constructionState === "complete" ? 0 : Math.PI * 0.75;
   const shell = selectableMesh(
-    new SphereGeometry(1, 192, 112, spherePhiStart, spherePhiLength),
+    new SphereGeometry(
+      DEATH_STAR_HULL_RADIUS,
+      192,
+      112,
+      spherePhiStart,
+      spherePhiLength,
+    ),
     hull,
     orbiter.id,
   );
