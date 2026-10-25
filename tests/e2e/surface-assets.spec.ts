@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+// What "More detail" says for each surface map kind.
+const PLAIN_SURFACE_MAP: Readonly<Record<string, string>> = {
+  "observational-composite": "Real spacecraft pictures joined into one map",
+  visualization: "NASA artwork based on real pictures",
+  "observation-constrained-atmosphere": "One colour matched to real photos",
+};
+
 const SURFACE_CASES = [
   [
     "Mercury",
@@ -285,7 +292,13 @@ test("captures every installed planet and moon surface presentation", async ({
     await expect(technicalRow).toBeHidden();
     await moreDetail.click();
     await expect(technicalRow).toBeVisible();
-    await expect(technicalRow).toHaveText(`Surface map${classification}`);
+    await expect(technicalRow).toHaveAttribute(
+      "data-surface-classification",
+      classification,
+    );
+    await expect(technicalRow).toHaveText(
+      `Surface map${PLAIN_SURFACE_MAP[classification] ?? "unlisted kind"}`,
+    );
     await moreDetail.click();
     await expect(technicalRow).toBeHidden();
     const surfaceLabel = page.locator(`.body-label[data-body-id="${bodyId}"]`);

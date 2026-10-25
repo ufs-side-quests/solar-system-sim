@@ -9,6 +9,7 @@ import {
   formatExactDistanceKm,
   formatGapInParentWidths,
   formatLiveOrbitalPeriod,
+  formatMassComparedWithEarth,
   formatMassKg,
   formatOrbitalPeriod,
   formatPlainDistance,
@@ -19,6 +20,7 @@ import {
   formatSunlightTravelTime,
   formatWidthComparedToEarth,
   PLAIN_SURFACE_BY_BODY_ID,
+  PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
   validatePlainSurfaceWording,
   validateSourcedOrbitalPeriods,
@@ -46,6 +48,43 @@ describe("selected-body physical facts", () => {
     expect(formatMassKg(5.97217e24)).toBe("5.9722 × 10²⁴ kg");
     expect(formatMassKg(419_725)).toBe("419,725 kg");
     expect(formatMassKg(undefined)).toBe("Not provided by source");
+  });
+
+  it("compares sourced masses with Earth in plain words", () => {
+    const massKg = (id: string): number => {
+      const mass = majorBodySnapshot.bodies.find(
+        (candidate) => candidate.id === id,
+      )?.massKg;
+      if (mass === undefined) {
+        throw new Error(`Snapshot body ${id} has no mass`);
+      }
+      return mass;
+    };
+    const earthKg = massKg("earth");
+    const compare = (id: string): string =>
+      formatMassComparedWithEarth(id, massKg(id), earthKg);
+    expect(compare("jupiter")).toBe("As heavy as 318 Earths");
+    expect(compare("sun")).toBe("As heavy as 333,000 Earths");
+    expect(compare("uranus")).toBe("As heavy as 15 Earths");
+    expect(compare("earth")).toBe("Our home: other worlds are weighed against it");
+    expect(compare("venus")).toBe("Earth is about 1.2 times heavier");
+    expect(compare("moon")).toBe("Earth is about 81 times heavier");
+    expect(compare("pluto")).toBe("Earth is about 458 times heavier");
+    expect(compare("mimas")).toBe("Earth is about 159,000 times heavier");
+    expect(compare("phobos")).toBe("Earth is about 560 million times heavier");
+    expect(compare("deimos")).toBe("Earth is about 4 billion times heavier");
+  });
+
+  it("names every surface map kind in plain words", () => {
+    const kinds = new Set([
+      ...[...nasaTextureByBodyId.values()].map((asset) => asset.classification),
+      ...[...nasaMaterialPresentationByBodyId.values()].map(
+        (presentation) => presentation.classification,
+      ),
+    ]);
+    for (const kind of kinds) {
+      expect(PLAIN_SURFACE_MAP_BY_CLASSIFICATION[kind], kind).toMatch(/^[A-Z]/u);
+    }
   });
 
   it("compares sourced mean radii with Earth in plain words", () => {

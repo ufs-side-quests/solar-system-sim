@@ -42,7 +42,7 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
     )
     .toBeGreaterThan(0.5);
   await expect(
-    page.getByText("Official NASA 3D model · physical scale · SGP4 trajectory"),
+    page.getByText("Official NASA 3D model · physical scale"),
   ).toBeVisible();
   await expect(scene).toHaveAttribute("data-iss-model-loaded", "true");
   await expect(scene).toHaveAttribute(
@@ -51,7 +51,7 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
     { timeout: 35_000 },
   );
   await expect(
-    page.getByText("Geocentric distance", { exact: true }),
+    page.getByText("From the centre of Earth", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Altitude", { exact: true })).toBeVisible();
   await expect(

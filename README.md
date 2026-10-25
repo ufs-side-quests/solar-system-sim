@@ -46,7 +46,10 @@ For Saturn and Jupiter the question adds "Rings do not count.", because Saturn w
 After the child taps one, the narrower globe shrinks to its true size, a "Wider" tag marks the winner, and the same line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
 "Next pair" steps through six fixed pairs, and "See all" returns to the lineup.
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
-Exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and surface-map classification remain under More detail.
+The card's "How heavy" row compares the sourced mass with Earth's, such as "As heavy as 318 Earths" for Jupiter or "Earth is about 81 times heavier" for the Moon.
+Exact mass in kilograms, exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and the kind of surface map in plain words (such as "Real spacecraft pictures joined into one map") remain under More detail.
+The ISS card says "From the centre of Earth" and whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+The time controls say how far the clock is from the start in plain words, such as "4 hours after the start"; the exact TDB offset is the line's tooltip.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 Outside a tour, a camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
@@ -328,7 +331,7 @@ Trail length and fading are adjustable, and Clear trails removes all accumulated
 The optional Orrery minor-body trail uses fading screen-space history of actual GPU-propagated catalogue positions, resets when the camera changes, and applies to whichever asteroid and comet categories are visible.
 Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
-When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
+When the installed Horizons satellite catalogue does not provide mass, composition or a surface map, the card leaves that row out rather than substituting an estimate.
 Re-centre or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
 On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
 At every screen size a tour (the Scale tour or the Eclipse story) shows only the clock and the tour card; the command bar, camera dock, time controls, and navigation map come back when it ends.

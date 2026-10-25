@@ -49,6 +49,7 @@ import {
 } from "./physics/solar-system";
 import {
   formatPlainSimulationDate,
+  formatPlainSimulationOffset,
   formatSimulationDateUtc,
   simulationDateUtc,
   VALIDATED_WINDOW_SECONDS,
@@ -83,6 +84,9 @@ import {
   formatSunlightTravelTime,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
+  EARTH_MASS_KG,
+  formatMassComparedWithEarth,
+  PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
 } from "./scene/body-physical-facts";
 import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
@@ -3289,13 +3293,13 @@ export function App() {
       if (isIss) {
         return {
           name: "International Space Station",
-          surface: "Official NASA 3D model · physical scale · SGP4 trajectory",
+          surface: "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
           distanceRows:
             parentState === undefined
               ? undefined
               : plainDistanceRows(
-                  "Geocentric distance",
+                  "From the centre of Earth",
                   bodyDistanceM(bodyState, parentState),
                 ),
           altitudeKm:
@@ -3313,13 +3317,26 @@ export function App() {
           composition,
           dimensionsM: `${String(issSnapshot.physicalDimensions.overallEndToEndM)} × ${String(issSnapshot.physicalDimensions.solarArrayLengthM)} m`,
           ephemerisStatus: isIssEphemerisWithinValidity(state.timeSeconds)
-            ? "Within ±7 day OMM window"
-            : "Hidden outside ±7 day OMM window",
+            ? "Up to date for this day"
+            : `Not shown: we only know where it is near ${formatPlainSimulationDate(ISS_EPOCH_SIMULATION_SECONDS)}`,
+          technicalRows: [
+            {
+              label: "Orbit model",
+              value: "SGP4 from the CelesTrak OMM orbital elements",
+            },
+            {
+              label: "Orbit data window",
+              value: isIssEphemerisWithinValidity(state.timeSeconds)
+                ? "Within ±7 day OMM window"
+                : "Hidden outside ±7 day OMM window",
+            },
+          ],
         };
       }
+      // A catalogue moon has no surface map, mass or composition installed,
+      // so the card leaves those rows out.
       return {
         name: bodyDisplayName(bodyId),
-        surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
         distanceRows:
           parentState === undefined || parentDefinition === undefined
@@ -3333,7 +3350,6 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: formatMassKg(undefined),
         composition,
       };
     }
@@ -3382,8 +3398,10 @@ export function App() {
       surfaceTechnical:
         definition.type === "star"
           ? SUN_SURFACE_TECHNICAL
-          : (surfaceClassification ??
-            "Neutral - no installed authoritative surface asset"),
+          : surfaceClassification === undefined
+            ? "No surface map installed"
+            : PLAIN_SURFACE_MAP_BY_CLASSIFICATION[surfaceClassification],
+      surfaceClassification,
       diameterKm,
       parentName: parentDefinition?.name,
       distanceRows,
@@ -3392,7 +3410,18 @@ export function App() {
           ? undefined
           : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
       speedLabel,
-      mass: formatMassKg(definition.massKg),
+      mass:
+        definition.massKg === undefined
+          ? undefined
+          : formatMassComparedWithEarth(
+              definition.id,
+              definition.massKg,
+              EARTH_MASS_KG,
+            ),
+      exactMass:
+        definition.massKg === undefined
+          ? undefined
+          : formatMassKg(definition.massKg),
       composition,
       rotationHours: siderealRotationPeriodHours(definition),
       primeMeridianDeg: normalizedDegrees(
@@ -4514,21 +4543,25 @@ export function App() {
                     {selectedBodyDetail.ephemerisStatus}
                   </span>
                 )}
-                <span>
-                  <small>Mass</small>
-                  {selectedBodyDetail.mass}
-                </span>
-                <span
-                  className={
-                    selectedBodyDetail.surfaceTechnical === undefined
-                      ? "selected-body-surface"
-                      : undefined
-                  }
-                  title={selectedBodyDetail.surfaceTechnical}
-                >
-                  <small>Surface</small>
-                  {selectedBodyDetail.surface}
-                </span>
+                {selectedBodyDetail.mass === undefined ? null : (
+                  <span>
+                    <small>How heavy</small>
+                    {selectedBodyDetail.mass}
+                  </span>
+                )}
+                {selectedBodyDetail.surface === undefined ? null : (
+                  <span
+                    className={
+                      selectedBodyDetail.surfaceTechnical === undefined
+                        ? "selected-body-surface"
+                        : undefined
+                    }
+                    title={selectedBodyDetail.surfaceTechnical}
+                  >
+                    <small>Surface</small>
+                    {selectedBodyDetail.surface}
+                  </span>
+                )}
                 {selectedBodyDetail.speed === undefined ? null : (
                   <span className="selected-body-speed">
                     <small>
@@ -4537,10 +4570,10 @@ export function App() {
                     {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
                   </span>
                 )}
-                <span className="selected-body-composition">
-                  <small>
-                    <span>Composition</span>
-                    {selectedBodyDetail.composition === undefined ? null : (
+                {selectedBodyDetail.composition === undefined ? null : (
+                  <span className="selected-body-composition">
+                    <small>
+                      <span>Composition</span>
                       <a
                         href={selectedBodyDetail.composition.sourceUrl}
                         target="_blank"
@@ -4549,13 +4582,13 @@ export function App() {
                       >
                         Source
                       </a>
-                    )}
-                  </small>
-                  {selectedBodyDetail.composition?.summary ??
-                    "Not provided by the installed authority snapshot"}
-                </span>
+                    </small>
+                    {selectedBodyDetail.composition.summary}
+                  </span>
+                )}
                 {selectedBodyDetail.distanceRows === undefined &&
-                selectedBodyDetail.surfaceTechnical === undefined ? null : (
+                selectedBodyDetail.surfaceTechnical === undefined &&
+                selectedBodyDetail.technicalRows === undefined ? null : (
                   <details className="selected-body-more">
                     <summary>More detail</summary>
                     <div className="selected-body-more-grid">
@@ -4570,6 +4603,18 @@ export function App() {
                           {selectedBodyDetail.distanceRows.exactDistance.value}
                         </span>
                       )}
+                      {selectedBodyDetail.exactMass === undefined ? null : (
+                        <span>
+                          <small>Mass</small>
+                          {selectedBodyDetail.exactMass}
+                        </span>
+                      )}
+                      {selectedBodyDetail.technicalRows?.map((row) => (
+                        <span key={row.label}>
+                          <small>{row.label}</small>
+                          {row.value}
+                        </span>
+                      ))}
                       {selectedBodyDetail.distanceRows?.distanceAu ===
                       undefined ? null : (
                         <span title="1 AU is Earth's average distance from the Sun: 149,597,870.7 km">
@@ -4611,7 +4656,11 @@ export function App() {
                             )}
                             °
                           </span>
-                          <span>
+                          <span
+                            data-surface-classification={
+                              selectedBodyDetail.surfaceClassification
+                            }
+                          >
                             <small>Surface map</small>
                             {selectedBodyDetail.surfaceTechnical}
                           </span>
@@ -5602,8 +5651,13 @@ export function App() {
 
         <section className="timeline-dock" aria-label="Time controls">
           <div className="time-readout">
-            <output data-time-seconds={state?.timeSeconds ?? 0} aria-live="off">
-              TDB {formatSimulationOffset(state?.timeSeconds ?? 0)}
+            {/* Plain words for a child; the exact TDB offset for an adult. */}
+            <output
+              data-time-seconds={state?.timeSeconds ?? 0}
+              aria-live="off"
+              title={`TDB ${formatSimulationOffset(state?.timeSeconds ?? 0)} since the snapshot epoch`}
+            >
+              {formatPlainSimulationOffset(state?.timeSeconds ?? 0)}
             </output>
             <span
               className="run-status"

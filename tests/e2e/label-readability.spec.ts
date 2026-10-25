@@ -221,7 +221,7 @@ test("the running clock does not speak every tick", async ({ page }) => {
   }
   const changes = await liveChanges(page);
   expect(
-    changes.filter((change) => change.includes("TDB")),
+    changes.filter((change) => change.includes("after the start")),
     changes.join("\n"),
   ).toEqual([]);
 });

@@ -24,8 +24,13 @@ test("selected body stats identify their source and velocity reference", async (
 
   await selectFocus(focus, "Earth");
   await expect(scene).toHaveAttribute("data-focus-body", "earth");
-  await expect(page.getByText("Mass", { exact: true })).toBeVisible();
+  await expect(page.getByText("How heavy", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Our home: other worlds are weighed against it"),
+  ).toBeVisible();
+  await page.getByText("More detail", { exact: true }).click();
   await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
+  await page.getByText("More detail", { exact: true }).click();
   await expect(
     page.getByText("Speed relative to the Sun", { exact: true }),
   ).toBeVisible();
@@ -46,11 +51,17 @@ test("selected body stats identify their source and velocity reference", async (
     page.getByText("Speed relative to Earth", { exact: true }),
   ).toBeVisible();
 
+  // A catalogue moon has no installed mass, composition or surface map, so
+  // the card leaves those rows out.
   await selectFocus(focus, "Amalthea (Jupiter)");
-  await expect(page.getByText("Not provided by source")).toBeVisible();
-  await expect(
-    page.getByText("Not provided by the installed authority snapshot"),
-  ).toBeVisible();
+  const amaltheaCard = page.locator(".selected-body-detail");
+  await expect(amaltheaCard).toContainText("Amalthea");
+  for (const label of ["How heavy", "Composition", "Surface"]) {
+    await expect(
+      amaltheaCard.getByText(label, { exact: true }),
+      label,
+    ).toHaveCount(0);
+  }
   await expect(
     page.getByText("Speed relative to Jupiter", { exact: true }),
   ).toBeVisible();
@@ -69,7 +80,9 @@ test("selected body stats identify their source and velocity reference", async (
   await page
     .getByRole("button", { name: "Expand selected body details" })
     .click();
-  await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
+  await expect(
+    page.getByText("Our home: other worlds are weighed against it"),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Display" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
   expect(
@@ -117,7 +130,12 @@ test("selected body card answers how big and how long a year is", async ({
   await expect(card.getByText("Rotation angle", { exact: true })).toBeHidden();
   await card.getByText("More detail", { exact: true }).click();
   await expect(card.getByText("Rotation angle", { exact: true })).toBeVisible();
-  await expect(card.getByText("observational-composite")).toBeVisible();
+  await expect(
+    card.getByText("Real spacecraft pictures joined into one map"),
+  ).toBeVisible();
+  await expect(
+    card.locator('[data-surface-classification="observational-composite"]'),
+  ).toBeVisible();
 });
 
 test("selected body card states sourced year lengths and planet spin", async ({
@@ -376,15 +394,17 @@ test("spacecraft and fictional cards keep distances steady and exact values in M
 
   await selectFocus(focus, "International Space Station (Earth)");
   await expect(scene).toHaveAttribute("data-focus-body", "iss");
-  const issRow = row("Geocentric distance");
-  await expect(issRow).toHaveText(/^Geocentric distanceabout 6,[6-9]00 km$/u);
+  const issRow = row("From the centre of Earth");
+  await expect(issRow).toHaveText(
+    /^From the centre of Earthabout 6,[6-9]00 km$/u,
+  );
   const issDistance = await issRow.textContent();
   if (issDistance === null) {
     throw new Error("The ISS distance row has no text");
   }
   await card.getByText("More detail", { exact: true }).click();
-  await expect(row("Geocentric distance (live)")).toHaveText(
-    /^Geocentric distance \(live\)6,[6-9]\d\d km$/u,
+  await expect(row("From the centre of Earth (live)")).toHaveText(
+    /^From the centre of Earth \(live\)6,[6-9]\d\d km$/u,
   );
   await card.getByText("More detail", { exact: true }).click();
   // The card row no longer switches units or digits with camera zoom.
@@ -413,4 +433,60 @@ test("spacecraft and fictional cards keep distances steady and exact values in M
   await expect(row("Distance from Deep Space Nine (live)")).toHaveText(
     /^Distance from Deep Space Nine \(live\)2\.\d{1,3} km$/u,
   );
+});
+
+test("the card and the time line use words a child can read", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const more = card.locator(".selected-body-more");
+  // The main card is everything outside "More detail".
+  const mainText = async (): Promise<string> =>
+    card.evaluate((element) => {
+      const copy = element.cloneNode(true) as HTMLElement;
+      copy.querySelector(".selected-body-more")?.remove();
+      return copy.textContent;
+    });
+  const jargon =
+    /× 10|Not provided|authority snapshot|Neutral|asset|Geocentric|OMM|SGP4|observational-composite/u;
+
+  await selectFocus(focus, "Jupiter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(card).toContainText("How heavy");
+  await expect(card).toContainText("As heavy as 318 Earths");
+  expect(await mainText()).not.toMatch(jargon);
+  await more.getByText("More detail", { exact: true }).click();
+  await expect(more).toContainText("1.8981 × 10²⁷ kg");
+  await expect(more).not.toContainText("observational-composite");
+
+  for (const name of ["Amalthea (Jupiter)", "Pasiphae (Jupiter)"]) {
+    await selectFocus(focus, name);
+    await expect(card).toContainText(name.replace(/ \(.*/u, ""));
+    expect(await mainText()).not.toMatch(jargon);
+  }
+
+  await selectFocus(focus, "International Space Station (Earth)");
+  await expect(scene).toHaveAttribute("data-focus-body", "iss");
+  await expect(card).toContainText("From the centre of Earth");
+  expect(await mainText()).not.toMatch(jargon);
+  await more.getByText("More detail", { exact: true }).click();
+  await expect(more).toContainText("SGP4");
+  await expect(more).toContainText("±7 day OMM window");
+
+  const time = page.locator(".time-readout output");
+  await expect(time).toHaveText(/after the start$/u);
+  await expect(time).toHaveAttribute("title", /^TDB \+/u);
 });
