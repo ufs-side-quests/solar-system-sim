@@ -528,9 +528,7 @@ test("Tab and Shift+Tab stay inside Compare sizes while it is open", async ({
   await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
   const focusInDialog = async (): Promise<boolean> =>
     dialog.evaluate((element) => element.contains(document.activeElement));
-  const stops = await dialog
-    .locator("button:not([disabled]), a[href]")
-    .count();
+  const stops = await dialog.locator("button:not([disabled]), a[href]").count();
   for (let press = 0; press < stops + 2; press += 1) {
     await page.keyboard.press("Tab");
     expect(await focusInDialog(), `Tab ${String(press + 1)}`).toBe(true);

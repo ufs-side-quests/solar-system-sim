@@ -66,6 +66,7 @@ export class SolarAudioEngine {
       this.clearNarration();
     }
     this.applySettings();
+    void this.matchContextToSettings();
   }
 
   public async loadNarration(
@@ -157,14 +158,36 @@ export class SolarAudioEngine {
       this.publishStatus();
       return;
     }
-    if (
-      this.settings.musicEnabled ||
-      this.settings.effectsEnabled ||
-      this.settings.narrationEnabled
-    ) {
+    if (this.anySoundEnabled()) {
       await this.context.resume();
       this.publishStatus();
     }
+  }
+
+  private anySoundEnabled(): boolean {
+    return (
+      this.settings.musicEnabled ||
+      this.settings.effectsEnabled ||
+      this.settings.narrationEnabled
+    );
+  }
+
+  // With every sound off the context stops, so the status says no audio
+  // runs; turning one back on starts it again while the page is in view.
+  private async matchContextToSettings(): Promise<void> {
+    if (this.context === undefined || this.disposed) {
+      return;
+    }
+    if (!this.anySoundEnabled() && this.context.state === "running") {
+      await this.context.suspend();
+    } else if (
+      this.anySoundEnabled() &&
+      this.context.state === "suspended" &&
+      !document.hidden
+    ) {
+      await this.context.resume();
+    }
+    this.publishStatus();
   }
 
   public dispose(): void {
@@ -193,6 +216,10 @@ export class SolarAudioEngine {
       this.createGraph();
     }
     if (this.context === undefined) {
+      return false;
+    }
+    if (!this.anySoundEnabled()) {
+      await this.matchContextToSettings();
       return false;
     }
     try {

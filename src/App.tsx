@@ -4948,15 +4948,19 @@ export function App() {
                 </output>
               </label>
               <span className="audio-status" role="status">
-                {audio.narrationStatus === "error"
-                  ? "Tour narration could not be loaded"
-                  : audio.narrationStatus === "playing"
-                    ? "Tour narration playing"
-                    : audio.status === "running"
-                      ? "Audio active"
-                      : audio.status === "unavailable"
-                        ? "Audio unavailable in this browser"
-                        : "Starts after your next interaction"}
+                {!audio.settings.musicEnabled &&
+                !audio.settings.effectsEnabled &&
+                !audio.settings.narrationEnabled
+                  ? "Sound is off"
+                  : audio.narrationStatus === "error"
+                    ? "Tour narration could not be loaded"
+                    : audio.narrationStatus === "playing"
+                      ? "Tour narration playing"
+                      : audio.status === "running"
+                        ? "Audio active"
+                        : audio.status === "unavailable"
+                          ? "Audio unavailable in this browser"
+                          : "Starts after your next interaction"}
               </span>
             </div>
           </section>
