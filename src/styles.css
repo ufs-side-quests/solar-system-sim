@@ -2874,6 +2874,7 @@ h1 {
 }
 
 .schematic-map {
+  container-type: size;
   background:
     radial-gradient(circle at center, rgb(39 70 94 / 14%), transparent 40%),
     radial-gradient(
@@ -2884,6 +2885,15 @@ h1 {
   background-size:
     auto,
     24px 24px;
+}
+
+.schematic-stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  translate: -50% -50%;
 }
 
 .schematic-map-note {

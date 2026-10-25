@@ -207,6 +207,16 @@ export function SchematicSystemMap({
     }
   }
 
+  // The map pans so the focused body, or the planet whose system holds it,
+  // sits at the centre, clear of the panels along the edges. The Sun and the
+  // overview keep the Sun at the centre.
+  const panTarget =
+    [...positionedMoons, ...positionedPlanets].find(
+      (body) => body.id === focusBodyId,
+    ) ?? focusedSystemPosition;
+  const panX = panTarget === undefined ? 0 : 50 - panTarget.xPercent;
+  const panY = panTarget === undefined ? 0 : 50 - panTarget.yPercent;
+
   const bodyButton = (body: PositionedBody) => (
     <button
       key={body.id}
@@ -214,8 +224,8 @@ export function SchematicSystemMap({
       className={`schematic-body schematic-${body.type}${body.catalogueMoon ? " is-catalogue-moon" : ""}${body.spacecraft ? " is-spacecraft" : ""}${focusBodyId === body.id ? " is-selected" : ""}`}
       style={
         {
-          "--schematic-x": `${String(body.xPercent)}%`,
-          "--schematic-y": `${String(body.yPercent)}%`,
+          "--schematic-x": `${String(body.xPercent + panX)}%`,
+          "--schematic-y": `${String(body.yPercent + panY)}%`,
         } as CSSProperties
       }
       aria-pressed={focusBodyId === body.id}
@@ -236,49 +246,55 @@ export function SchematicSystemMap({
       <div className="schematic-map-note">
         Live positions · logarithmic spacing
       </div>
-      <svg
-        className="schematic-orbits"
-        viewBox="0 0 100 100"
-        aria-hidden="true"
-      >
-        {positionedPlanets.map((body) => (
-          <circle
-            key={body.id}
-            cx="50"
-            cy="50"
-            r={body.orbitRadiusPercent}
-            className={focusBodyId === body.id ? "is-selected" : undefined}
-          />
-        ))}
-        {positionedMoons
-          .filter((body) => !body.catalogueMoon || body.id === focusBodyId)
-          .map((body) => (
-            <circle
-              key={body.id}
-              cx={focusedSystemPosition?.xPercent}
-              cy={focusedSystemPosition?.yPercent}
-              r={body.orbitRadiusPercent}
-              className="moon-orbit"
-            />
-          ))}
-      </svg>
-      <button
-        type="button"
-        className={`schematic-body schematic-star${focusBodyId === "sun" ? " is-selected" : ""}`}
-        style={
-          {
-            "--schematic-x": "50%",
-            "--schematic-y": "50%",
-          } as CSSProperties
-        }
-        aria-pressed={focusBodyId === "sun"}
-        onClick={() => onFocusBody("sun")}
-      >
-        <span className="schematic-dot" aria-hidden="true" />
-        <span>Sun</span>
-      </button>
-      {objectVisibility.planets ? positionedPlanets.map(bodyButton) : null}
-      {positionedMoons.map(bodyButton)}
+      {/* A square stage, so a percentage is the same length across and down
+          for the orbits and the bodies. */}
+      <div className="schematic-stage">
+        <svg
+          className="schematic-orbits"
+          viewBox="0 0 100 100"
+          aria-hidden="true"
+        >
+          <g transform={`translate(${String(panX)} ${String(panY)})`}>
+            {positionedPlanets.map((body) => (
+              <circle
+                key={body.id}
+                cx="50"
+                cy="50"
+                r={body.orbitRadiusPercent}
+                className={focusBodyId === body.id ? "is-selected" : undefined}
+              />
+            ))}
+            {positionedMoons
+              .filter((body) => !body.catalogueMoon || body.id === focusBodyId)
+              .map((body) => (
+                <circle
+                  key={body.id}
+                  cx={focusedSystemPosition?.xPercent}
+                  cy={focusedSystemPosition?.yPercent}
+                  r={body.orbitRadiusPercent}
+                  className="moon-orbit"
+                />
+              ))}
+          </g>
+        </svg>
+        <button
+          type="button"
+          className={`schematic-body schematic-star${focusBodyId === "sun" ? " is-selected" : ""}`}
+          style={
+            {
+              "--schematic-x": `${String(50 + panX)}%`,
+              "--schematic-y": `${String(50 + panY)}%`,
+            } as CSSProperties
+          }
+          aria-pressed={focusBodyId === "sun"}
+          onClick={() => onFocusBody("sun")}
+        >
+          <span className="schematic-dot" aria-hidden="true" />
+          <span>Sun</span>
+        </button>
+        {objectVisibility.planets ? positionedPlanets.map(bodyButton) : null}
+        {positionedMoons.map(bodyButton)}
+      </div>
     </section>
   );
 }
