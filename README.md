@@ -326,6 +326,7 @@ Readouts that follow the scene every frame (exposure, magnification, orbit fligh
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
+Typed text matches the start of a word, never letters inside one: names that start with it come first, then names with a later word that starts with it, such as a moon's planet in "Pan (Saturn)", then whole category words such as "satellite" or "telescope", so "Sat" lists Saturn and its moons.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
 Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
 Focusing the Sun frames its disc from its own radius, as for every other body; the full-system 90 AU framing belongs to the Solar System overview, which Home and the "Solar System" breadcrumb open.

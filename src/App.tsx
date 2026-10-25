@@ -659,6 +659,49 @@ const FOCUS_BROWSE_OPTIONS = NON_EGG_OPTIONS.filter(
   (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
 );
 
+// How well typed text matches an option: 0 at the start of its name, 1 at
+// the start of a later word of its name, 2 as whole words of its other
+// search words (a category such as "satellite", or a story such as
+// "2001"), or undefined. Letters inside a word match nothing, so "Sat"
+// lists Saturn and its moons, not every moon that is a satellite.
+function focusMatchRank(
+  option: FocusOption,
+  normalizedInput: string,
+): number | undefined {
+  const label = option.label.toLocaleLowerCase();
+  if (label.startsWith(normalizedInput)) {
+    return 0;
+  }
+  const escaped = normalizedInput.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  if (new RegExp(`[^\\p{L}\\p{N}]${escaped}`, "u").test(label)) {
+    return 1;
+  }
+  return new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`,
+    "u",
+  ).test(option.searchText.toLocaleLowerCase())
+    ? 2
+    : undefined;
+}
+
+// The options that match typed text, names first, each rank in list order.
+function focusSearchResults(
+  options: readonly FocusOption[],
+  normalizedInput: string,
+): FocusOption[] {
+  return options
+    .map((option) => ({
+      option,
+      rank: focusMatchRank(option, normalizedInput),
+    }))
+    .filter(
+      (match): match is { option: FocusOption; rank: number } =>
+        match.rank !== undefined,
+    )
+    .sort((a, b) => a.rank - b.rank)
+    .map((match) => match.option);
+}
+
 const FocusSelect = memo(function FocusSelect({
   value,
   foundEasterEggIds,
@@ -737,9 +780,7 @@ const FocusSelect = memo(function FocusSelect({
       setFilteredOptions(
         normalizedInput.length === 0
           ? browseOptions
-          : searchOptions.filter((option) =>
-              option.searchText.toLocaleLowerCase().includes(normalizedInput),
-            ),
+          : focusSearchResults(searchOptions, normalizedInput),
       );
     },
     onSelectedItemChange: ({ selectedItem }) => {

@@ -444,6 +444,30 @@ test("the first Arrow Down after typing stays on the first row", async ({
   await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
 });
 
+// A child who types "Sat" means Saturn: names come first, and a word in
+// the middle of another word ("satellite") lists nothing.
+test("typing the start of a name lists that name first and nothing surprising", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  await pauseScene(page);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const options = page.locator(".focus-popover").getByRole("option");
+  await focus.fill("Sat");
+  await expect(options.first()).toHaveText("Saturn");
+  const listed = await options.allTextContents();
+  expect(listed.filter((text) => text.includes("(Jupiter)"))).toEqual([]);
+  // Saturn's own moons follow, named with Saturn.
+  expect(listed.slice(1).every((text) => text.includes("(Saturn)"))).toBe(true);
+  // A name comes before a body that only has the word in its parent's name.
+  await focus.fill("Io");
+  await expect(options.first()).toHaveText("Io");
+  // Letters inside a word do not match it.
+  await focus.fill("upiter");
+  await expect(options).toHaveCount(0);
+});
+
 test("plots the Roadster on the map only once it is found", async ({
   page,
 }) => {
