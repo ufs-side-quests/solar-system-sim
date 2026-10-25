@@ -48,6 +48,7 @@ import {
   type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
+  formatPlainSimulationDate,
   formatSimulationDateUtc,
   simulationDateUtc,
   VALIDATED_WINDOW_SECONDS,
@@ -598,6 +599,40 @@ function orbitParametersForBody(
     gravitationalParameterM3S2: bodyState.gravitationalParameterM3S2,
     siderealRotationRateRadPerSecond: siderealRotationRateRadPerSecond(bodyId),
     ...(hillRadiusM === undefined ? {} : { hillSphereRadiusM: hillRadiusM }),
+  };
+}
+
+/**
+ * Where the clock must go to show a craft that has positions only for its
+ * tracked dates, or undefined when the craft is in view at timeSeconds.
+ */
+function trackedCraftClockTime(
+  bodyId: string,
+  timeSeconds: number,
+): Readonly<{ name: string; timeSeconds: number }> | undefined {
+  if (bodyId === ISS_BODY_ID) {
+    return isIssEphemerisWithinValidity(timeSeconds)
+      ? undefined
+      : {
+          name: "the International Space Station",
+          timeSeconds: ISS_EPOCH_SIMULATION_SECONDS,
+        };
+  }
+  if (
+    !isOperationalSpacecraftBodyId(bodyId) ||
+    isOperationalSpacecraftWithinValidity(bodyId, timeSeconds)
+  ) {
+    return undefined;
+  }
+  const spacecraft = operationalSpacecraftSnapshot.spacecraft.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (spacecraft === undefined) {
+    throw new Error(`Operational spacecraft ${bodyId} is unavailable`);
+  }
+  return {
+    name: `the ${spacecraft.name}`,
+    timeSeconds: operationalSpacecraftRecommendedTimeSeconds(bodyId),
   };
 }
 
@@ -1303,6 +1338,14 @@ export function App() {
   const [simulationRunToken, setSimulationRunToken] = useState(0);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const playingRef = useRef(playing);
+  // A craft with tracked dates moves the clock to them; this keeps the
+  // child's own clock, so leaving that craft brings it back.
+  const clockBeforeCraftRef = useRef<Readonly<{
+    bodyId: string;
+    timeSeconds: number;
+    playing: boolean;
+  }> | null>(null);
+  const [clockMoveNotice, setClockMoveNotice] = useState<string | null>(null);
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
   const manualDeltaSecondsRef = useRef(0);
@@ -2019,6 +2062,15 @@ export function App() {
     );
   }, [selectedBodyId]);
 
+  // Moves the clock straight to a time, stopped or running.
+  const seekClock = useCallback((timeSeconds: number, play: boolean): void => {
+    playingRef.current = play;
+    setPlaying(play);
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = timeSeconds;
+    setSeeking(true);
+  }, []);
+
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
       endCinematicShot();
@@ -2052,26 +2104,27 @@ export function App() {
       );
       setResetViewToken((current) => current + 1);
       setTourTransitionSequence((current) => current + 1);
-      if (bodyId === ISS_BODY_ID) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isIssEphemerisWithinValidity(currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
-          setSeeking(true);
-        }
-      }
-      if (isOperationalSpacecraftBodyId(bodyId)) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isOperationalSpacecraftWithinValidity(bodyId, currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current =
-            operationalSpacecraftRecommendedTimeSeconds(bodyId);
-          setSeeking(true);
-        }
+      // The ISS and the Horizons craft have positions only for their tracked
+      // dates, so the clock moves there and stops, and says why. Leaving
+      // such a craft brings the child's own date back.
+      const clockBefore = clockBeforeCraftRef.current;
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+      const clockTime =
+        clockBefore?.timeSeconds ?? displayedStateRef.current?.timeSeconds ?? 0;
+      const craftTime = trackedCraftClockTime(bodyId, clockTime);
+      if (craftTime !== undefined) {
+        clockBeforeCraftRef.current = {
+          bodyId,
+          timeSeconds: clockTime,
+          playing: clockBefore?.playing ?? playingRef.current,
+        };
+        setClockMoveNotice(
+          `We only know where ${craftTime.name} is near ${formatPlainSimulationDate(craftTime.timeSeconds)}, so the clock jumped there. Pick something else to go back to ${formatPlainSimulationDate(clockTime)}.`,
+        );
+        seekClock(craftTime.timeSeconds, false);
+      } else if (clockBefore !== null) {
+        seekClock(clockBefore.timeSeconds, clockBefore.playing);
       }
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
@@ -2080,8 +2133,17 @@ export function App() {
         );
       }
     },
-    [endCinematicShot, endTour, issueCameraNavigation],
+    [endCinematicShot, endTour, issueCameraNavigation, seekClock],
   );
+
+  // Any other change of focus (a tour, a shot, Home, Back) ends the notice
+  // and leaves the clock where it is.
+  useEffect(() => {
+    if (clockBeforeCraftRef.current?.bodyId !== focusBodyId) {
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+    }
+  }, [focusBodyId]);
 
   const navigateBack = (): void => {
     setSurfaceObserverEnabled(false);
@@ -5555,6 +5617,11 @@ export function App() {
                     ? `${selectedTimeRate.label.replace(" / second", "/s")} requested · ${formatEffectiveRate(effectiveRate)} achieved${playbackBuffered ? " · buffered" : ""}`
                     : "Paused"}
             </span>
+            {clockMoveNotice === null ? null : (
+              <p className="clock-move-notice" role="status">
+                {clockMoveNotice}
+              </p>
+            )}
             <span
               className={`model-validity${outsideValidatedWindow ? " is-warning" : ""}`}
               data-model-regime="present-day-propagation"

@@ -109,9 +109,12 @@ Spacecraft and fictional objects never limit the drawn size of a natural body.
 
 The International Space Station is a separate massless spacecraft state around the live REBOUND Earth position.
 Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in UTC, transformed from TEME through true equator of date into the J2000 mean-equator frame, and then translated by Earth's barycentric state.
-Selecting the ISS seeks to the installed 2 August 2026 element epoch because the Solar System snapshot begins on 1 January 2026.
+Selecting the ISS seeks to the installed 2 August 2026 element epoch because the Solar System snapshot begins on 1 January 2026, and stops the clock.
+The time controls then say so in plain words: "We only know where the International Space Station is near 2 August 2026, so the clock jumped there. Pick something else to go back to 1 January 2026."
+Hubble, JWST and the Roadster do the same when the clock is outside their Horizons coverage.
+Picking another object or Home brings back the date and the running or stopped clock from before the jump; a tour, a cool shot or Back leaves the clock where it is.
 The station is not drawn outside the declared seven-day element window.
-Its official NASA 3D model is normalized to NASA's 109 metre maximum end-to-end dimension on the same physical scale as its orbit, so it disappears below one pixel from an Earth-system view and becomes visible only from a close spacecraft focus.
+Its official NASA 3D model is normalized to NASA's 109 metre maximum end-to-end dimension on the same physical scale as its orbit, so it disappears below one pixel when the camera zooms out from it and becomes visible only from a close spacecraft focus.
 Four warm floodlights at the ends of its main truss and its module stack are decorative: the real station carries floodlights and camera lights, but no public source places them on this model.
 
 Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF states at the common 2026 epoch and then run inside REBOUND as massless test particles.

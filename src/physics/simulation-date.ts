@@ -32,3 +32,13 @@ export function formatSimulationDateUtc(timeSeconds: number): string {
   const seconds = date.getUTCSeconds().toString().padStart(2, "0");
   return `${day} ${month} ${String(year)} · ${hours}:${minutes}:${seconds} UTC`;
 }
+
+/** The UTC day in plain words, such as "2 August 2026". */
+export function formatPlainSimulationDate(timeSeconds: number): string {
+  return simulationDateUtc(timeSeconds).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
