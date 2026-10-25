@@ -48,6 +48,8 @@ import {
   type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
+  formatPlainSimulationDate,
+  formatPlainSimulationOffset,
   formatSimulationDateUtc,
   simulationDateUtc,
   VALIDATED_WINDOW_SECONDS,
@@ -82,12 +84,16 @@ import {
   formatSunlightTravelTime,
   PLAIN_SURFACE_BY_BODY_ID,
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
+  EARTH_MASS_KG,
+  formatMassComparedWithEarth,
+  PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
 } from "./scene/body-physical-facts";
 import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
   CameraNavigationAction,
   CameraNavigationCommand,
   CameraOrientationPreset,
+  ZoomLimits,
 } from "./scene/camera-view";
 import {
   circularOrbitSolution,
@@ -600,6 +606,40 @@ function orbitParametersForBody(
   };
 }
 
+/**
+ * Where the clock must go to show a craft that has positions only for its
+ * tracked dates, or undefined when the craft is in view at timeSeconds.
+ */
+function trackedCraftClockTime(
+  bodyId: string,
+  timeSeconds: number,
+): Readonly<{ name: string; timeSeconds: number }> | undefined {
+  if (bodyId === ISS_BODY_ID) {
+    return isIssEphemerisWithinValidity(timeSeconds)
+      ? undefined
+      : {
+          name: "the International Space Station",
+          timeSeconds: ISS_EPOCH_SIMULATION_SECONDS,
+        };
+  }
+  if (
+    !isOperationalSpacecraftBodyId(bodyId) ||
+    isOperationalSpacecraftWithinValidity(bodyId, timeSeconds)
+  ) {
+    return undefined;
+  }
+  const spacecraft = operationalSpacecraftSnapshot.spacecraft.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (spacecraft === undefined) {
+    throw new Error(`Operational spacecraft ${bodyId} is unavailable`);
+  }
+  return {
+    name: `the ${spacecraft.name}`,
+    timeSeconds: operationalSpacecraftRecommendedTimeSeconds(bodyId),
+  };
+}
+
 // The hidden surprises group is built per render from the found eggs.
 const FOCUS_GROUPS = Array.from(
   new Set(FOCUS_OPTIONS.map((option) => option.group)),
@@ -649,6 +689,9 @@ const FocusSelect = memo(function FocusSelect({
   const [filteredOptions, setFilteredOptions] =
     useState<FocusOption[]>(browseOptions);
   const [catalogueSearchActive, setCatalogueSearchActive] = useState(false);
+  // Typing highlights the first match, so Enter picks it. The first Arrow
+  // Down after typing moves into the list onto that row, not past it.
+  const typedHighlightRef = useRef(false);
   const showBrowseOptions = (): void => {
     setCatalogueSearchActive(false);
     setFilteredOptions(browseOptions);
@@ -674,6 +717,7 @@ const FocusSelect = memo(function FocusSelect({
     getMenuProps,
     getToggleButtonProps,
     closeMenu,
+    highlightedIndex,
     isOpen,
     openMenu,
   } = useCombobox<FocusOption>({
@@ -684,6 +728,7 @@ const FocusSelect = memo(function FocusSelect({
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
+      typedHighlightRef.current = true;
       const normalizedInput = inputValue.trim().toLocaleLowerCase();
       setCatalogueSearchActive(normalizedInput.length > 0);
       setFilteredOptions(
@@ -713,8 +758,22 @@ const FocusSelect = memo(function FocusSelect({
               openMenu();
             },
             onKeyDown: (event) => {
+              const typedHighlight = typedHighlightRef.current;
+              typedHighlightRef.current = false;
               if (event.key === "ArrowDown" && !isOpen) {
                 showBrowseOptions();
+              }
+              if (
+                event.key === "ArrowDown" &&
+                isOpen &&
+                typedHighlight &&
+                highlightedIndex === 0
+              ) {
+                (
+                  event.nativeEvent as KeyboardEvent & {
+                    preventDownshiftDefault?: boolean;
+                  }
+                ).preventDownshiftDefault = true;
               }
               if (
                 event.key === "Enter" &&
@@ -1184,6 +1243,10 @@ export function App() {
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
+  const [zoomLimits, setZoomLimits] = useState<ZoomLimits>({
+    atNearest: false,
+    atFarthest: false,
+  });
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -1279,6 +1342,14 @@ export function App() {
   const [simulationRunToken, setSimulationRunToken] = useState(0);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const playingRef = useRef(playing);
+  // A craft with tracked dates moves the clock to them; this keeps the
+  // child's own clock, so leaving that craft brings it back.
+  const clockBeforeCraftRef = useRef<Readonly<{
+    bodyId: string;
+    timeSeconds: number;
+    playing: boolean;
+  }> | null>(null);
+  const [clockMoveNotice, setClockMoveNotice] = useState<string | null>(null);
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
   const manualDeltaSecondsRef = useRef(0);
@@ -1995,6 +2066,15 @@ export function App() {
     );
   }, [selectedBodyId]);
 
+  // Moves the clock straight to a time, stopped or running.
+  const seekClock = useCallback((timeSeconds: number, play: boolean): void => {
+    playingRef.current = play;
+    setPlaying(play);
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = timeSeconds;
+    setSeeking(true);
+  }, []);
+
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
       endCinematicShot();
@@ -2028,26 +2108,27 @@ export function App() {
       );
       setResetViewToken((current) => current + 1);
       setTourTransitionSequence((current) => current + 1);
-      if (bodyId === ISS_BODY_ID) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isIssEphemerisWithinValidity(currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
-          setSeeking(true);
-        }
-      }
-      if (isOperationalSpacecraftBodyId(bodyId)) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isOperationalSpacecraftWithinValidity(bodyId, currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current =
-            operationalSpacecraftRecommendedTimeSeconds(bodyId);
-          setSeeking(true);
-        }
+      // The ISS and the Horizons craft have positions only for their tracked
+      // dates, so the clock moves there and stops, and says why. Leaving
+      // such a craft brings the child's own date back.
+      const clockBefore = clockBeforeCraftRef.current;
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+      const clockTime =
+        clockBefore?.timeSeconds ?? displayedStateRef.current?.timeSeconds ?? 0;
+      const craftTime = trackedCraftClockTime(bodyId, clockTime);
+      if (craftTime !== undefined) {
+        clockBeforeCraftRef.current = {
+          bodyId,
+          timeSeconds: clockTime,
+          playing: clockBefore?.playing ?? playingRef.current,
+        };
+        setClockMoveNotice(
+          `We only know where ${craftTime.name} is near ${formatPlainSimulationDate(craftTime.timeSeconds)}, so the clock jumped there. Pick something else to go back to ${formatPlainSimulationDate(clockTime)}.`,
+        );
+        seekClock(craftTime.timeSeconds, false);
+      } else if (clockBefore !== null) {
+        seekClock(clockBefore.timeSeconds, clockBefore.playing);
       }
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
@@ -2056,8 +2137,17 @@ export function App() {
         );
       }
     },
-    [endCinematicShot, endTour, issueCameraNavigation],
+    [endCinematicShot, endTour, issueCameraNavigation, seekClock],
   );
+
+  // Any other change of focus (a tour, a shot, Home, Back) ends the notice
+  // and leaves the clock where it is.
+  useEffect(() => {
+    if (clockBeforeCraftRef.current?.bodyId !== focusBodyId) {
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+    }
+  }, [focusBodyId]);
 
   const navigateBack = (): void => {
     setSurfaceObserverEnabled(false);
@@ -3203,13 +3293,13 @@ export function App() {
       if (isIss) {
         return {
           name: "International Space Station",
-          surface: "Official NASA 3D model · physical scale · SGP4 trajectory",
+          surface: "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
           distanceRows:
             parentState === undefined
               ? undefined
               : plainDistanceRows(
-                  "Geocentric distance",
+                  "From the centre of Earth",
                   bodyDistanceM(bodyState, parentState),
                 ),
           altitudeKm:
@@ -3227,13 +3317,26 @@ export function App() {
           composition,
           dimensionsM: `${String(issSnapshot.physicalDimensions.overallEndToEndM)} × ${String(issSnapshot.physicalDimensions.solarArrayLengthM)} m`,
           ephemerisStatus: isIssEphemerisWithinValidity(state.timeSeconds)
-            ? "Within ±7 day OMM window"
-            : "Hidden outside ±7 day OMM window",
+            ? "Up to date for this day"
+            : `Not shown: we only know where it is near ${formatPlainSimulationDate(ISS_EPOCH_SIMULATION_SECONDS)}`,
+          technicalRows: [
+            {
+              label: "Orbit model",
+              value: "SGP4 from the CelesTrak OMM orbital elements",
+            },
+            {
+              label: "Orbit data window",
+              value: isIssEphemerisWithinValidity(state.timeSeconds)
+                ? "Within ±7 day OMM window"
+                : "Hidden outside ±7 day OMM window",
+            },
+          ],
         };
       }
+      // A catalogue moon has no surface map, mass or composition installed,
+      // so the card leaves those rows out.
       return {
         name: bodyDisplayName(bodyId),
-        surface: "Neutral point - no installed surface asset",
         parentName: parentDefinition?.name,
         distanceRows:
           parentState === undefined || parentDefinition === undefined
@@ -3247,7 +3350,6 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: formatMassKg(undefined),
         composition,
       };
     }
@@ -3296,8 +3398,10 @@ export function App() {
       surfaceTechnical:
         definition.type === "star"
           ? SUN_SURFACE_TECHNICAL
-          : (surfaceClassification ??
-            "Neutral - no installed authoritative surface asset"),
+          : surfaceClassification === undefined
+            ? "No surface map installed"
+            : PLAIN_SURFACE_MAP_BY_CLASSIFICATION[surfaceClassification],
+      surfaceClassification,
       diameterKm,
       parentName: parentDefinition?.name,
       distanceRows,
@@ -3306,7 +3410,12 @@ export function App() {
           ? undefined
           : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
       speedLabel,
-      mass: formatMassKg(definition.massKg),
+      mass: formatMassComparedWithEarth(
+        definition.id,
+        definition.massKg,
+        EARTH_MASS_KG,
+      ),
+      exactMass: formatMassKg(definition.massKg),
       composition,
       rotationHours: siderealRotationPeriodHours(definition),
       primeMeridianDeg: normalizedDegrees(
@@ -3719,6 +3828,7 @@ export function App() {
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
               onViewZoomChange={reportViewMagnification}
+              onZoomLimitsChange={setZoomLimits}
               onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
@@ -3744,7 +3854,11 @@ export function App() {
               type="button"
               aria-label="Zoom out"
               title="Zoom out"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atFarthest
+              }
               onClick={() => handleCameraNavigation("zoom-out")}
             >
               −
@@ -3753,7 +3867,11 @@ export function App() {
               type="button"
               aria-label="Zoom in"
               title="Zoom in"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atNearest
+              }
               onClick={() => handleCameraNavigation("zoom-in")}
             >
               +
@@ -4419,21 +4537,25 @@ export function App() {
                     {selectedBodyDetail.ephemerisStatus}
                   </span>
                 )}
-                <span>
-                  <small>Mass</small>
-                  {selectedBodyDetail.mass}
-                </span>
-                <span
-                  className={
-                    selectedBodyDetail.surfaceTechnical === undefined
-                      ? "selected-body-surface"
-                      : undefined
-                  }
-                  title={selectedBodyDetail.surfaceTechnical}
-                >
-                  <small>Surface</small>
-                  {selectedBodyDetail.surface}
-                </span>
+                {selectedBodyDetail.mass === undefined ? null : (
+                  <span>
+                    <small>How heavy</small>
+                    {selectedBodyDetail.mass}
+                  </span>
+                )}
+                {selectedBodyDetail.surface === undefined ? null : (
+                  <span
+                    className={
+                      selectedBodyDetail.surfaceTechnical === undefined
+                        ? "selected-body-surface"
+                        : undefined
+                    }
+                    title={selectedBodyDetail.surfaceTechnical}
+                  >
+                    <small>Surface</small>
+                    {selectedBodyDetail.surface}
+                  </span>
+                )}
                 {selectedBodyDetail.speed === undefined ? null : (
                   <span className="selected-body-speed">
                     <small>
@@ -4442,10 +4564,10 @@ export function App() {
                     {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
                   </span>
                 )}
-                <span className="selected-body-composition">
-                  <small>
-                    <span>Composition</span>
-                    {selectedBodyDetail.composition === undefined ? null : (
+                {selectedBodyDetail.composition === undefined ? null : (
+                  <span className="selected-body-composition">
+                    <small>
+                      <span>Composition</span>
                       <a
                         href={selectedBodyDetail.composition.sourceUrl}
                         target="_blank"
@@ -4454,13 +4576,13 @@ export function App() {
                       >
                         Source
                       </a>
-                    )}
-                  </small>
-                  {selectedBodyDetail.composition?.summary ??
-                    "Not provided by the installed authority snapshot"}
-                </span>
+                    </small>
+                    {selectedBodyDetail.composition.summary}
+                  </span>
+                )}
                 {selectedBodyDetail.distanceRows === undefined &&
-                selectedBodyDetail.surfaceTechnical === undefined ? null : (
+                selectedBodyDetail.surfaceTechnical === undefined &&
+                selectedBodyDetail.technicalRows === undefined ? null : (
                   <details className="selected-body-more">
                     <summary>More detail</summary>
                     <div className="selected-body-more-grid">
@@ -4475,6 +4597,18 @@ export function App() {
                           {selectedBodyDetail.distanceRows.exactDistance.value}
                         </span>
                       )}
+                      {selectedBodyDetail.exactMass === undefined ? null : (
+                        <span>
+                          <small>Mass</small>
+                          {selectedBodyDetail.exactMass}
+                        </span>
+                      )}
+                      {selectedBodyDetail.technicalRows?.map((row) => (
+                        <span key={row.label}>
+                          <small>{row.label}</small>
+                          {row.value}
+                        </span>
+                      ))}
                       {selectedBodyDetail.distanceRows?.distanceAu ===
                       undefined ? null : (
                         <span title="1 AU is Earth's average distance from the Sun: 149,597,870.7 km">
@@ -4516,7 +4650,11 @@ export function App() {
                             )}
                             °
                           </span>
-                          <span>
+                          <span
+                            data-surface-classification={
+                              selectedBodyDetail.surfaceClassification
+                            }
+                          >
                             <small>Surface map</small>
                             {selectedBodyDetail.surfaceTechnical}
                           </span>
@@ -4929,15 +5067,19 @@ export function App() {
                 </output>
               </label>
               <span className="audio-status" role="status">
-                {audio.narrationStatus === "error"
-                  ? "Tour narration could not be loaded"
-                  : audio.narrationStatus === "playing"
-                    ? "Tour narration playing"
-                    : audio.status === "running"
-                      ? "Audio active"
-                      : audio.status === "unavailable"
-                        ? "Audio unavailable in this browser"
-                        : "Starts after your next interaction"}
+                {!audio.settings.musicEnabled &&
+                !audio.settings.effectsEnabled &&
+                !audio.settings.narrationEnabled
+                  ? "Sound is off"
+                  : audio.narrationStatus === "error"
+                    ? "Tour narration could not be loaded"
+                    : audio.narrationStatus === "playing"
+                      ? "Tour narration playing"
+                      : audio.status === "running"
+                        ? "Audio active"
+                        : audio.status === "unavailable"
+                          ? "Audio unavailable in this browser"
+                          : "Starts after your next interaction"}
               </span>
             </div>
           </section>
@@ -5503,8 +5645,13 @@ export function App() {
 
         <section className="timeline-dock" aria-label="Time controls">
           <div className="time-readout">
-            <output data-time-seconds={state?.timeSeconds ?? 0} aria-live="off">
-              TDB {formatSimulationOffset(state?.timeSeconds ?? 0)}
+            {/* Plain words for a child; the exact TDB offset for an adult. */}
+            <output
+              data-time-seconds={state?.timeSeconds ?? 0}
+              aria-live="off"
+              title={`TDB ${formatSimulationOffset(state?.timeSeconds ?? 0)} since the snapshot epoch`}
+            >
+              {formatPlainSimulationOffset(state?.timeSeconds ?? 0)}
             </output>
             <span
               className="run-status"
@@ -5566,6 +5713,7 @@ export function App() {
               max={String(USER_TIME_RATE_INDEXES.length - 1)}
               step="1"
               value={playbackRateSliderIndex}
+              aria-valuetext={selectedTimeRate.label}
               onChange={(event) => {
                 const selectedIndex =
                   USER_TIME_RATE_INDEXES[Number(event.currentTarget.value)];
@@ -5580,6 +5728,11 @@ export function App() {
             />
             <output>{selectedTimeRate.label}</output>
           </label>
+          {clockMoveNotice === null ? null : (
+            <p className="clock-move-notice" role="status">
+              {clockMoveNotice}
+            </p>
+          )}
         </section>
       </section>
     </main>

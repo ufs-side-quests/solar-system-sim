@@ -301,3 +301,19 @@ test("Home keeps the clock running", async ({ page }) => {
     )
     .toBeGreaterThan(DAY_SECONDS);
 });
+
+test("the Playback rate slider speaks its rate, not its step number", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const slider = page.getByRole("slider", { name: "Playback rate" });
+  const rate = page.locator(".playback-rate-control output");
+  await expect(slider).toHaveAttribute("aria-valuetext", "1 hour / second");
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(rate).not.toHaveText("1 hour / second");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    (await rate.textContent()) ?? "",
+  );
+});

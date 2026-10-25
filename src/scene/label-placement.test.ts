@@ -22,6 +22,7 @@ const place = (
     viewportHeight: 900,
     guideRectangles,
     bodyRectangles,
+    panelRectangles: [],
   });
 
 const everywhere: LabelRectangle = {
@@ -67,5 +68,25 @@ describe("placeBodyLabel", () => {
   it("reports a body label that covers the only place", () => {
     const io = place("Io", "other", [], [everywhere]);
     expect(io.overlapsBodyLabel).toBe(true);
+  });
+});
+
+describe("placeBodyLabel beside a card", () => {
+  it("moves the subject's label to the right of a card that covers it", () => {
+    const card: LabelRectangle = { left: 0, right: 760, top: 300, bottom: 700 };
+    const placement = placeBodyLabel({
+      name: "Jupiter",
+      role: "other",
+      projectedX: 700,
+      projectedY: 450,
+      fontPx: FONT_PX,
+      viewportWidth: 1440,
+      viewportHeight: 900,
+      guideRectangles: [],
+      bodyRectangles: [],
+      panelRectangles: [card],
+    });
+    expect(placement.x).toBe(768);
+    expect(placement.y).toBe(450);
   });
 });

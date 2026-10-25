@@ -32,3 +32,38 @@ export function formatSimulationDateUtc(timeSeconds: number): string {
   const seconds = date.getUTCSeconds().toString().padStart(2, "0");
   return `${day} ${month} ${String(year)} · ${hours}:${minutes}:${seconds} UTC`;
 }
+
+/** The UTC day in plain words, such as "2 August 2026". */
+export function formatPlainSimulationDate(timeSeconds: number): string {
+  return simulationDateUtc(timeSeconds).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function counted(value: number, unit: string): string {
+  return `${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })} ${unit}${value === 1 ? "" : "s"}`;
+}
+
+/**
+ * How far the clock is from the start of the simulation (the snapshot
+ * epoch), in words a child reads: "4 hours after the start". The exact TDB
+ * offset stays available to adults beside it.
+ */
+export function formatPlainSimulationOffset(timeSeconds: number): string {
+  if (timeSeconds === 0) {
+    return "At the start";
+  }
+  const seconds = Math.abs(timeSeconds);
+  const amount =
+    seconds < 60
+      ? counted(Math.round(seconds * 10) / 10, "second")
+      : seconds < 3_600
+        ? counted(Math.round((seconds / 60) * 10) / 10, "minute")
+        : seconds < SECONDS_PER_DAY
+          ? counted(Math.round((seconds / 3_600) * 10) / 10, "hour")
+          : counted(Math.round((seconds / SECONDS_PER_DAY) * 100) / 100, "day");
+  return `${amount} ${timeSeconds > 0 ? "after" : "before"} the start`;
+}

@@ -418,6 +418,27 @@ test("search highlights the first row on screen", async ({ page }) => {
   await expect(scene).toHaveAttribute("data-focus-body", "discovery-one");
 });
 
+test("the first Arrow Down after typing stays on the first row", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.goto("/");
+  const scene = await pauseScene(page);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Jup");
+  const options = page.locator(".focus-popover").getByRole("option");
+  await expect(options.first()).toHaveText("Jupiter");
+  await focus.press("ArrowDown");
+  await expect(options.first()).toHaveAttribute("aria-selected", "true");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  // A second Arrow Down moves on to the next row.
+  await focus.fill("Jup");
+  await focus.press("ArrowDown");
+  await focus.press("ArrowDown");
+  await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+});
+
 test("plots the Roadster on the map only once it is found", async ({
   page,
 }) => {

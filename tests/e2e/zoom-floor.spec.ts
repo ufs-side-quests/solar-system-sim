@@ -44,15 +44,44 @@ async function openScene(page: Page): Promise<Locator> {
   return scene;
 }
 
+// One press of Zoom in or Zoom out. It returns once the scene has moved the
+// camera and the button shows whether the camera is now at that limit.
+async function pressZoom(
+  page: Page,
+  scene: Locator,
+  name: "Zoom in" | "Zoom out",
+): Promise<void> {
+  const button = page.getByRole("button", { name });
+  const limit =
+    name === "Zoom in" ? "data-zoom-at-nearest" : "data-zoom-at-farthest";
+  const before = await scene.getAttribute("data-camera-navigation-sequence");
+  await button.click();
+  await expect(scene).not.toHaveAttribute(
+    "data-camera-navigation-sequence",
+    before ?? "",
+  );
+  await expect
+    .poll(
+      async () =>
+        String(await button.isDisabled()) === (await scene.getAttribute(limit)),
+    )
+    .toBe(true);
+}
+
 // Each press moves 1/1.7 closer. The press count takes the camera far past
-// the floor from where the view starts.
+// the floor from where the view starts; Zoom in turns off at the floor, so
+// the presses stop there.
 async function zoomIn(
   page: Page,
   scene: Locator,
   presses: number,
 ): Promise<number> {
+  const zoomInButton = page.getByRole("button", { name: "Zoom in" });
   for (let press = 0; press < presses; press += 1) {
-    await page.getByRole("button", { name: "Zoom in" }).click();
+    if (await zoomInButton.isDisabled()) {
+      break;
+    }
+    await pressZoom(page, scene, "Zoom in");
   }
   let lastDistance = Number.NaN;
   await expect
@@ -102,4 +131,34 @@ test("zoom from the overview stops outside the Sun", async ({ page }) => {
   const distanceAu = await zoomIn(page, scene, 30);
   const floorAu = (meanRadiusM("sun") * FLOOR_RADII) / ASTRONOMICAL_UNIT_M;
   expect(distanceAu).toBeGreaterThanOrEqual(floorAu * 0.999);
+});
+
+test("Zoom in and Zoom out turn off at the floor and the ceiling", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const scene = await openScene(page);
+  const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+  const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Earth");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "earth");
+  await expect(zoomInButton).toBeEnabled();
+  const distanceAu = await zoomIn(page, scene, 20);
+  const floorAu = (meanRadiusM("earth") * FLOOR_RADII) / ASTRONOMICAL_UNIT_M;
+  expect(distanceAu).toBeLessThanOrEqual(floorAu * 1.001);
+  await expect(zoomInButton).toBeDisabled();
+  await expect(zoomOutButton).toBeEnabled();
+  await pressZoom(page, scene, "Zoom out");
+  await expect(zoomInButton).toBeEnabled();
+
+  for (let press = 0; press < 60; press += 1) {
+    if (await zoomOutButton.isDisabled()) {
+      break;
+    }
+    await pressZoom(page, scene, "Zoom out");
+  }
+  await expect(zoomOutButton).toBeDisabled();
+  await expect(zoomInButton).toBeEnabled();
 });

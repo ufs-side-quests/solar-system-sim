@@ -184,3 +184,26 @@ test("plays, pauses, resumes, and advances generated tour narration", async ({
   });
   await expect.poll(narrationStarts).toBeGreaterThan(startsBeforeEclipse);
 });
+
+test("with every sound off the audio stops and says so", async ({ page }) => {
+  await page.goto("/");
+  const app = page.locator(".app-shell");
+  await page.getByRole("button", { name: "Display" }).click();
+  await expect(app).toHaveAttribute("data-audio-state", "running");
+  await page.getByRole("tab", { name: "Sound" }).click();
+  const dialog = page.getByRole("dialog", { name: "Display controls" });
+  const status = dialog.locator(".audio-status");
+  await expect(status).toHaveText("Audio active");
+  for (const name of ["Ambient music", "Interface sounds", "Tour narration"]) {
+    await dialog.getByRole("checkbox", { name }).uncheck();
+  }
+  await expect(app).toHaveAttribute("data-audio-state", "suspended");
+  await expect(status).toHaveText("Sound is off");
+  // A tap on a control does not wake the stopped audio.
+  await page.getByRole("tab", { name: "View" }).click();
+  await page.getByRole("tab", { name: "Sound" }).click();
+  await expect(app).toHaveAttribute("data-audio-state", "suspended");
+  await dialog.getByRole("checkbox", { name: "Ambient music" }).check();
+  await expect(app).toHaveAttribute("data-audio-state", "running");
+  await expect(status).toHaveText("Audio active");
+});

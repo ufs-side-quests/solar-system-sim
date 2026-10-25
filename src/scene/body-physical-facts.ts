@@ -7,6 +7,7 @@ import { PARENT_BODY_ID } from "./body-facts";
 import {
   nasaMaterialPresentationByBodyId,
   nasaTextureByBodyId,
+  type NasaTextureAsset,
 } from "./visual-assets";
 
 export type BodyCompositionFact = {
@@ -460,6 +461,67 @@ export function formatWidthComparedToEarth(
   }
   return `Earth is about ${roundedRatio(1 / ratio)} times wider`;
 }
+
+// A count a child reads: tenths under 10, whole numbers under 1,000, three
+// figures under a million, then millions and billions to two figures.
+function plainCount(value: number): string {
+  if (value < 10) {
+    return rounded(value, 1);
+  }
+  if (value < 1_000) {
+    return rounded(value, 0);
+  }
+  if (value < 1e6) {
+    return value.toLocaleString("en-GB", { maximumSignificantDigits: 3 });
+  }
+  const [scaled, word] =
+    value < 1e9 ? [value / 1e6, "million"] : [value / 1e9, "billion"];
+  return `${scaled.toLocaleString("en-GB", { maximumSignificantDigits: 2 })} ${word}`;
+}
+
+/** The selected-body "How heavy" line: Earth is the yardstick. */
+export function formatMassComparedWithEarth(
+  bodyId: string,
+  massKg: number,
+  earthMassKg: number,
+): string {
+  if (bodyId === "earth") {
+    return "Our home: other worlds are weighed against it";
+  }
+  const ratio = massKg / earthMassKg;
+  if (ratio >= 1.1) {
+    return `As heavy as ${plainCount(ratio)} Earths`;
+  }
+  if (ratio > 0.9) {
+    return "About as heavy as Earth";
+  }
+  return `Earth is about ${plainCount(1 / ratio)} times heavier`;
+}
+
+/** Plain words for each surface map kind, for "More detail". */
+export const PLAIN_SURFACE_MAP_BY_CLASSIFICATION: Readonly<
+  Record<
+    NasaTextureAsset["classification"] | "observation-constrained-atmosphere",
+    string
+  >
+> = {
+  "observational-composite": "Real spacecraft pictures joined into one map",
+  "measured-topography": "Measured heights of the ground",
+  visualization: "NASA artwork based on real pictures",
+  "authority-derived-material": "Colour worked out from NASA measurements",
+  "observation-constrained-atmosphere": "One colour matched to real photos",
+};
+
+/** Earth's sourced mass, the yardstick for every "How heavy" line. */
+export const EARTH_MASS_KG = (() => {
+  const mass = majorBodySnapshot.bodies.find(
+    (body) => body.id === "earth",
+  )?.massKg;
+  if (mass === undefined) {
+    throw new Error("Major-body snapshot has no mass for Earth");
+  }
+  return mass;
+})();
 
 /** Earth's sourced mean radius, the yardstick for every "compared with Earth" line. */
 export const EARTH_MEAN_RADIUS_M = (() => {

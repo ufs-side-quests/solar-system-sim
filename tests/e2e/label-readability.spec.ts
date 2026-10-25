@@ -221,7 +221,7 @@ test("the running clock does not speak every tick", async ({ page }) => {
   }
   const changes = await liveChanges(page);
   expect(
-    changes.filter((change) => change.includes("TDB")),
+    changes.filter((change) => change.includes("after the start")),
     changes.join("\n"),
   ).toEqual([]);
 });
@@ -310,4 +310,183 @@ test("labels without a font size stop the scene with an error, not silent overla
   expect((await error).message).toContain(
     "Body label font size is unavailable",
   );
+});
+
+// The scene-relative box of a visible label, or null when it is hidden.
+async function sceneBox(
+  scene: Locator,
+  label: Locator,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  if (!(await label.isVisible())) {
+    return null;
+  }
+  const [sceneBounds, labelBounds] = await Promise.all([
+    scene.boundingBox(),
+    label.boundingBox(),
+  ]);
+  if (sceneBounds === null || labelBounds === null) {
+    return null;
+  }
+  return {
+    ...labelBounds,
+    x: labelBounds.x - sceneBounds.x,
+    y: labelBounds.y - sceneBounds.y,
+  };
+}
+
+// How far a body's drawn disc reaches into a label box, in pixels; 0 or
+// less means the label is clear of the disc.
+async function discReachIntoLabel(
+  scene: Locator,
+  bodyId: string,
+  label: Locator,
+): Promise<number> {
+  const box = await sceneBox(scene, label);
+  if (box === null) {
+    throw new Error("The guide label is hidden");
+  }
+  const body = scene.page().locator(`.body-label[data-body-id="${bodyId}"]`);
+  const [x, y, r] = await Promise.all(
+    ["data-screen-x", "data-screen-y", "data-radius-pixels"].map(async (name) =>
+      Number(await body.getAttribute(name)),
+    ),
+  );
+  const nearestX = Math.min(Math.max(x ?? 0, box.x), box.x + box.width);
+  const nearestY = Math.min(Math.max(y ?? 0, box.y), box.y + box.height);
+  return (r ?? 0) - Math.hypot((x ?? 0) - nearestX, (y ?? 0) - nearestY);
+}
+
+for (const [shotName, discBodyId] of [
+  ["Moon in sunlight", "moon"],
+  ["Sun from Mercury", "sun"],
+] as const) {
+  test(`the Sun guide label lies clear of the disc in ${shotName}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const scene = await pausedScene(page);
+    await page.getByRole("button", { name: "Display" }).click();
+    await page.getByRole("tab", { name: "Camera" }).click();
+    await page.getByRole("button", { name: shotName, exact: true }).click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(scene).toHaveAttribute(
+      "data-camera-transition-phase",
+      "settled",
+      { timeout: 30_000 },
+    );
+    const sunGuide = page.locator(".sun-guide-label");
+    await expect(sunGuide).toBeVisible();
+    await expect
+      .poll(() => discReachIntoLabel(scene, discBodyId, sunGuide), {
+        timeout: 10_000,
+      })
+      .toBeLessThanOrEqual(0);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `${shotName.toLowerCase().replaceAll(" ", "-")}-sun-guide.png`,
+      ),
+    });
+  });
+}
+
+// Every visible hint whose text overlaps the text of a visible body or
+// guide label: the text is what a child sees cover another name.
+async function hintOverlaps(scene: Locator): Promise<string[]> {
+  return scene.evaluate((element) => {
+    const visible = (label: Element): DOMRect | null => {
+      if (!(label instanceof HTMLElement) || label.hidden) return null;
+      if (getComputedStyle(label).display === "none") return null;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const box = range.getBoundingClientRect();
+      return box.width > 0 ? box : null;
+    };
+    const hints = [
+      ...element.querySelectorAll(".body-label.is-hidden-surprise"),
+    ];
+    const others = [
+      ...element.querySelectorAll(
+        ".body-label:not(.is-hidden-surprise), .wayfinder-label",
+      ),
+    ];
+    const found: string[] = [];
+    for (const hint of hints) {
+      const a = visible(hint);
+      if (a === null) continue;
+      for (const other of others) {
+        const b = visible(other);
+        if (
+          b !== null &&
+          a.left < b.right &&
+          a.right > b.left &&
+          a.top < b.bottom &&
+          a.bottom > b.top
+        ) {
+          found.push(
+            `${hint.getAttribute("data-body-id") ?? "?"} on ${other.textContent}`,
+          );
+        }
+      }
+    }
+    return found;
+  });
+}
+
+test("real bodies win label space over a hidden-surprise hint", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const scene = await pausedScene(page);
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const zoomOut = page.getByRole("button", { name: "Zoom out" });
+
+  await focus.fill("Jupiter");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
+  for (let press = 0; press < 3; press += 1) {
+    const before = await scene.getAttribute("data-camera-navigation-sequence");
+    await zoomOut.click();
+    await expect(scene).not.toHaveAttribute(
+      "data-camera-navigation-sequence",
+      before ?? "",
+    );
+  }
+  for (const moon of ["io", "europa"]) {
+    const label = page.locator(`.body-label[data-body-id="${moon}"]`);
+    if ((await label.getAttribute("data-in-camera-frustum")) === "true") {
+      await expect(label, moon).toBeVisible();
+    }
+  }
+  await expect.poll(() => hintOverlaps(scene)).toEqual([]);
+  await page.screenshot({
+    path: testInfo.outputPath("jupiter-zoomed-out-labels.png"),
+  });
+
+  await focus.fill("Sun");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "sun");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
+  for (let press = 0; press < 2; press += 1) {
+    const before = await scene.getAttribute("data-camera-navigation-sequence");
+    await zoomOut.click();
+    await expect(scene).not.toHaveAttribute(
+      "data-camera-navigation-sequence",
+      before ?? "",
+    );
+  }
+  await expect.poll(() => hintOverlaps(scene)).toEqual([]);
+  await page.screenshot({
+    path: testInfo.outputPath("sun-zoomed-out-labels.png"),
+  });
 });

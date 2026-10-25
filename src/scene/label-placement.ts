@@ -48,6 +48,9 @@ export function placeBodyLabel(
     viewportHeight: number;
     guideRectangles: readonly LabelRectangle[];
     bodyRectangles: readonly LabelRectangle[];
+    // Cards over the scene. The subject's label moves beside a card that
+    // covers it; other labels pass none.
+    panelRectangles: readonly LabelRectangle[];
   }>,
 ): LabelPlacement {
   // The caller checks that fontPx is a positive size.
@@ -82,13 +85,22 @@ export function placeBodyLabel(
             [-width - 22, lane * 1.5],
           ]
         : [[0, 0]];
+  // Beside each card, at the first place's height, for a subject the card
+  // covers.
+  const [, firstOffsetY] = offsets[0] ?? [0, 0];
+  const besidePanels = input.panelRectangles.flatMap(
+    (panel): (readonly [number, number])[] => [
+      [panel.right + 8 - input.projectedX, firstOffsetY],
+      [panel.left - width - 8 - input.projectedX, firstOffsetY],
+    ],
+  );
   const at = (x: number, y: number): LabelRectangle => ({
     left: x,
     right: x + width,
     top: y - halfHeight,
     bottom: y + halfHeight,
   });
-  for (const [offsetX, offsetY] of offsets) {
+  for (const [offsetX, offsetY] of [...offsets, ...besidePanels]) {
     const x = Math.min(
       input.viewportWidth - width - 12,
       Math.max(12, input.projectedX + offsetX),
@@ -102,7 +114,8 @@ export function placeBodyLabel(
       !input.guideRectangles.some((occupied) =>
         overlaps(rectangle, occupied),
       ) &&
-      !input.bodyRectangles.some((occupied) => overlaps(rectangle, occupied))
+      !input.bodyRectangles.some((occupied) => overlaps(rectangle, occupied)) &&
+      !input.panelRectangles.some((panel) => overlaps(rectangle, panel))
     ) {
       return { x, y, rectangle, overlapsBodyLabel: false };
     }
