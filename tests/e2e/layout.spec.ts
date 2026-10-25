@@ -266,3 +266,48 @@ test("on a tablet the flown-to planet's label is not under the card", async ({
     .toBe("clear");
   await page.screenshot({ path: testInfo.outputPath("tablet-jupiter.png") });
 });
+
+test("the plain time line stays clear of the time buttons", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const time = page.locator(".time-readout output");
+  const actions = page.locator(".time-actions");
+  // A long line such as "43.7 minutes after the start".
+  await expect(time).toHaveText(/^\d{2}\.\d minutes after the start$/u, {
+    timeout: 60_000,
+  });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(
+        async () => {
+          const actionsBox = await actions.boundingBox();
+          if (actionsBox === null) {
+            return Number.POSITIVE_INFINITY;
+          }
+          // The text itself, which can run past its box.
+          const text = await time.evaluate((output) => {
+            const range = document.createRange();
+            range.selectNodeContents(output);
+            const lines = [...range.getClientRects()];
+            return {
+              right: Math.max(...lines.map((line) => line.right)),
+              rows: new Set(lines.map((line) => line.top)).size,
+            };
+          });
+          // The line ends before the buttons start and keeps one row.
+          return text.rows === 1
+            ? text.right - actionsBox.x
+            : Number.POSITIVE_INFINITY;
+        },
+        `${String(viewport.width)}x${String(viewport.height)}`,
+      )
+      .toBeLessThanOrEqual(0);
+  }
+});

@@ -2625,7 +2625,9 @@ h1 {
   width: min(54rem, calc(100% - 1.7rem));
   min-height: 4.8rem;
   display: grid;
-  grid-template-columns: minmax(8rem, 0.8fr) auto minmax(12rem, 1.3fr);
+  /* The plain time line stays on one row, so its column is at least as wide
+     as that line. */
+  grid-template-columns: minmax(min-content, 0.8fr) auto minmax(12rem, 1.3fr);
   align-items: center;
   gap: 0.9rem;
   padding: 0.65rem 0.75rem;
