@@ -2643,6 +2643,7 @@ h1 {
   font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
   font-weight: 550;
+  white-space: nowrap;
 }
 
 .run-status {
