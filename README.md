@@ -87,6 +87,7 @@ A press on the scene counts as a tap until it moves more than 8 px, so a tap nev
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
+Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, or in the open sky beside or above an open card that covers the centre, by the same rule as the lens shift below.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
 Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
@@ -191,7 +192,7 @@ The first selection reveals the real name, shows a short "You found" message wit
 Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
 Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
 The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
-The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Sun: the Roadster is usually far from both planets, and its hint is in view from the Sun.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Solar System overview and selects the Sun: the Roadster is usually far from both planets, a focused Sun fills the view, and from the overview its hint is in view.
 Once found, the Roadster joins the map's Spacecraft list as a real craft.
 Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
 The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
@@ -310,10 +311,11 @@ The Sun remains visible as the reference origin even when every category is hidd
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
 That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
 When the open tour card or selected-body card covers the subject, the picture glides right in about 300 ms so the subject sits in the middle of the open sky beside the card.
-The card covers the subject when it reaches past 40% of the scene width (as at 1024 px but not at 1440 px), past the subject's left edge, and across the rows of the subject and its label; a card along the bottom of a portrait screen that ends below the subject moves nothing.
+The card covers the subject when it reaches past the subject's left edge and across the rows of the subject and its label, so at 1280 by 800 a focused planet and the Moon's landing-site labels sit right of the card.
+A card along the bottom of a portrait screen, such as the tour card on a phone, that spans the centre and reaches above the bottom of the subject or its label moves the picture up instead, so the subject sits in the open sky above the card; a subject taller than that sky moves up only until its top meets the screen edge, and a card that ends below the subject moves nothing.
 The subject is the target body's disc and rings, or for a shot that frames more (the Earth-Moon system, Jupiter's moons, the heliosphere) a circle as tall as the scene.
 The picture never moves the subject off the canvas or under the open Display panel: when the open sky is too narrow, the subject moves only as far as it still fits, or stays centred.
-The projection itself moves, so labels, picking, wayfinders, trails and the gravity well stay on their bodies; a drag holds the picture still, reduced motion moves it in one step, and a minimised or collapsed card, a card hidden by full screen, the surface view and a phone keep it centred.
+The projection itself moves, so labels, picking, wayfinders, trails and the gravity well stay on their bodies; a drag holds the picture still, reduced motion moves it in one step, and a minimised or collapsed card, a card hidden by full screen and the surface view keep it centred, and a phone moves it only up.
 Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
 The same press on the selected body travels to it and fits its default view, as the card's Fly there button does; for an Apollo landing site it is Show on Moon.
 Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
@@ -325,7 +327,7 @@ The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet,
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
 Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
-Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
+Focusing the Sun frames its disc from its own radius, as for every other body; the full-system 90 AU framing belongs to the Solar System overview, which Home and the "Solar System" breadcrumb open.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.
 The optional Moon and planet trails contain only exact physics endpoint samples.

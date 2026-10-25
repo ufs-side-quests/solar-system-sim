@@ -1,8 +1,7 @@
-// The camera centres its subject on the canvas. A left-hand panel (the tour
-// card or the selected-body card) that reaches past this share of the scene
-// width covers the centre: at 1024 px the tour card reaches 53% and the
-// selected-body card 48%, at 1440 px only 38% and 34%.
-export const LENS_PANEL_COVER_SHARE = 0.4;
+// The cards the subject keeps clear of: the open tour card and the open
+// selected-body card. A minimised or collapsed card leaves the centre clear.
+export const OPEN_SKY_CARD_SELECTOR =
+  ".scale-tour:not(.is-minimised), .selected-body-detail:not(.is-collapsed)";
 
 // The shift settles in about 300 ms: three time constants of 75 ms leave 5%.
 const LENS_SHIFT_TIME_CONSTANT_MS = 75;
@@ -25,7 +24,8 @@ export type OpenSkyLayout = Readonly<{
   // How far above or below the subject's centre its label reaches. A panel
   // across those rows covers the label of a subject smaller than it.
   subjectLabelReachPx: number;
-  // Panels along the left edge: the tour card, the selected-body card.
+  // The tour card and the selected-body card: along the left edge, or along
+  // the bottom of a portrait screen.
   leftPanels: readonly PanelBox[];
   // Panels along the right edge: the Display panel.
   rightPanels: readonly PanelBox[];
@@ -36,14 +36,13 @@ export type OpenSkyLayout = Readonly<{
 //
 // The open sky is the span between the left panel's right edge and the
 // canvas's right edge, or the left edge of a right panel, at the rows the
-// subject and its label take. A left panel moves the picture only when it
-// crosses those rows, reaches past the subject's left edge, and reaches past
-// LENS_PANEL_COVER_SHARE of the width, so a card that covers only the rim of
-// a large centred subject leaves it alone. The subject goes to the middle of
-// the open sky, but never so far that any of it leaves the canvas or goes
-// under a right panel: when the open sky is narrower than the subject, the
-// subject moves only as far as it still fits, and stays centred when even
-// that is not possible.
+// subject and its label take. A left panel moves the picture when it crosses
+// those rows and reaches past the subject's left edge, so a card never hides
+// even the rim of the subject. The subject goes to the middle of the open
+// sky, but never so far that any of it leaves the canvas or goes under a
+// right panel: when the open sky is narrower than the subject, the subject
+// moves only as far as it still fits, and stays centred when even that is not
+// possible.
 export function lensShiftTargetPx(layout: OpenSkyLayout): number {
   const {
     sceneWidthPx: width,
@@ -57,10 +56,7 @@ export function lensShiftTargetPx(layout: OpenSkyLayout): number {
     0,
     ...layout.leftPanels
       .filter(
-        (panel) =>
-          coversSubjectRows(panel) &&
-          panel.right >
-            Math.max(width * LENS_PANEL_COVER_SHARE, width / 2 - radius),
+        (panel) => coversSubjectRows(panel) && panel.right > width / 2 - radius,
       )
       .map((panel) => panel.right),
   );
@@ -76,6 +72,41 @@ export function lensShiftTargetPx(layout: OpenSkyLayout): number {
     openSkyRight - radius,
   );
   return Math.max(0, subjectCentre - width / 2);
+}
+
+// How far in CSS px the picture moves up so that the subject sits in the
+// open sky above a card along the bottom of the screen, as on a portrait
+// phone.
+//
+// A card counts when its top edge is below the centre of the scene and
+// above the bottom of the subject or its label, and it spans the centre
+// column, as a band along the bottom does. A card beside the centre is the
+// sideways shift's. The subject goes to the middle of the open sky above the
+// highest such card, but never so far that its top leaves the canvas: a
+// subject taller than the open sky moves up only until its top meets the
+// canvas edge.
+export function lensShiftUpTargetPx(layout: OpenSkyLayout): number {
+  const {
+    sceneWidthPx: width,
+    sceneHeightPx: height,
+    subjectRadiusPx: radius,
+  } = layout;
+  const subjectBottom =
+    height / 2 + Math.max(radius, layout.subjectLabelReachPx);
+  const openSkyBottom = Math.min(
+    height,
+    ...layout.leftPanels
+      .filter(
+        (panel) =>
+          panel.top > height / 2 &&
+          panel.top < subjectBottom &&
+          panel.left < width / 2 &&
+          panel.right > width / 2,
+      )
+      .map((panel) => panel.top),
+  );
+  const subjectCentre = Math.max(openSkyBottom / 2, radius);
+  return Math.max(0, height / 2 - subjectCentre);
 }
 
 // The on-screen radius in CSS px of a sphere of the given radius seen from

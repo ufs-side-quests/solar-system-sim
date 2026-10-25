@@ -410,6 +410,8 @@ type FocusOption = Readonly<{
   group: string;
   searchText: string;
   disabled: boolean;
+  // A clue row that flies to the overview selects the body it names.
+  selectBodyId?: string;
 }>;
 // The Focus list shows easter eggs only in the hidden surprises group, whose
 // heading carries the live count.
@@ -548,12 +550,13 @@ function hiddenSurpriseFocusOptions(
   return hiddenSurpriseRows(found).map((row) => {
     if (row.kind === "clue") {
       return {
-        id: row.bodyId,
+        id: row.focusBodyId,
         key: `clue:${row.eggId}`,
         label: row.label,
         group,
         searchText: "",
         disabled: false,
+        ...(row.focusBodyId === row.bodyId ? {} : { selectBodyId: row.bodyId }),
       };
     }
     const option = EGG_FOCUS_OPTION_BY_ID.get(row.eggId);
@@ -663,7 +666,7 @@ const FocusSelect = memo(function FocusSelect({
 }: Readonly<{
   value: string;
   foundEasterEggIds: ReadonlySet<EasterEggId>;
-  onSelect(bodyId: string): void;
+  onSelect(option: FocusOption): void;
 }>) {
   const selectedOption = focusOption(value);
   const hiddenSurpriseOptions = useMemo(
@@ -707,7 +710,7 @@ const FocusSelect = memo(function FocusSelect({
         !focusOption.disabled,
     );
     if (option === undefined) return false;
-    onSelect(option.id);
+    onSelect(option);
     return true;
   };
   const {
@@ -741,7 +744,7 @@ const FocusSelect = memo(function FocusSelect({
     },
     onSelectedItemChange: ({ selectedItem }) => {
       if (selectedItem !== null) {
-        onSelect(selectedItem.id);
+        onSelect(selectedItem);
       }
     },
   });
@@ -3575,9 +3578,12 @@ export function App() {
         <FocusSelect
           value={focusBodyId}
           foundEasterEggIds={foundEasterEggIds}
-          onSelect={(bodyId) => {
+          onSelect={(option) => {
             setSurfaceObserverEnabled(false);
-            navigateToFocus(bodyId);
+            navigateToFocus(option.id);
+            if (option.selectBodyId !== undefined) {
+              setSelectedBodyId(option.selectBodyId);
+            }
           }}
         />
         <div className="command-actions">

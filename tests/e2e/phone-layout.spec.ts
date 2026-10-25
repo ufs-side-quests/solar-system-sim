@@ -319,6 +319,11 @@ test.describe("desktop", () => {
       name: /Physics-driven Solar System/u,
     });
     await flyTo(page, scene, "Uranus");
+    // Framed to fit, Uranus's rim reaches under the card, so the picture
+    // moves right. One step out the card is clear of it and Uranus is
+    // centred, so the guide starts at the centre.
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    await expect(scene).toHaveAttribute("data-lens-shift-px", "0.000");
     const label = page.locator(".sun-guide-label");
     await expect(label).toBeAttached();
     await expect

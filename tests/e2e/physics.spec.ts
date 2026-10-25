@@ -167,21 +167,16 @@ test("renders solver state and advances time through the physics worker", async 
       timeout: 30_000,
     },
   );
-  await expect(scene).toHaveAttribute("data-focus-distance-au", "90.00000000");
-  for (const planetId of [
-    "mercury",
-    "venus",
-    "earth",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-  ]) {
-    const planetLabel = page.locator(`[data-body-id="${planetId}"]`);
-    await expect(planetLabel).toBeVisible();
-    await expect(planetLabel).toHaveAttribute("data-body-rendered", "false");
-  }
+  // The Sun is framed from its own radius, four radii out, like any body.
+  await expect(scene).toHaveAttribute(
+    "data-focus-distance-au",
+    ((695_700_000 / 149_597_870_700) * 4).toFixed(8),
+  );
+  const sunLabel = page.locator('.body-label[data-body-id="sun"]');
+  await expect(sunLabel).toHaveAttribute("data-body-rendered", "true");
+  expect(
+    Number(await sunLabel.getAttribute("data-radius-pixels")),
+  ).toBeGreaterThan(100);
   const sequenceBeforeSolarSystem = await scene.getAttribute(
     "data-camera-transition-sequence",
   );
@@ -197,6 +192,21 @@ test("renders solver state and advances time through the physics worker", async 
       timeout: 30_000,
     },
   );
+  // The overview, 90 AU out, labels every planet without drawing it.
+  for (const planetId of [
+    "mercury",
+    "venus",
+    "earth",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+  ]) {
+    const planetLabel = page.locator(`[data-body-id="${planetId}"]`);
+    await expect(planetLabel).toBeVisible();
+    await expect(planetLabel).toHaveAttribute("data-body-rendered", "false");
+  }
 
   await expect(scene).toHaveAttribute("data-camera-zoom", "1.00");
   await zoomPreset.selectOption("detail");

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 
 test("switches between physical, orrery, and schematic views without changing physics state", async ({
   page,
@@ -354,3 +355,90 @@ test("draws Orrery bodies in their true size order", async ({
     });
   }
 });
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 768, height: 1024 },
+]) {
+  test(`at ${String(viewport.width)} x ${String(viewport.height)} the map puts a focused planet in the open sky, on its own orbit`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    await focus.fill("Jupiter");
+    await focus.press("Enter");
+    await page.getByRole("button", { name: "Map" }).click();
+    const map = page.getByRole("region", {
+      name: /Schematic Solar System map/u,
+    });
+    await expect(map).toBeVisible();
+    const card = page.locator(".selected-body-detail");
+    await expect(card).toBeVisible();
+    const jupiterButton = map.getByRole("button", {
+      name: "Jupiter",
+      exact: true,
+    });
+    const centreOf = async (
+      locator: Locator,
+    ): Promise<{ x: number; y: number; width: number }> => {
+      const box = await locator.boundingBox();
+      if (box === null) throw new Error("A map element has no box");
+      return {
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+        width: box.width,
+      };
+    };
+    // Each dot sits a few px right of its place, inside its button, so
+    // places match within 8 px.
+    const near = (a: number, b: number): void => {
+      expect(Math.abs(a - b)).toBeLessThan(8);
+    };
+    await expect(async () => {
+      const jupiter = await centreOf(jupiterButton.locator(".schematic-dot"));
+      const sun = await centreOf(
+        map
+          .getByRole("button", { name: "Sun", exact: true })
+          .locator(".schematic-dot"),
+      );
+      const mapBox = await map.boundingBox();
+      const cardBox = await card.boundingBox();
+      const dock = await page.locator(".timeline-dock").boundingBox();
+      if (mapBox === null || cardBox === null || dock === null) {
+        throw new Error("The map, the card or the time controls have no box");
+      }
+      // Jupiter is in the map, outside the card and above the time
+      // controls, and nothing covers its dot.
+      expect(jupiter.x).toBeGreaterThan(mapBox.x);
+      expect(jupiter.x).toBeLessThan(mapBox.x + mapBox.width);
+      expect(
+        jupiter.x > cardBox.x + cardBox.width ||
+          jupiter.y < cardBox.y ||
+          jupiter.y > cardBox.y + cardBox.height,
+      ).toBe(true);
+      expect(jupiter.y).toBeLessThan(dock.y);
+      expect(
+        await page.evaluate(
+          ([x, y]) =>
+            document.elementFromPoint(x, y)?.closest(".schematic-body")
+              ?.textContent ?? null,
+          [jupiter.x, jupiter.y] as const,
+        ),
+      ).toBe("Jupiter");
+      // Jupiter's dot lies on its drawn orbit round the Sun's dot.
+      const orbit = await centreOf(
+        map.locator(".schematic-orbits circle.is-selected"),
+      );
+      near(orbit.x, sun.x);
+      near(orbit.y, sun.y);
+      near(Math.hypot(jupiter.x - sun.x, jupiter.y - sun.y), orbit.width / 2);
+    }).toPass({ timeout: 10_000 });
+    await page.screenshot({ path: testInfo.outputPath("map-jupiter.png") });
+  });
+}

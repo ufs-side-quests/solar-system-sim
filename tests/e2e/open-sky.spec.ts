@@ -184,8 +184,25 @@ test("at 1440 x 900 a card that leaves the centre clear changes nothing", async 
   await page.setViewportSize({ width: 1440, height: 900 });
   await pausedScene(page);
   const scene = await focusBody(page, "Jupiter");
-  await expect(page.locator(".selected-body-detail")).toBeVisible();
+  const card = page.locator(".selected-body-detail");
+  await expect(card).toBeVisible();
   const width = (await scene.boundingBox())?.width ?? Number.NaN;
+  // Framed to fit, Jupiter's left rim reaches under the card, so the
+  // picture moves it into the open sky.
+  await expect(async () => {
+    const disc = await bodyDisc(page, "jupiter");
+    expect(disc.x - disc.radius).toBeGreaterThan(
+      (await boxInScene(scene, card)).right,
+    );
+  }).toPass({ timeout: 15_000 });
+  // One step out, the whole disc is clear of the card at the centre.
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  await expect(async () => {
+    const disc = await bodyDisc(page, "jupiter");
+    expect(width / 2 - disc.radius).toBeGreaterThan(
+      (await boxInScene(scene, card)).right,
+    );
+  }).toPass({ timeout: 15_000 });
   await expect(scene).toHaveAttribute("data-lens-shift-px", "0.000");
   expect(
     Number(await bodyLabel(page, "jupiter").getAttribute("data-screen-x")),
@@ -338,7 +355,6 @@ for (const viewport of [
         }
         const cardCoversDisc =
           card.top < height / 2 + disc.radius &&
-          card.right > width * 0.4 &&
           card.right > width / 2 - disc.radius;
         if (
           !subject.fillsFrame &&
@@ -625,5 +641,104 @@ test.describe("at 800 x 600", () => {
     await expect
       .poll(async () => (await bodyDisc(page, "jupiter")).x)
       .toBeCloseTo(width / 2, 0);
+  });
+});
+
+test.describe("at 1280 x 800", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  for (const name of ["Earth", "Jupiter", "Pluto", "Moon"]) {
+    test(`the selected-body card leaves ${name}'s whole disc in the open sky`, async ({
+      page,
+    }) => {
+      test.setTimeout(90_000);
+      await pausedScene(page);
+      const scene = await focusBody(page, name);
+      const card = page.locator(".selected-body-detail");
+      await expect(card).toBeVisible();
+      await expect(async () => {
+        const { width } = await lensFacts(scene);
+        const box = await boxInScene(scene, card);
+        const disc = await bodyDisc(page, name.toLowerCase());
+        expect(disc.x - disc.radius).toBeGreaterThan(box.right);
+        expect(disc.x + disc.radius).toBeLessThanOrEqual(width);
+      }).toPass({ timeout: 15_000 });
+      if (name === "Moon") {
+        // Every Apollo landing-site label on the near side is clear of the
+        // card.
+        const labels = await page.locator(".apollo-site-label:visible").all();
+        expect(labels.length).toBeGreaterThan(0);
+        for (const label of labels) {
+          expect(await boxesOverlap(label, card)).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+// The upward shift the scene reports. A scene without it fails, so a missing
+// report never reads as "no shift".
+async function lensShiftUpPx(scene: Locator): Promise<number> {
+  const shift = await scene.getAttribute("data-lens-shift-up-px");
+  if (shift === null) {
+    throw new Error("The scene does not report data-lens-shift-up-px");
+  }
+  return Number(shift);
+}
+
+test.describe("on a 390 x 844 phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the Scale tour puts Earth and Saturn in the open sky above its card", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Scale tour" }).click();
+    const tour = page.getByRole("dialog", {
+      name: "Scale of the Solar System tour",
+    });
+    const scene = sceneOf(page);
+    for (const stepId of [
+      "earth",
+      "moon-gap",
+      "sun-atmosphere",
+      "sun-from-mars",
+      "jupiter",
+      "jupiter-from-io",
+      "earth-from-jupiter",
+      "saturn",
+    ]) {
+      await expect(tour).toHaveAttribute("data-tour-step", stepId);
+      if (stepId === "earth" || stepId === "saturn") {
+        await expect(async () => {
+          const card = await boxInScene(scene, tour);
+          const label = bodyLabel(page, stepId);
+          const y = Number(await label.getAttribute("data-screen-y"));
+          const radius = Number(
+            await scene.getAttribute("data-lens-subject-radius-px"),
+          );
+          // The full-width card crosses the subject, so the picture moves up.
+          expect(await lensShiftUpPx(scene)).toBeGreaterThan(0);
+          // The subject's centre and label are above the card, and its top
+          // stays on the canvas.
+          expect(y).toBeLessThan(card.top);
+          expect(y - radius).toBeGreaterThanOrEqual(-0.5);
+          // Either all of it is above the card, or it has moved up as far
+          // as it fits.
+          expect(y + radius <= card.top + 0.5 || y - radius <= 0.5).toBe(true);
+        }).toPass({ timeout: 15_000 });
+        await page.screenshot({
+          path: test.info().outputPath(`phone-tour-${stepId}.png`),
+        });
+      }
+      if (stepId !== "saturn") {
+        await tour.getByRole("button", { name: "Next" }).click();
+      }
+    }
   });
 });
