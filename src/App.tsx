@@ -2573,8 +2573,16 @@ export function App() {
   useEffect(() => {
     const returnTo = tourFocusReturnRef.current;
     if (tourKind !== null) {
+      // Only focus the hidden button lost: a key pressed before this frame
+      // may already have moved focus on, and taking it back would send the
+      // next key to the card.
       requestAnimationFrame(() => {
-        if (returnTo instanceof HTMLElement && !returnTo.checkVisibility()) {
+        if (
+          returnTo instanceof HTMLElement &&
+          !returnTo.checkVisibility() &&
+          (document.activeElement === returnTo ||
+            document.activeElement === document.body)
+        ) {
           tourPanelRef.current?.focus();
         }
       });

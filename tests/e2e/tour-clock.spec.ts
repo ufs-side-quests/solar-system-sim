@@ -468,6 +468,53 @@ test("a body chosen during a tour keeps the settings from before it", async ({
   ).toContainText("1 day/s requested");
 });
 
+test("starting a tour leaves focus where a key already moved it", async ({
+  page,
+}) => {
+  await openApp(page, "reduce");
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  // The launch button hides when the tour starts. As soon as the card is in
+  // the page, before the next frame, focus moves on to its Next button: the
+  // card must not take focus back for itself.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const launch = [...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Scale tour",
+        );
+        if (launch === undefined) {
+          throw new Error("The Scale tour button is missing");
+        }
+        const observer = new MutationObserver(() => {
+          const next = [
+            ...document.querySelectorAll(".scale-tour button"),
+          ].find((button) => button.textContent === "Next");
+          if (next instanceof HTMLElement) {
+            observer.disconnect();
+            next.focus();
+            resolve();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        launch.focus();
+        launch.click();
+      }),
+  );
+  await expect(tour).toHaveAttribute("data-tour-step", "earth");
+  // Three frames, so the card's focus frame has run.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+      }),
+  );
+  await expect(tour.getByRole("button", { name: "Next" })).toBeFocused();
+});
+
 const SCALE_STEP_IDS_AFTER_EARTH = [
   "moon-gap",
   "sun-atmosphere",
