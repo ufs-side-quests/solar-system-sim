@@ -1376,6 +1376,42 @@ export function App() {
   } | null>(null);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
     useState(matchesPhoneLayout);
+  // The card scrolls inside itself when it is taller than the room under the
+  // map. A cue at its foot shows while more is below.
+  const [cardMoreBelow, setCardMoreBelow] = useState(false);
+  const cardWatchStopRef = useRef<(() => void) | null>(null);
+  const selectedBodyCardRef = useCallback((card: HTMLElement | null): void => {
+    cardWatchStopRef.current?.();
+    cardWatchStopRef.current = null;
+    if (card === null) {
+      return;
+    }
+    const update = (): void => {
+      setCardMoreBelow(
+        card.scrollTop + card.clientHeight < card.scrollHeight - 1,
+      );
+    };
+    // The card's own height and the height of each part it holds (More
+    // detail opening, a collapse) change how much is below.
+    const resize = new ResizeObserver(update);
+    const watchParts = (): void => {
+      resize.disconnect();
+      resize.observe(card);
+      for (const part of card.children) {
+        resize.observe(part);
+      }
+      update();
+    };
+    const parts = new MutationObserver(watchParts);
+    parts.observe(card, { childList: true });
+    card.addEventListener("scroll", update, { passive: true });
+    watchParts();
+    cardWatchStopRef.current = () => {
+      resize.disconnect();
+      parts.disconnect();
+      card.removeEventListener("scroll", update);
+    };
+  }, []);
   // A screen that becomes a phone (a resize or a turn) also makes the card
   // short.
   const [cardPhoneLayout, setCardPhoneLayout] = useState(phoneLayout);
@@ -4459,6 +4495,7 @@ export function App() {
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
           <aside
+            ref={selectedBodyCardRef}
             className={
               selectedBodyPanelCollapsed
                 ? "selected-body-detail is-collapsed"
@@ -4698,28 +4735,29 @@ export function App() {
                     {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
                   </span>
                 )}
-                {selectedBodyDetail.composition === undefined ? null : (
-                  <span className="selected-body-composition">
-                    <small>
-                      <span>Composition</span>
-                      <a
-                        href={selectedBodyDetail.composition.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Source: ${selectedBodyDetail.composition.authority}`}
-                      >
-                        Source
-                      </a>
-                    </small>
-                    {selectedBodyDetail.composition.summary}
-                  </span>
-                )}
                 {selectedBodyDetail.distanceRows === undefined &&
                 selectedBodyDetail.surfaceTechnical === undefined &&
-                selectedBodyDetail.technicalRows === undefined ? null : (
+                selectedBodyDetail.technicalRows === undefined &&
+                selectedBodyDetail.composition === undefined ? null : (
                   <details className="selected-body-more">
                     <summary>More detail</summary>
                     <div className="selected-body-more-grid">
+                      {selectedBodyDetail.composition === undefined ? null : (
+                        <span className="selected-body-composition">
+                          <small>
+                            <span>Composition</span>
+                            <a
+                              href={selectedBodyDetail.composition.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Source: ${selectedBodyDetail.composition.authority}`}
+                            >
+                              Source
+                            </a>
+                          </small>
+                          {selectedBodyDetail.composition.summary}
+                        </span>
+                      )}
                       {selectedBodyDetail.distanceRows === undefined ? null : (
                         <span>
                           <small>
@@ -4848,6 +4886,11 @@ export function App() {
                 )}
               </div>
             )}
+            {cardMoreBelow ? (
+              <div className="selected-body-more-below" aria-hidden="true">
+                More below ↓
+              </div>
+            ) : null}
           </aside>
         )}
 

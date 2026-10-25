@@ -341,6 +341,8 @@ The optional Orrery minor-body trail uses fading screen-space history of actual 
 Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass, composition or a surface map, the card leaves that row out rather than substituting an estimate.
+The sourced composition sits first under More detail, so the card's face fits a 1280 by 800 screen for most bodies.
+A card still taller than the room between the navigation map and the time controls scrolls inside itself under its fixed heading, and a "More below" cue at its foot shows until the child reaches the end.
 Re-centre or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
 On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
 At every screen size a tour (the Scale tour or the Eclipse story) shows only the clock and the tour card; the command bar, camera dock, time controls, and navigation map come back when it ends.

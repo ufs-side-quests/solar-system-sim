@@ -30,10 +30,7 @@ test("selected body stats identify their source and velocity reference", async (
   ).toBeVisible();
   await page.getByText("More detail", { exact: true }).click();
   await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
-  await page.getByText("More detail", { exact: true }).click();
-  await expect(
-    page.getByText("Speed relative to the Sun", { exact: true }),
-  ).toBeVisible();
+  // Composition is under More detail.
   await expect(page.getByText("Composition", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
@@ -44,6 +41,10 @@ test("selected body stats identify their source and velocity reference", async (
     "href",
     "https://science.nasa.gov/earth/facts/",
   );
+  await page.getByText("More detail", { exact: true }).click();
+  await expect(
+    page.getByText("Speed relative to the Sun", { exact: true }),
+  ).toBeVisible();
 
   await selectFocus(focus, "Moon");
   await expect(scene).toHaveAttribute("data-focus-body", "moon");

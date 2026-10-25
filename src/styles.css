@@ -2374,6 +2374,24 @@ h1 {
   border-radius: 1rem;
 }
 
+/* Sticks to the card's foot while more is below; the negative margin keeps it
+   from adding to the scroll height. Taps go through to the row under it. */
+.selected-body-more-below {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  height: 2.2rem;
+  margin-top: -2.2rem;
+  padding-bottom: 0.3rem;
+  background: linear-gradient(transparent, var(--surface-strong) 70%);
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .selected-body-detail.is-collapsed {
   width: min(22rem, calc(100% - 1.7rem));
   max-height: none;
