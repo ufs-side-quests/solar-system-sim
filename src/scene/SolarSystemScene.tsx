@@ -8946,30 +8946,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
             const preferredLabelX = labelOnRight
               ? endpoint.x + labelGap
               : endpoint.x - labelWidth - labelGap;
-            const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
-            const clampedLabelX = Math.min(
+            const labelX = Math.min(
               viewportWidth - labelWidth - labelMargin,
               Math.max(labelMargin, preferredLabelX),
             );
-            // A card over the scene would cut the label: it moves beside
-            // the card instead.
-            const labelHalfHeight = labelBounds.height / 2;
-            const coveringPanel = [...leftPanels, ...rightPanels].find(
-              (panel) =>
-                clampedLabelX < panel.right &&
-                clampedLabelX + labelWidth > panel.left &&
-                endpoint.y + laneOffset - labelHalfHeight < panel.bottom &&
-                endpoint.y + laneOffset + labelHalfHeight > panel.top,
-            );
-            const labelX =
-              coveringPanel === undefined
-                ? clampedLabelX
-                : coveringPanel.right + labelGap + labelWidth <=
-                    viewportWidth - labelMargin
-                  ? coveringPanel.right + labelGap
-                  : coveringPanel.left - labelGap - labelWidth >= labelMargin
-                    ? coveringPanel.left - labelGap - labelWidth
-                    : clampedLabelX;
+            const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
             const labelY = Math.min(
               guideFloor(labelX, labelX + labelWidth) - 30,
               Math.max(30, endpoint.y + laneOffset),
