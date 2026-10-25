@@ -41,6 +41,7 @@ Card distances come from live states, are rounded so they do not change with cam
 Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
 Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
 Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
+While the lineup is open, Tab and Shift+Tab stay inside it.
 "Guess first" turns the dialog into a size duel: two globes at the same size and a question such as "Which is wider: the Moon or Pluto?".
 For Saturn and Jupiter the question adds "Rings do not count.", because Saturn with its rings is wider than Jupiter.
 After the child taps one, the narrower globe shrinks to its true size, a "Wider" tag marks the winner, and the same line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
@@ -53,6 +54,8 @@ The time controls say how far the clock is from the start in plain words, such a
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
 Outside a tour, a camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
+Zoom in turns off at the zoom floor and Zoom out at the farthest distance, where a press would not move the camera.
+On a phone the dock has two rows of four buttons, because eight 44 px buttons do not fit one row of a 360 px screen.
 Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecliptic so Mercury to Mars fill the view, turns on orbit guides, planet trails and labels, and runs the clock forward at 30 days per second, so Mercury laps Earth about every 4 seconds.
 In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
 The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
@@ -300,7 +303,7 @@ The immersive-mode journey enters the browser's native fullscreen presentation f
 The classroom journey keeps the Scale tour card and its labels in full screen, opens full screen with F during the Eclipse story, steps the tour with Page Down and Page Up (from a tour button too, without moving the rate), blanks the window with B or the full stop with the tour paused behind it, ignores Ctrl+Page Down, a held Page Down, and browser shortcuts, checks that a tour hides the search box and the Display button, and checks that Start fresh shows 0 of 7 surprises and the default narration volume after the reload and that Cancel keeps both stored settings.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.
-The same panel independently controls ambient music, interface feedback, tour narration, and their volume levels.
+The same panel independently controls ambient music, interface feedback, tour narration, and their volume levels; with all three off the audio stops and the panel says "Sound is off".
 The initial Reality overview uses physical scale, so labels identify bodies whose geometry is too small to resolve without turning them into false visible pixels.
 Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
@@ -338,7 +341,7 @@ At every screen size a tour (the Scale tour or the Eclipse story) shows only the
 On a phone the tour card sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
 On a phone the selected-body card opens short, with the name, Expand, and a size line such as "As wide as 11 Earths · Compare" that opens Compare sizes; every flight makes it short again.
 On a phone the navigation plot folds into a "Mini map" button, and every flight folds it again; a window that grows out of the phone layout opens it.
-Outside a tour, the camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
+Outside a tour, the camera dock remains visible at narrow widths, the Focus box fills its row with 16 px text so iOS does not zoom into it, its open list covers the date, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
 Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.
