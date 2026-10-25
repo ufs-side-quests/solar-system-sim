@@ -66,7 +66,9 @@ describe("selected-body physical facts", () => {
     expect(compare("jupiter")).toBe("As heavy as 318 Earths");
     expect(compare("sun")).toBe("As heavy as 333,000 Earths");
     expect(compare("uranus")).toBe("As heavy as 15 Earths");
-    expect(compare("earth")).toBe("Our home: other worlds are weighed against it");
+    expect(compare("earth")).toBe(
+      "Our home: other worlds are weighed against it",
+    );
     expect(compare("venus")).toBe("Earth is about 1.2 times heavier");
     expect(compare("moon")).toBe("Earth is about 81 times heavier");
     expect(compare("pluto")).toBe("Earth is about 458 times heavier");
@@ -83,7 +85,9 @@ describe("selected-body physical facts", () => {
       ),
     ]);
     for (const kind of kinds) {
-      expect(PLAIN_SURFACE_MAP_BY_CLASSIFICATION[kind], kind).toMatch(/^[A-Z]/u);
+      expect(PLAIN_SURFACE_MAP_BY_CLASSIFICATION[kind], kind).toMatch(
+        /^[A-Z]/u,
+      );
     }
   });
 
