@@ -2749,7 +2749,11 @@ export function App() {
     tourStepIndex,
   ]);
 
-  useEffect(() => {
+  // A layout effect, so a new step's settings and its seek land in the same
+  // paint as its card. As a passive effect it ran after a frame could draw
+  // the new step with the last step's landed seek: the card hid "Moving the
+  // clock", and the shadow step drew its shadow at the last step's time.
+  useLayoutEffect(() => {
     if (tourStepIndex === null) {
       return;
     }

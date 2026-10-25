@@ -549,3 +549,80 @@ test("the shadow view says when the Moon's dark shadow is off Earth", async ({
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
+
+test("a step whose clock must move says so from its first frame", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  const story = page.getByRole("dialog", {
+    name: "12 August 2026 eclipse story",
+  });
+  await page.getByRole("button", { name: "Eclipse story" }).click();
+  for (let next = 0; next < 4; next += 1) {
+    await story.getByRole("button", { name: "Next" }).click();
+  }
+  await expect(story).toHaveAttribute("data-tour-step", "shadow-axis");
+  // The shadow-axis step's clock has landed at its own time, 17:45:53.
+  await expect(page.locator("time.global-simulation-clock")).toHaveText(
+    /12 Aug 2026 · 17:45:53/u,
+    { timeout: 30_000 },
+  );
+  await expect(story.locator(".tour-seeking")).toHaveCount(0);
+
+  // The next step's time is 17:40, so its card must say the clock is moving
+  // in the first DOM it shows: a card that shows the step as arrived while
+  // the clock still reads 17:45:53 also lets the scene draw that step's
+  // shadow at the old time.
+  await page.evaluate(() => {
+    const seen: { seeking: boolean; clock: string }[] = [];
+    (
+      window as unknown as { shadowStepFirstSeen: typeof seen }
+    ).shadowStepFirstSeen = seen;
+    const observer = new MutationObserver(() => {
+      const aside = document.querySelector<HTMLElement>("aside.scale-tour");
+      if (aside?.dataset.tourStep !== "shadow-from-moon") return;
+      seen.push({
+        seeking: aside.querySelector(".tour-seeking") !== null,
+        clock:
+          document.querySelector(".global-simulation-clock")?.textContent ?? "",
+      });
+      observer.disconnect();
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-tour-step"],
+    });
+  });
+  await story.getByRole("button", { name: "Next" }).click();
+  await expect(story).toHaveAttribute("data-tour-step", "shadow-from-moon");
+  const firstSeen = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          shadowStepFirstSeen: { seeking: boolean; clock: string }[];
+        }
+      ).shadowStepFirstSeen,
+  );
+  expect(firstSeen).toEqual([
+    { seeking: true, clock: expect.stringMatching(/17:45:53/u) },
+  ]);
+  await expect(
+    page.getByRole("img", { name: /Physics-driven Solar System/u }),
+  ).toHaveAttribute("data-eclipse-shadow-visible", "true", {
+    timeout: 30_000,
+  });
+  await expect(page.locator("time.global-simulation-clock")).toHaveText(
+    /12 Aug 2026 · 17:40:00/u,
+  );
+  expect(pageErrors).toEqual([]);
+});
