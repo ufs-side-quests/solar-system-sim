@@ -211,6 +211,17 @@ describe("lensShiftUpTargetPx", () => {
       }),
     ).toBe(0);
     expect(lensShiftUpTargetPx({ ...layout, leftPanels: [] })).toBe(0);
+    // A desktop tour card that starts just below the centre stays left of
+    // the centre column: the sideways shift clears it, so it moves nothing
+    // up.
+    expect(
+      lensShiftUpTargetPx({
+        ...layout,
+        sceneHeightPx: 656,
+        subjectRadiusPx: 150,
+        leftPanels: [leftCard(542, 340, 640)],
+      }),
+    ).toBe(0);
   });
 
   it("never moves a subject that fills the frame or surrounds the camera", () => {

@@ -78,9 +78,10 @@ export function lensShiftTargetPx(layout: OpenSkyLayout): number {
 // open sky above a card along the bottom of the screen, as on a portrait
 // phone.
 //
-// A card counts when its top edge is below the centre of the scene, above
-// the bottom of the subject or its label, and it reaches across the
-// subject's columns. The subject goes to the middle of the open sky above the
+// A card counts when its top edge is below the centre of the scene and
+// above the bottom of the subject or its label, and it spans the centre
+// column, as a band along the bottom does. A card beside the centre is the
+// sideways shift's. The subject goes to the middle of the open sky above the
 // highest such card, but never so far that its top leaves the canvas: a
 // subject taller than the open sky moves up only until its top meets the
 // canvas edge.
@@ -99,8 +100,8 @@ export function lensShiftUpTargetPx(layout: OpenSkyLayout): number {
         (panel) =>
           panel.top > height / 2 &&
           panel.top < subjectBottom &&
-          panel.left < width / 2 + radius &&
-          panel.right > width / 2 - radius,
+          panel.left < width / 2 &&
+          panel.right > width / 2,
       )
       .map((panel) => panel.top),
   );
