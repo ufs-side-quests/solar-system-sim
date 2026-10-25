@@ -490,3 +490,48 @@ test("real bodies win label space over a hidden-surprise hint", async ({
     path: testInfo.outputPath("sun-zoomed-out-labels.png"),
   });
 });
+
+// A guide label never lies on the subject: the Sun guide of a focused
+// planet keeps clear of its disc once the flight ends. On a phone in
+// portrait the disc fills all the open sky, so there the label keeps its
+// place (sun-guide.spec taps it).
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 768, height: 1024 },
+]) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`the Sun guide label lies clear of a focused planet's disc at ${size}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    const sunGuide = page.locator(".sun-guide-label");
+    for (const name of ["Mars", "Jupiter", "Venus"]) {
+      await focus.fill(name);
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute(
+        "data-focus-body",
+        name.toLowerCase(),
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+      await expect(sunGuide).toBeVisible();
+      await expect
+        .poll(() => discReachIntoLabel(scene, name.toLowerCase(), sunGuide), {
+          timeout: 10_000,
+          message: `${name} at ${size}`,
+        })
+        .toBeLessThanOrEqual(0);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `${name.toLowerCase()}-sun-guide-${size}.png`,
+        ),
+      });
+    }
+  });
+}

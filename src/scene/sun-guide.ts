@@ -1,4 +1,45 @@
+import type { LabelRectangle } from "./label-placement";
+
 export type ScreenPoint = Readonly<{ x: number; y: number }>;
+export type ScreenDisc = Readonly<{ x: number; y: number; radius: number }>;
+
+/** Whether a label's box reaches into a body's drawn disc. */
+export function rectangleOverlapsDisc(
+  rectangle: LabelRectangle,
+  disc: ScreenDisc,
+): boolean {
+  const nearestX = Math.min(Math.max(disc.x, rectangle.left), rectangle.right);
+  const nearestY = Math.min(Math.max(disc.y, rectangle.top), rectangle.bottom);
+  return Math.hypot(disc.x - nearestX, disc.y - nearestY) < disc.radius;
+}
+
+const AROUND_DISC_STEP_RAD = Math.PI / 12;
+
+/**
+ * Places just outside a disc where a guide can end, nearest a direction
+ * first: straight out along it, then turning away from it both ways in
+ * 15 degree steps, to straight back.
+ */
+export function pointsAroundDisc(
+  disc: ScreenDisc,
+  direction: ScreenPoint,
+  clearancePx: number,
+): ScreenPoint[] {
+  const start = Math.atan2(direction.y, direction.x);
+  const radius = disc.radius + clearancePx;
+  const turns = [0];
+  for (let step = 1; step < 12; step += 1) {
+    turns.push(step, -step);
+  }
+  turns.push(12);
+  return turns.map((turn) => {
+    const angle = start + turn * AROUND_DISC_STEP_RAD;
+    return {
+      x: disc.x + radius * Math.cos(angle),
+      y: disc.y + radius * Math.sin(angle),
+    };
+  });
+}
 
 export function rayToViewportEdge(
   origin: ScreenPoint,

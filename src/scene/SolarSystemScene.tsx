@@ -251,7 +251,13 @@ import {
 import { isPhysicalBodyResolvable, orreryLayout } from "./scale";
 import { SmallBodyGpuLayer } from "./SmallBodyGpuLayer";
 import type { SmallBodyGpuStatus } from "./SmallBodyGpuLayer";
-import { pointInsideViewport, rayToViewportEdge } from "./sun-guide";
+import {
+  pointInsideViewport,
+  pointsAroundDisc,
+  rayToViewportEdge,
+  rectangleOverlapsDisc,
+  type ScreenPoint,
+} from "./sun-guide";
 import {
   hipparcosStarSnapshot,
   starDirectionIcrs,
@@ -6136,6 +6142,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // minimised or collapsed card leaves the centre clear.
       const leftPanels = panelBoxes(OPEN_SKY_CARD_SELECTOR);
       const rightPanels = panelBoxes(".display-panel");
+      // The controls along the top of the scene, which a guide label moved off
+      // a disc must not hide under.
+      const topPanels = panelBoxes(
+        ".camera-dock, .focus-breadcrumb, .status-cluster, .global-simulation-clock, .reality-navigation-map",
+      );
       const guideObstacles =
         wayfinderModeRef.current === "off"
           ? []
@@ -8784,9 +8795,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   focalLengthPx,
                 );
           };
-          const subjectDiscRadiusPx = discRadiusPx(
-            cameraTargetBodyIdRef.current ?? focusBodyIdRef.current,
-          );
+          const subjectBodyId =
+            cameraTargetBodyIdRef.current ?? focusBodyIdRef.current;
+          const subjectDiscRadiusPx = discRadiusPx(subjectBodyId);
+          // The subject's disc with a little air around it.
+          const subjectDisc = {
+            x: focusScreen.x,
+            y: focusScreen.y,
+            radius: subjectDiscRadiusPx + 4,
+          };
           let sunLocation: "behind" | "off-screen" | "on-screen" = "on-screen";
           let sunDistanceAu = 0;
           let sunLineVisible = false;
@@ -8966,18 +8983,91 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 setAttr(visual.line, "y2", String(endpoint.y));
               }
             }
-            const preferredLabelX = labelOnRight
-              ? endpoint.x + labelGap
-              : endpoint.x - labelWidth - labelGap;
-            const labelX = Math.min(
-              viewportWidth - labelWidth - labelMargin,
-              Math.max(labelMargin, preferredLabelX),
-            );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
-            const labelY = Math.min(
-              guideFloor(labelX, labelX + labelWidth) - 30,
-              Math.max(30, endpoint.y + laneOffset),
-            );
+            const labelHalfHeight = labelBounds.height / 2;
+            // Where the label sits for a marker at a point, on one side.
+            const labelPlace = (
+              point: ScreenPoint,
+              onRight: boolean,
+            ): Readonly<{
+              x: number;
+              y: number;
+              rectangle: LabelRectangle;
+            }> => {
+              const x = Math.min(
+                viewportWidth - labelWidth - labelMargin,
+                Math.max(
+                  labelMargin,
+                  onRight
+                    ? point.x + labelGap
+                    : point.x - labelWidth - labelGap,
+                ),
+              );
+              const y = Math.min(
+                guideFloor(x, x + labelWidth) - 30,
+                Math.max(30, point.y + laneOffset),
+              );
+              return {
+                x,
+                y,
+                rectangle: {
+                  left: x,
+                  right: x + labelWidth,
+                  top: y - labelHalfHeight,
+                  bottom: y + labelHalfHeight,
+                },
+              };
+            };
+            let place = labelPlace(endpoint, labelOnRight);
+            // A label that would still lie on the subject's disc moves, with
+            // the guide's end, to the nearest place around the disc where it
+            // is clear, on the side away from the disc and out from under the
+            // panels. Where the disc fills all the open sky, as on a phone in
+            // portrait, the label keeps its place.
+            if (
+              targetBodyId !== subjectBodyId &&
+              subjectDiscRadiusPx > 0 &&
+              rectangleOverlapsDisc(place.rectangle, subjectDisc)
+            ) {
+              for (const point of pointsAroundDisc(
+                subjectDisc,
+                {
+                  x: endpoint.x - subjectDisc.x,
+                  y: endpoint.y - subjectDisc.y,
+                },
+                discClearancePx,
+              )) {
+                const candidate = labelPlace(point, point.x >= subjectDisc.x);
+                if (
+                  pointInsideViewport(
+                    point,
+                    viewportWidth,
+                    guideFloor(point.x, point.x),
+                    GUIDE_EDGE_MARGIN_PX,
+                  ) &&
+                  !rectangleOverlapsDisc(candidate.rectangle, subjectDisc) &&
+                  ![...topPanels, ...leftPanels, ...rightPanels].some(
+                    (panel) =>
+                      candidate.rectangle.left < panel.right &&
+                      candidate.rectangle.right > panel.left &&
+                      candidate.rectangle.top < panel.bottom &&
+                      candidate.rectangle.bottom > panel.top,
+                  )
+                ) {
+                  endpoint = point;
+                  place = candidate;
+                  setAttr(visual.endpoint, "cx", String(endpoint.x));
+                  setAttr(visual.endpoint, "cy", String(endpoint.y));
+                  if (lineShown) {
+                    setAttr(visual.line, "x2", String(endpoint.x));
+                    setAttr(visual.line, "y2", String(endpoint.y));
+                  }
+                  break;
+                }
+              }
+            }
+            const labelX = place.x;
+            const labelY = place.y;
             const previousLabelX = Number(visual.label.dataset["positionX"]);
             const previousLabelY = Number(visual.label.dataset["positionY"]);
             const repositionThresholdPx = targetBodyId === "sun" ? 0 : 6;

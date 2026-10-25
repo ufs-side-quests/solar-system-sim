@@ -94,6 +94,7 @@ Map view draws on a square, so each body sits on its orbit, and it pans so the f
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
 Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
+A guide label never lies on the focused body's disc: when its usual place would, the guide ends at the nearest place around the disc where its label is clear.
 Body and wayfinder labels are borderless transparent annotations at 0.7rem or larger; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
 A label focused from the keyboard shows a 2 px accent ring on a dark chip, which keeps the ring readable over the Sun's disc; the navigation map shows the same ring.
 The time controls support paused, stepped, and continuous forward or backward integration from one second per real second through one simulated year per real second.
