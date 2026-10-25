@@ -35,6 +35,38 @@ test("identifies a physically rendered background moon on hover", async ({
     ["ganymede", "Ganymede"],
     ["callisto", "Callisto"],
   ]);
+  // Zooming out from Jupiter moves the picture: the lens shift that kept
+  // Jupiter clear of the selected-body card eases back to zero. A moon's
+  // point read while the picture still slides is a point the moon has left,
+  // and the hover never reaches it. Read the moons once their points hold
+  // still for two drawn frames.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async (bodyIds) => {
+          const points = (): string =>
+            JSON.stringify(
+              bodyIds.map((bodyId) => {
+                const label = document.querySelector<HTMLElement>(
+                  `.body-label[data-body-id="${bodyId}"]`,
+                );
+                if (label === null) {
+                  throw new Error(`${bodyId} has no label`);
+                }
+                return [label.dataset.screenX, label.dataset.screenY];
+              }),
+            );
+          const nextFrame = (): Promise<void> =>
+            new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          const before = points();
+          await nextFrame();
+          await nextFrame();
+          return points() === before;
+        },
+        [...moonNames.keys()],
+      ),
+    )
+    .toBe(true);
   await expect
     .poll(async () => {
       for (const bodyId of moonNames.keys()) {
