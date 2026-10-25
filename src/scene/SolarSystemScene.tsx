@@ -367,6 +367,9 @@ const PLANET_TRAIL_BODY_IDS = [
   "neptune",
 ] as const;
 const LABEL_MINIMUM_RADIUS_PIXELS = 0.5;
+// How close to the scene edge a guide may end when its usual end would put
+// its label across the subject.
+const GUIDE_EDGE_MARGIN_PX = 28;
 // A press on the canvas that moves no farther than this is a tap: it selects
 // the body under it, and during a camera flight it keeps the flight.
 const TAP_SLOP_PX = 8;
@@ -1928,12 +1931,58 @@ reflectedLight.directSpecular *= solarTransmission;`,
     eclipseShadowLeftEarth.hidden = true;
     labelLayer.append(eclipseShadowLeftEarth);
 
+    // The body, guide and hint labels on screen this frame. A hint never
+    // takes their place: real bodies win label space over a hidden
+    // surprise. A hint moves to a free place near its object, as a crowded
+    // planet label does, and hides when there is none.
+    let hintOccupiedRectangles: LabelRectangle[] = [];
+    const hintPlaces = new Map<string, Readonly<{ x: number; y: number }>>();
+    const hintHasRoom = (
+      eggId: EasterEggId,
+      eggPosition: Vector3,
+      label: HTMLElement,
+    ): boolean => {
+      const projected = eggPosition.clone().project(camera);
+      const name = foundEasterEggIdsRef.current.has(eggId)
+        ? label.textContent
+        : HIDDEN_SURPRISE_LABEL;
+      const placement = placeBodyLabel({
+        name,
+        role: "overview-planet",
+        projectedX: ((projected.x + 1) * sceneWidthPx) / 2,
+        projectedY: ((-projected.y + 1) * sceneHeightPx) / 2,
+        fontPx: labelFontPx,
+        viewportWidth: sceneWidthPx,
+        viewportHeight: sceneHeightPx,
+        guideRectangles: [],
+        bodyRectangles: hintOccupiedRectangles,
+        panelRectangles: [],
+      });
+      if (placement.overlapsBodyLabel) {
+        return false;
+      }
+      hintPlaces.set(eggId, placement);
+      hintOccupiedRectangles.push(placement.rectangle);
+      return true;
+    };
+    // Where an egg's label goes: its hint place, or its own screen point.
+    const eggLabelPlace = (
+      eggId: string,
+      screenX: number,
+      screenY: number,
+    ): readonly [number, number] => {
+      const place = hintPlaces.get(eggId);
+      return place === undefined ? [screenX, screenY] : [place.x, place.y];
+    };
+
     // An easter egg near the focused or selected body shows its label as a
-    // hidden surprise, unless that body hides it from the camera. Tour steps
-    // never hint: the label list is undefined only while no step is active.
+    // hidden surprise, unless that body hides it from the camera or a body or
+    // guide label is already there. Tour steps never hint: the label list is
+    // undefined only while no step is active.
     const easterEggHintVisible = (
       eggId: EasterEggId,
       eggPosition: Vector3,
+      label: HTMLElement,
     ): boolean => {
       if (spacecraftLabelBodyIdsRef.current !== undefined) {
         return false;
@@ -1957,7 +2006,7 @@ reflectedLight.directSpecular *= solarTransmission;`,
             hintMesh.scale.x,
           )
         ) {
-          return true;
+          return hintHasRoom(eggId, eggPosition, label);
         }
       }
       return false;
@@ -8686,6 +8735,35 @@ float saturnRingTransmission(vec3 surfacePosition) {
             "sun",
             ...planetTargets.map((target) => target.bodyId),
           ];
+          // A guide label never lies across the subject's disc or across
+          // its own target's disc: guides that end on the subject end at the
+          // scene edge instead, and a target with a disc on screen gets its
+          // marker on the disc's rim.
+          const discClearancePx = 12 + labelFontPx;
+          const focalLengthPx =
+            (viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))) *
+            camera.zoom;
+          // The drawn disc of a body, or 0 when it has none on screen.
+          const discRadiusPx = (bodyId: string | null | undefined): number => {
+            const mesh =
+              bodyId === null || bodyId === undefined
+                ? undefined
+                : bodyMeshes.get(bodyId);
+            const definition =
+              bodyId === null || bodyId === undefined
+                ? undefined
+                : majorBodyById.get(bodyId);
+            return mesh === undefined || definition === undefined
+              ? 0
+              : projectedSphereRadiusPx(
+                  visualExtentAu(definition, mesh.scale.x),
+                  camera.position.distanceTo(mesh.position),
+                  focalLengthPx,
+                );
+          };
+          const subjectDiscRadiusPx = discRadiusPx(
+            cameraTargetBodyIdRef.current ?? focusBodyIdRef.current,
+          );
           let sunLocation: "behind" | "off-screen" | "on-screen" = "on-screen";
           let sunDistanceAu = 0;
           let sunLineVisible = false;
@@ -8727,6 +8805,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
               );
             let location: "behind" | "off-screen" | "on-screen" = "on-screen";
             let endpoint = rawTargetScreen;
+            const targetDiscRadiusPx = targetOnScreen
+              ? discRadiusPx(targetBodyId)
+              : 0;
             if (!targetOnScreen) {
               location = targetInFront ? "off-screen" : "behind";
               let direction = targetInFront
@@ -8760,8 +8841,44 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   viewportMargin,
                 );
               }
+              const subjectClearance = subjectDiscRadiusPx + discClearancePx;
+              if (
+                Math.hypot(
+                  endpoint.x - focusScreen.x,
+                  endpoint.y - focusScreen.y,
+                ) < subjectClearance
+              ) {
+                let edge = rayToViewportEdge(
+                  guideOrigin,
+                  direction,
+                  viewportWidth,
+                  viewportHeight,
+                  GUIDE_EDGE_MARGIN_PX,
+                );
+                // Above the panel under that point, as the usual end is.
+                const edgeFloor = guideFloor(edge.x, edge.x);
+                if (
+                  edgeFloor - GUIDE_EDGE_MARGIN_PX < edge.y &&
+                  edgeFloor > 2 * GUIDE_EDGE_MARGIN_PX
+                ) {
+                  edge = rayToViewportEdge(
+                    guideOrigin,
+                    direction,
+                    viewportWidth,
+                    edgeFloor,
+                    GUIDE_EDGE_MARGIN_PX,
+                  );
+                }
+                if (
+                  Math.hypot(edge.x - focusScreen.x, edge.y - focusScreen.y) >=
+                  subjectClearance
+                ) {
+                  endpoint = edge;
+                }
+              }
             }
             const hasLine = originBodyId !== targetBodyId;
+            let lineShown = hasLine;
             visual.line.style.display = hasLine ? "" : "none";
             if (hasLine) {
               setAttr(visual.line, "x1", String(guideOrigin.x));
@@ -8796,15 +8913,63 @@ float saturnRingTransmission(vec3 surfacePosition) {
             }
             const labelGap = 8;
             const labelMargin = 8;
-            const preferredLabelX =
-              endpoint.x + labelGap + labelWidth <= viewportWidth - labelMargin
-                ? endpoint.x + labelGap
-                : endpoint.x - labelWidth - labelGap;
-            const labelX = Math.min(
+            // Right of the marker when it fits; a rim marker on the left
+            // keeps its label on the left, off the disc.
+            let labelOnRight =
+              endpoint.x + labelGap + labelWidth <= viewportWidth - labelMargin;
+            if (targetDiscRadiusPx > labelFontPx) {
+              const rimOffset = targetDiscRadiusPx + 4;
+              labelOnRight =
+                rawTargetScreen.x + rimOffset + labelGap + labelWidth <=
+                viewportWidth - labelMargin;
+              const side = labelOnRight ? 1 : -1;
+              endpoint = {
+                x: rawTargetScreen.x + side * rimOffset,
+                y: rawTargetScreen.y,
+              };
+              setAttr(visual.endpoint, "cx", String(endpoint.x));
+              setAttr(visual.endpoint, "cy", String(endpoint.y));
+              // A line that starts on the disc would only cross it.
+              if (
+                Math.hypot(
+                  guideOrigin.x - rawTargetScreen.x,
+                  guideOrigin.y - rawTargetScreen.y,
+                ) <= targetDiscRadiusPx
+              ) {
+                lineShown = false;
+                visual.line.style.display = "none";
+              } else if (hasLine) {
+                setAttr(visual.line, "x2", String(endpoint.x));
+                setAttr(visual.line, "y2", String(endpoint.y));
+              }
+            }
+            const preferredLabelX = labelOnRight
+              ? endpoint.x + labelGap
+              : endpoint.x - labelWidth - labelGap;
+            const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
+            const clampedLabelX = Math.min(
               viewportWidth - labelWidth - labelMargin,
               Math.max(labelMargin, preferredLabelX),
             );
-            const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
+            // A card over the scene would cut the label: it moves beside
+            // the card instead.
+            const labelHalfHeight = labelBounds.height / 2;
+            const coveringPanel = [...leftPanels, ...rightPanels].find(
+              (panel) =>
+                clampedLabelX < panel.right &&
+                clampedLabelX + labelWidth > panel.left &&
+                endpoint.y + laneOffset - labelHalfHeight < panel.bottom &&
+                endpoint.y + laneOffset + labelHalfHeight > panel.top,
+            );
+            const labelX =
+              coveringPanel === undefined
+                ? clampedLabelX
+                : coveringPanel.right + labelGap + labelWidth <=
+                    viewportWidth - labelMargin
+                  ? coveringPanel.right + labelGap
+                  : coveringPanel.left - labelGap - labelWidth >= labelMargin
+                    ? coveringPanel.left - labelGap - labelWidth
+                    : clampedLabelX;
             const labelY = Math.min(
               guideFloor(labelX, labelX + labelWidth) - 30,
               Math.max(30, endpoint.y + laneOffset),
@@ -8837,7 +9002,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             if (targetBodyId === "sun") {
               sunLocation = location;
               sunDistanceAu = distanceAu;
-              sunLineVisible = hasLine;
+              sunLineVisible = lineShown;
             }
           }
           sunGuideOverlay.style.display = "";
@@ -9147,7 +9312,9 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   body.id === focusedParentId ||
                   (focusedParentId !== undefined &&
                     bodyParentId === focusedParentId)
-                : body.id === focusedBodyId);
+                : // Close to a planet its own moons keep their names, so a
+                  // hidden-surprise hint never shows where they have none.
+                  body.id === focusedBodyId || bodyParentId === focusedBodyId);
         const projectedLabelX = ((projected.x + 1) * viewportWidth) / 2;
         const projectedLabelY = ((-projected.y + 1) * viewportHeight) / 2;
         const placement = placeBodyLabel({
@@ -9164,6 +9331,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           viewportHeight,
           guideRectangles: wayfinderLabelRectangles,
           bodyRectangles: bodyLabelRectangles,
+          panelRectangles:
+            body.id === focusedBodyId || isCameraTarget
+              ? [...leftPanels, ...rightPanels]
+              : [],
         });
         const labelX = placement.x;
         const labelY = placement.y;
@@ -9174,6 +9345,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           semanticLabelVisible &&
           (semanticZoomLevel !== "surface" ||
             body.id === focusBodyIdRef.current ||
+            bodyParentId === focusBodyIdRef.current ||
             isCameraTarget ||
             radiusPixels >= LABEL_MINIMUM_RADIUS_PIXELS);
         if (body.id === "sun") {
@@ -9241,6 +9413,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
           }
         }
       }
+      // The easter egg hints placed below give way to these labels.
+      hintOccupiedRectangles = [
+        ...bodyLabelRectangles,
+        ...wayfinderLabelRectangles,
+      ];
+      hintPlaces.clear();
       if (current !== undefined) {
         const monolithPosition = monolithMesh.position;
         const projected = monolithPosition.clone().project(camera);
@@ -9269,7 +9447,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           inCameraFrustum &&
           (focusBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
             selectedBodyIdRef.current === JOVIAN_MONOLITH_BODY_ID ||
-            easterEggHintVisible(JOVIAN_MONOLITH_BODY_ID, monolithPosition));
+            easterEggHintVisible(
+              JOVIAN_MONOLITH_BODY_ID,
+              monolithPosition,
+              monolithLabel,
+            ));
         nameEasterEggLabel(
           monolithLabel,
           JOVIAN_MONOLITH_BODY_ID,
@@ -9283,7 +9465,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         setData(monolithLabel, "screenY", screenY.toFixed(3));
         setData(monolithLabel, "radiusPixels", radiusPixels.toFixed(3));
         if (labelVisible) {
-          setTransform(monolithLabel, screenX, screenY);
+          setTransform(
+            monolithLabel,
+            ...eggLabelPlace(JOVIAN_MONOLITH_BODY_ID, screenX, screenY),
+          );
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -9346,7 +9531,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
           inCameraFrustum &&
           (focusBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
             selectedBodyIdRef.current === DISCOVERY_ONE_BODY_ID ||
-            easterEggHintVisible(DISCOVERY_ONE_BODY_ID, position));
+            easterEggHintVisible(
+              DISCOVERY_ONE_BODY_ID,
+              position,
+              discoveryOneLabel,
+            ));
         nameEasterEggLabel(
           discoveryOneLabel,
           DISCOVERY_ONE_BODY_ID,
@@ -9357,7 +9546,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const screenX = ((projected.x + 1) * viewportWidth) / 2;
         const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          setTransform(discoveryOneLabel, screenX, screenY);
+          setTransform(
+            discoveryOneLabel,
+            ...eggLabelPlace(DISCOVERY_ONE_BODY_ID, screenX, screenY),
+          );
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -9440,7 +9632,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           inCameraFrustum &&
           (focusBodyIdRef.current === orbiter.id ||
             selectedBodyIdRef.current === orbiter.id ||
-            easterEggHintVisible(orbiter.id, position));
+            easterEggHintVisible(orbiter.id, position, label));
         nameEasterEggLabel(label, orbiter.id, orbiter.name);
         setHidden(label, !labelVisible);
         showLabelSelection(label, orbiter.id);
@@ -9451,7 +9643,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         setData(label, "screenY", screenY.toFixed(3));
         setData(label, "radiusPixels", radiusPixels.toFixed(3));
         if (labelVisible) {
-          setTransform(label, screenX, screenY);
+          setTransform(label, ...eggLabelPlace(orbiter.id, screenX, screenY));
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -9525,14 +9717,14 @@ float saturnRingTransmission(vec3 surfacePosition) {
           inCameraFrustum &&
           (focusBodyIdRef.current === object.id ||
             selectedBodyIdRef.current === object.id ||
-            easterEggHintVisible(object.id, position));
+            easterEggHintVisible(object.id, position, label));
         nameEasterEggLabel(label, object.id, object.name);
         setHidden(label, !labelVisible);
         showLabelSelection(label, object.id);
         const screenX = ((projected.x + 1) * viewportWidth) / 2;
         const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          setTransform(label, screenX, screenY);
+          setTransform(label, ...eggLabelPlace(object.id, screenX, screenY));
           visibleLabelCount += 1;
         }
         const markerVisible =
@@ -9782,7 +9974,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
             selectedBodyIdRef.current === spacecraft.id ||
             focusBodyIdRef.current === spacecraft.id ||
             (spacecraft.id === ROADSTER_BODY_ID &&
-              easterEggHintVisible(ROADSTER_BODY_ID, position))) &&
+              easterEggHintVisible(ROADSTER_BODY_ID, position, label))) &&
           (spacecraftLabelBodyIdsRef.current === undefined ||
             spacecraftLabelBodyIdsRef.current.includes(spacecraft.id));
         if (spacecraft.id === ROADSTER_BODY_ID) {
@@ -9796,7 +9988,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const screenX = ((projected.x + 1) * viewportWidth) / 2;
         const screenY = ((-projected.y + 1) * viewportHeight) / 2;
         if (labelVisible) {
-          setTransform(label, screenX, screenY);
+          setTransform(
+            label,
+            ...eggLabelPlace(spacecraft.id, screenX, screenY),
+          );
           visibleLabelCount += 1;
         }
         if (markerVisible) {

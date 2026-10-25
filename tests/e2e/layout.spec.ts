@@ -219,3 +219,54 @@ for (const viewport of [
     });
   });
 }
+
+test("on a tablet the flown-to planet's label and the Sun guide are not under the card", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Jupiter");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "jupiter");
+  await expect(scene).toHaveAttribute(
+    "data-camera-transition-phase",
+    "settled",
+    { timeout: 30_000 },
+  );
+  const card = page.locator(".selected-body-detail");
+  await expect(card).not.toHaveClass(/is-collapsed/u);
+  for (const label of [
+    page.locator('.body-label[data-body-id="jupiter"]'),
+    page.locator(".sun-guide-label"),
+  ]) {
+    await expect(label).toBeVisible();
+    await expect
+      .poll(async () => {
+        const [labelBox, cardBox] = await Promise.all([
+          label.boundingBox(),
+          card.boundingBox(),
+        ]);
+        if (labelBox === null || cardBox === null) {
+          return "no box";
+        }
+        const apart =
+          labelBox.x >= cardBox.x + cardBox.width ||
+          labelBox.x + labelBox.width <= cardBox.x ||
+          labelBox.y >= cardBox.y + cardBox.height ||
+          labelBox.y + labelBox.height <= cardBox.y;
+        const onScreen = labelBox.x >= 0 && labelBox.x + labelBox.width <= 768;
+        return apart && onScreen ? "clear" : "under the card";
+      })
+      .toBe("clear");
+  }
+  await page.screenshot({ path: testInfo.outputPath("tablet-jupiter.png") });
+});
