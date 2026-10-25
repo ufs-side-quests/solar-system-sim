@@ -118,6 +118,7 @@ import {
   placeBodyLabel,
   type LabelRectangle,
 } from "./label-placement";
+import { controlsDampingFactor } from "./controls-damping";
 import {
   easeLensShiftPx,
   lensShiftTargetPx,
@@ -6240,6 +6241,8 @@ float saturnRingTransmission(vec3 surfacePosition) {
       );
       lastRenderedAtMs = frameRenderStartedAtMs;
       frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
+      // The glide after a drag lasts the same time at any frame rate.
+      controls.dampingFactor = controlsDampingFactor(frameIntervalMs);
       // Surface view keeps its deliberate framing, and on a phone the card
       // lies along the bottom edge with no sky beside it, so only the open
       // sky above it counts. A drag holds the shift still, so the sky does
