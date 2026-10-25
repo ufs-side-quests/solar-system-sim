@@ -74,7 +74,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
       "Earth is 12,742 km wide. Here one hour passes each second, so watch it spin.",
     scale: "12,742 km across",
     description:
-      "This shot fits Earth itself. Its 40,075 km equatorial circumference would take more than a year to walk without stopping, while the one-hour-per-second clock makes the planet's rotation visible.",
+      "This shot fits Earth itself. A walk around its 40,075 km equator at 5 km/h, without stopping, would take about 11 months, while the one-hour-per-second clock makes the planet's rotation visible.",
     visualKey: "Physical sizes · no guides or trails",
     narration: narrationFor("earth"),
   },
@@ -105,7 +105,7 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     kidLine: "About 30 Earths could fit in a row between Earth and the Moon.",
     scale: "384,400 km average separation",
     description:
-      "The average centre-to-centre gap is about 30 Earth diameters. All eight planets could fit side by side across it, while the thin curve shows the Moon's modelled orbit rather than a decorative ring.",
+      "The average centre-to-centre gap is about 30 Earth diameters. The eight planets in a row measure about 393,000 km, a little more than that, so they fit only when the Moon is near its farthest, about 405,500 km away. The thin curve shows the Moon's modelled orbit rather than a decorative ring.",
     visualKey: "Thin blue curve · the Moon's orbital path around Earth",
     narration: narrationFor("moon-gap"),
   },
