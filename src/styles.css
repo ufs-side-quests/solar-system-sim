@@ -159,9 +159,9 @@ p {
   bottom: 0.85rem;
 }
 
-/* Full screen keeps what a class watches: the tour panel, the shot caption
-   and, while a tour runs, the labels the tour names. The date stays during
-   the Eclipse story, whose steps happen at named times. */
+/* Full screen keeps what the child or the class was looking at: the scene
+   with its labels and guides, the tour panel and the shot caption. The date
+   stays during the Eclipse story, whose steps happen at named times. */
 .app-shell.is-immersive:not(.is-eclipse-story)
   .workspace
   > .global-simulation-clock,
@@ -178,10 +178,7 @@ p {
     .timeline-dock
   ),
 .app-shell.is-immersive :is(.reality-navigation-map, .tour-fullscreen-button),
-.app-shell.is-immersive .scene :is(.camera-journey, .gravity-field-legend),
-.app-shell.is-immersive:not(.is-touring)
-  .scene
-  :is(.body-label, .wayfinder-label) {
+.app-shell.is-immersive .scene :is(.camera-journey, .gravity-field-legend) {
   display: none !important;
 }
 

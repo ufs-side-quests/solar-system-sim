@@ -65,11 +65,11 @@ test("keeps the Scale tour and its labels on a full screen, without the map or c
     path: testInfo.outputPath("scale-tour-full-screen.png"),
   });
 
-  // Without a tour the full screen is the clean sky again.
+  // Without a tour the full screen keeps the labelled view.
   await tour.getByRole("button", { name: "Exit" }).click();
   await expect(tour).toBeHidden();
   await expect(app).toHaveAttribute("data-immersive-mode", "true");
-  await expect(page.locator(".body-label:visible")).toHaveCount(0);
+  await expect(earthLabel).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

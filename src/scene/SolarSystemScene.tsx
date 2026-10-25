@@ -8571,7 +8571,6 @@ float saturnRingTransmission(vec3 surfacePosition) {
           current === undefined ||
           wayfinderSunState === undefined ||
           activeWayfinderMode === "off" ||
-          container.closest(".app-shell.is-immersive") !== null ||
           (wayfinderFocusId === "sun" && activeDeepPresentation !== undefined)
         ) {
           hideAllWayfinders();

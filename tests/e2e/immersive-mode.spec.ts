@@ -90,3 +90,30 @@ test("enters native fullscreen, hides every control surface, and restores the UI
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+test("full screen outside a tour keeps the labelled view the child was looking at", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const earth = page.locator('.body-label[data-body-id="earth"]');
+  const sun = page.locator(".sun-guide-label");
+  await expect(earth).toBeVisible();
+  await expect(sun).toBeVisible();
+  await page.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.locator("main.app-shell")).toHaveAttribute(
+    "data-immersive-mode",
+    "true",
+  );
+  await expect(page.locator("header.command-bar")).toBeHidden();
+  await expect(earth).toBeVisible();
+  await expect(sun).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("overview-full-screen.png"),
+    animations: "disabled",
+  });
+});
