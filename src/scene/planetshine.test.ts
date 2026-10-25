@@ -225,7 +225,9 @@ describe("planetshine map", () => {
         expect(step).toBeLessThan(0.0115);
       }
     }
-  });
+    // About 1.7 s alone, and past the 5 s default when the suite runs
+    // beside a browser.
+  }, 20_000);
 
   it("tints the light by the parent", () => {
     const data = newMap();
