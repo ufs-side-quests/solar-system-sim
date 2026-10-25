@@ -535,3 +535,94 @@ for (const viewport of [
     }
   });
 }
+
+// Every visible body or guide label whose text overlaps the text of the
+// labels the selector names.
+async function labelOverlaps(
+  scene: Locator,
+  selector: string,
+): Promise<string[]> {
+  return scene.evaluate((element, chosen) => {
+    const visible = (label: Element): DOMRect | null => {
+      if (!(label instanceof HTMLElement) || label.hidden) return null;
+      if (getComputedStyle(label).display === "none") return null;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const box = range.getBoundingClientRect();
+      return box.width > 0 ? box : null;
+    };
+    const found: string[] = [];
+    for (const label of element.querySelectorAll(chosen)) {
+      const a = visible(label);
+      if (a === null) continue;
+      for (const other of element.querySelectorAll(
+        ".body-label, .wayfinder-label",
+      )) {
+        const b = visible(other);
+        if (
+          b !== null &&
+          a.left < b.right &&
+          a.right > b.left &&
+          a.top < b.bottom &&
+          a.bottom > b.top
+        ) {
+          found.push(`${label.textContent} on ${other.textContent}`);
+        }
+      }
+    }
+    return found;
+  }, selector);
+}
+
+// Zoomed out past the planets, the Sun's origin label names the Sun beside
+// its guide label and the planets' names.
+for (const [start, viewport] of [
+  ["the overview", { width: 1280, height: 800 }],
+  ["the overview", { width: 768, height: 1024 }],
+  ["the overview", { width: 390, height: 844 }],
+  ["the Sun", { width: 1280, height: 800 }],
+] as const) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`zoomed out from ${start} at ${size}, the Sun's origin label keeps clear of the other labels`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const zoomOut = page.getByRole("button", { name: "Zoom out" });
+    const origin = page.locator(".deep-space-sun-label");
+    if (start === "the Sun") {
+      const focus = page.getByRole("combobox", { name: "Focus" });
+      await focus.fill("Sun");
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute("data-focus-body", "sun");
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+    }
+    // The origin label shows from 150 AU out; each press moves 1.7 times
+    // farther.
+    for (let press = 0; press < 20 && !(await origin.isVisible()); press += 1) {
+      const before = await scene.getAttribute(
+        "data-camera-navigation-sequence",
+      );
+      await zoomOut.click();
+      await expect(scene).not.toHaveAttribute(
+        "data-camera-navigation-sequence",
+        before ?? "",
+      );
+    }
+    await expect(origin).toBeVisible();
+    await expect(page.locator(".sun-guide-label")).toBeVisible();
+    await expect
+      .poll(() => labelOverlaps(scene, ".deep-space-sun-label"))
+      .toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `zoomed-out-from-${start === "the Sun" ? "sun" : "overview"}-${size}.png`,
+      ),
+    });
+  });
+}

@@ -8315,12 +8315,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
         Math.abs(projectedDeepSun.x) <= 1 &&
         Math.abs(projectedDeepSun.y) <= 1;
       setHidden(deepSunLabel, !deepSunInView);
+      // The origin label sits centred under the Sun, below the Sun guide's
+      // label beside the Sun's marker, and the body labels move clear of it.
+      let deepSunLabelRectangle: LabelRectangle | null = null;
       if (deepSunInView) {
-        setTransform(
-          deepSunLabel,
-          ((projectedDeepSun.x + 1) * viewportWidth) / 2,
-          ((-projectedDeepSun.y + 1) * viewportHeight) / 2,
-        );
+        const width = deepSunLabel.offsetWidth;
+        const left = ((projectedDeepSun.x + 1) * viewportWidth) / 2 - width / 2;
+        const top =
+          ((-projectedDeepSun.y + 1) * viewportHeight) / 2 + labelFontPx;
+        setTransform(deepSunLabel, left, top);
+        deepSunLabelRectangle = {
+          left,
+          right: left + width,
+          top,
+          bottom: top + deepSunLabel.offsetHeight,
+        };
       }
 
       setHidden(navigationMap, viewModeRef.current !== "reality");
@@ -9328,6 +9337,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         throw new Error("Body label font size is unavailable");
       }
       const bodyLabelRectangles: LabelRectangle[] = [];
+      const guideLabelRectangles =
+        deepSunLabelRectangle === null
+          ? wayfinderLabelRectangles
+          : [...wayfinderLabelRectangles, deepSunLabelRectangle];
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
         const label = bodyLabels.get(body.id);
@@ -9423,7 +9436,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           fontPx: labelFontPx,
           viewportWidth,
           viewportHeight,
-          guideRectangles: wayfinderLabelRectangles,
+          guideRectangles: guideLabelRectangles,
           bodyRectangles: bodyLabelRectangles,
           panelRectangles:
             body.id === focusedBodyId || isCameraTarget
@@ -9510,7 +9523,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // The easter egg hints placed below give way to these labels.
       hintOccupiedRectangles = [
         ...bodyLabelRectangles,
-        ...wayfinderLabelRectangles,
+        ...guideLabelRectangles,
       ];
       hintPlaces.clear();
       if (current !== undefined) {
