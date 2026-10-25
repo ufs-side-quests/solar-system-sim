@@ -1300,6 +1300,13 @@ export function App() {
   // The view settings from before the active cool shot, or null when no shot
   // runs.
   const viewBeforeShotRef = useRef<ViewSettingsBeforeShot | null>(null);
+  // The focus, selection and Back history from before the active cool shot,
+  // which Stop brings back, or null when no shot runs.
+  const focusBeforeShotRef = useRef<{
+    focusBodyId: string;
+    selectedBodyId: string;
+    historyLength: number;
+  } | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -1855,6 +1862,7 @@ export function App() {
   const endCinematicShot = useCallback((): number | null => {
     const view = viewBeforeShotRef.current;
     viewBeforeShotRef.current = null;
+    focusBeforeShotRef.current = null;
     if (view !== null) {
       setViewMode(view.viewMode);
       setBodyVisibilityPercent(view.bodyVisibilityPercent);
@@ -1973,6 +1981,12 @@ export function App() {
   const exitTour = useCallback((): void => {
     if (endTour() === null) {
       throw new Error("The display settings from before the tour are missing");
+    }
+    // A step on the Sun shows the Solar System around it, so leaving there
+    // lands on the overview; a focused Sun would fill the view.
+    if (focusBodyIdRef.current === "sun") {
+      focusBodyIdRef.current = "";
+      setFocusBodyId("");
     }
     requestResetView();
   }, [endTour, requestResetView]);
@@ -2501,12 +2515,20 @@ export function App() {
   }, [tourKind]);
 
   // Stop removes the shot caption that holds it, so focus goes back to the
-  // button that started the shot.
+  // button that started the shot. The camera goes back to the body the child
+  // had before the shot, or to the overview.
   const shotFocusReturnRef = useRef<Element | null>(null);
   const stopCinematicShot = (): void => {
     const returnTo = shotFocusReturnRef.current;
     shotFocusReturnRef.current = null;
+    const focusBefore = focusBeforeShotRef.current;
     endCinematicShot();
+    if (focusBefore !== null) {
+      focusHistoryRef.current.length = focusBefore.historyLength;
+      focusBodyIdRef.current = focusBefore.focusBodyId;
+      setFocusBodyId(focusBefore.focusBodyId);
+      setSelectedBodyId(focusBefore.selectedBodyId);
+    }
     requestResetView();
     requestAnimationFrame(() => {
       if (returnTo instanceof HTMLElement && returnTo.checkVisibility()) {
@@ -2798,6 +2820,11 @@ export function App() {
       showPlanetTrails,
     };
     playbackBeforeShotRef.current ??= { direction, timeRateIndex };
+    focusBeforeShotRef.current ??= {
+      focusBodyId: focusBodyIdRef.current,
+      selectedBodyId,
+      historyLength: focusHistoryRef.current.length,
+    };
     if (shot.loopEndTimeSeconds !== null) {
       restartSimulation();
     }

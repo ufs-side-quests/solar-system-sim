@@ -48,6 +48,16 @@ async function expectSolarSystemOverview(
   ).toHaveText("Solar System");
 }
 
+// The overview, framed 90 AU out, as on the first screen.
+async function expectOverviewAt90Au(page: Page, scene: Locator): Promise<void> {
+  await expectSolarSystemOverview(page, scene);
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-camera-distance-au")),
+    )
+    .toBeCloseTo(90, 3);
+}
+
 test("every screen names each action with one word", async ({ page }) => {
   test.setTimeout(150_000);
   const scene = await openApp(page, "no-preference");
@@ -268,6 +278,8 @@ for (const [way, leave] of Object.entries(RACE_WAYS_OUT)) {
     await leave(page);
     await expect(racing).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator(".cinematic-shot-caption")).toHaveCount(0);
+    // The race began on the first screen, so the view is the overview again.
+    await expectOverviewAt90Au(page, scene);
     await expect(scene).toHaveAttribute("data-view-mode", "reality");
     await expect(scene).toHaveAttribute("data-planet-trails-visible", "false");
     await expect(page.locator(".playback-rate-control output")).toHaveText(
@@ -297,6 +309,61 @@ for (const [way, leave] of Object.entries(RACE_WAYS_OUT)) {
       "data-outside-validated-window",
       "false",
     );
+  });
+}
+
+test("Stop after the planets race flies back to the body the child had", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const scene = await openApp(page, "reduce");
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  await focus.fill("Mars");
+  await focus.press("Enter");
+  await expect(scene).toHaveAttribute("data-focus-body", "mars");
+  const racing = page.getByRole("button", {
+    name: "Planets racing",
+    exact: true,
+  });
+  await racing.click();
+  await expect(scene).toHaveAttribute("data-focus-body", "sun");
+  await page
+    .locator(".cinematic-shot-caption")
+    .getByRole("button", { name: "Stop" })
+    .click();
+  await expect(racing).toHaveAttribute("aria-pressed", "false");
+  await expect(scene).toHaveAttribute("data-focus-body", "mars");
+  await expect(scene).toHaveAttribute("data-selected-body", "mars");
+  // Back after Stop does not return to the race's Sun.
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expectSolarSystemOverview(page, scene);
+});
+
+// A Scale tour step on the Sun framed the overview 90 AU out before the Sun
+// had its own framing, so leaving the tour there lands on the overview.
+for (const way of ["Exit", "Escape"] as const) {
+  test(`${way} on a Sun step of the Scale tour lands on the overview`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const scene = await openApp(page, "reduce");
+    const tour = page.getByRole("dialog", {
+      name: "Scale of the Solar System tour",
+    });
+    await page.getByRole("button", { name: "Scale tour" }).click();
+    await expect(tour).toHaveAttribute("data-tour-step", "earth");
+    for (let click = 0; click < 2; click += 1) {
+      await tour.getByRole("button", { name: "Next" }).click();
+    }
+    await expect(tour).toHaveAttribute("data-tour-step", "sun-atmosphere");
+    await expect(scene).toHaveAttribute("data-focus-body", "sun");
+    if (way === "Exit") {
+      await tour.getByRole("button", { name: "Exit" }).click();
+    } else {
+      await page.keyboard.press("Escape");
+    }
+    await expect(tour).toHaveCount(0);
+    await expectOverviewAt90Au(page, scene);
   });
 }
 

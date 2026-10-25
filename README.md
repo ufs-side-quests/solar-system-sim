@@ -62,6 +62,7 @@ The race restarts the simulation from the snapshot epoch with a fresh physics wo
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
 While a cool shot is active, the clock runs, and no discovery message shows, a caption names it, says what to watch, and offers Stop; Stop, Home, a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
 A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
+Stop flies back to the object the child had in focus and selected before the shot, or to the Solar System overview when the shot started there.
 When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, except one the child changed in the Display panel during the shot.
 The playback rate and direction from before the shot come back too, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
@@ -358,7 +359,7 @@ If the clock leaves that time, the view says "The Moon's dark shadow is not on E
 A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Fly home, Escape, or choosing another object) restores the display, surface observer, playback rate, and direction settings from before the tour.
-Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x.
+Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x; on a step that focuses the Sun they land on the Solar System overview instead, as a focused Sun would fill the view.
 A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
 When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour for the Solar System overview, as Home does, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
 When focus was inside the tour card, it moves to Fly home.
