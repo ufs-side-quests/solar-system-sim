@@ -91,6 +91,7 @@ import {
   operationalSpacecraftSnapshot,
 } from "../physics/operational-spacecraft";
 import {
+  catalogueMoonFocusDistanceAu,
   focusDistanceAu,
   focusNearPlaneAu,
   portraitFitDistanceAu,
@@ -1140,6 +1141,11 @@ export function SolarSystemScene({
       }
     });
     labelLayer.append(focusedKnownMoonLabel);
+    const focusedKnownMoonMarker = document.createElement("span");
+    focusedKnownMoonMarker.className =
+      "orrery-marker is-selected focused-moon-marker";
+    focusedKnownMoonMarker.hidden = true;
+    markerLayer.append(focusedKnownMoonMarker);
     const issLabel = document.createElement("button");
     issLabel.type = "button";
     issLabel.className = "body-label";
@@ -5183,25 +5189,58 @@ float saturnRingTransmission(vec3 surfacePosition) {
         .normalize();
     };
 
+    // A catalogue moon's parent, which frames the moon: the catalogue has no
+    // radius for it. Undefined for every other body.
+    const catalogueMoonParentPosition = (
+      bodyId: string,
+      current: SimulationState,
+    ): Vector3 | undefined => {
+      const moon = knownSatelliteById.get(bodyId);
+      if (moon === undefined) {
+        return undefined;
+      }
+      const parentState = bodyStateById(current, moon.parentId);
+      if (parentState === undefined) {
+        throw new Error(`The parent of catalogue moon ${bodyId} has no state`);
+      }
+      return scenePosition(parentState.positionM);
+    };
+
     // Spacecraft and fictional models turn off the Sun line so their shadows
-    // show the shape; planets and moons keep the near-full sunlit view.
+    // show the shape; planets and moons keep the near-full sunlit view. A
+    // catalogue moon is seen across the line to its parent, so the parent is
+    // beside its marker, never behind it.
     const sunFacingCameraDirection = (
       bodyId: string,
       bodyPosition: Vector3,
       sunPosition: Vector3,
-      elapsedSeconds: number,
-    ): Vector3 =>
-      spacecraftBoundingRadiusM(bodyId) === undefined
-        ? parentFacingCameraDirection(
-            bodyId,
-            bodyPosition,
-            sunPosition,
-            elapsedSeconds,
-          )
-        : sunlitModelViewDirection(
-            sunPosition.clone().sub(bodyPosition),
-            ECLIPTIC_NORTH,
-          );
+      current: SimulationState,
+    ): Vector3 => {
+      const direction =
+        spacecraftBoundingRadiusM(bodyId) === undefined
+          ? parentFacingCameraDirection(
+              bodyId,
+              bodyPosition,
+              sunPosition,
+              current.timeSeconds,
+            )
+          : sunlitModelViewDirection(
+              sunPosition.clone().sub(bodyPosition),
+              ECLIPTIC_NORTH,
+            );
+      const parentPosition = catalogueMoonParentPosition(bodyId, current);
+      if (parentPosition === undefined) {
+        return direction;
+      }
+      const axis = parentPosition.sub(bodyPosition).normalize();
+      direction.addScaledVector(axis, -direction.dot(axis));
+      if (direction.lengthSq() < 1e-12) {
+        direction
+          .copy(ECLIPTIC_NORTH)
+          .addScaledVector(axis, -ECLIPTIC_NORTH.dot(axis));
+      }
+      return direction.normalize();
+    };
 
     const apolloInspectionPose = (): Readonly<{
       siteId: string;
@@ -5316,6 +5355,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         throw new Error(`Focus body ${requestedFocusBodyId} is unavailable`);
       }
       const focusPosition = scenePosition(focusState.positionM);
+      const catalogueMoonParent = catalogueMoonParentPosition(
+        requestedFocusBodyId,
+        current,
+      );
       const requestedTargetBodyId = cameraTargetBodyIdRef.current;
       const targetState =
         requestedTargetBodyId === undefined
@@ -5366,6 +5409,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
       delete container.dataset["cameraObserverAltitudeKm"];
       delete container.dataset["cameraObserverStyle"];
       const overrideDistance = cameraDistanceOverrideAuRef.current;
+      const bodyFocusDistanceAu = (): number => {
+        if (catalogueMoonParent !== undefined) {
+          return catalogueMoonFocusDistanceAu(
+            focusPosition.distanceTo(catalogueMoonParent),
+            camera.fov,
+            camera.aspect,
+          );
+        }
+        if (focusDefinition === undefined) {
+          throw new Error(`Focus body ${requestedFocusBodyId} has no radius`);
+        }
+        return focusDistanceAu(focusDefinition, bodyVisibilityRef.current);
+      };
       const focusDistance =
         (overrideDistance !== undefined &&
         fitCameraDistanceToPortraitRef.current
@@ -5375,9 +5431,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         // is the null focus above.
         (isSpacecraftFocus
           ? spacecraftFocusDistanceAu(requestedFocusBodyId)
-          : focusDefinition === undefined
-            ? 0.003
-            : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
+          : bodyFocusDistanceAu());
       if (!Number.isFinite(focusDistance) || focusDistance <= 0) {
         throw new Error("Camera focus distance must be positive and finite");
       }
@@ -5393,7 +5447,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               requestedFocusBodyId,
               focusPosition,
               scenePosition(sunState.positionM),
-              current.timeSeconds,
+              current,
             );
       camera.position
         .copy(focusPosition)
@@ -5520,6 +5574,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (
         preset === "sun-facing" &&
+        current !== undefined &&
         focusState !== undefined &&
         sunState !== undefined
       ) {
@@ -5527,7 +5582,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           requestedFocusBodyId ?? "sun",
           target,
           scenePosition(sunState.positionM),
-          current?.timeSeconds ?? 0,
+          current,
         );
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (
@@ -10212,32 +10267,78 @@ float saturnRingTransmission(vec3 surfacePosition) {
         current === undefined || focusedKnownSatelliteId === null
           ? undefined
           : bodyStateById(current, focusedKnownSatelliteId);
+      // The catalogue has no radius for the focused moon, so it has no disc:
+      // in Reality a marker shows where it is. Its name sits on the side
+      // away from its planet, off the planet's disc.
+      let focusedKnownMoonScreen: ScreenPoint | undefined;
       if (
-        showLabelsRef.current &&
+        current !== undefined &&
         focusedKnownSatellite?.availability === "available" &&
         focusedKnownSatelliteState !== undefined
       ) {
         const projected = scenePosition(
           focusedKnownSatelliteState.positionM,
         ).project(camera);
-        const visible =
+        if (
           projected.z >= -1 &&
           projected.z <= 1 &&
           Math.abs(projected.x) <= 1 &&
-          Math.abs(projected.y) <= 1;
-        setHidden(focusedKnownMoonLabel, !visible);
-        if (visible) {
-          focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
-          setData(focusedKnownMoonLabel, "bodyId", focusedKnownSatellite.id);
-          focusedKnownMoonLabel.title = LABEL_TITLE;
-          showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
-          setTransform(
-            focusedKnownMoonLabel,
-            ((projected.x + 1) * viewportWidth) / 2,
-            ((-projected.y + 1) * viewportHeight) / 2,
-          );
-          visibleLabelCount += 1;
+          Math.abs(projected.y) <= 1
+        ) {
+          focusedKnownMoonScreen = {
+            x: ((projected.x + 1) * viewportWidth) / 2,
+            y: ((-projected.y + 1) * viewportHeight) / 2,
+          };
         }
+      }
+      const focusedKnownMoonMarkerVisible =
+        focusedKnownMoonScreen !== undefined &&
+        viewModeRef.current === "reality";
+      setHidden(focusedKnownMoonMarker, !focusedKnownMoonMarkerVisible);
+      if (
+        focusedKnownMoonScreen !== undefined &&
+        focusedKnownMoonMarkerVisible
+      ) {
+        setTransform(
+          focusedKnownMoonMarker,
+          focusedKnownMoonScreen.x,
+          focusedKnownMoonScreen.y,
+        );
+      }
+      if (
+        showLabelsRef.current &&
+        current !== undefined &&
+        focusedKnownSatellite !== undefined &&
+        focusedKnownMoonScreen !== undefined
+      ) {
+        const parentState = bodyStateById(
+          current,
+          focusedKnownSatellite.parentId,
+        );
+        if (parentState === undefined) {
+          throw new Error(
+            `The parent of catalogue moon ${focusedKnownSatellite.id} has no state`,
+          );
+        }
+        const parentProjected = scenePosition(parentState.positionM).project(
+          camera,
+        );
+        setHidden(focusedKnownMoonLabel, false);
+        focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
+        setData(focusedKnownMoonLabel, "bodyId", focusedKnownSatellite.id);
+        focusedKnownMoonLabel.title = LABEL_TITLE;
+        showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
+        focusedKnownMoonLabel.classList.toggle(
+          "is-left-of-point",
+          ((parentProjected.x + 1) * viewportWidth) / 2 >
+            focusedKnownMoonScreen.x,
+        );
+        setTransform(
+          focusedKnownMoonLabel,
+          focusedKnownMoonScreen.x,
+          focusedKnownMoonScreen.y,
+        );
+        visibleLabelCount += 1;
       } else {
         setHidden(focusedKnownMoonLabel, true);
         focusedKnownMoonLabel.classList.remove("is-selected");

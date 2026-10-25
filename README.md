@@ -89,6 +89,7 @@ Each button explains the resulting camera position, while free drag changes the 
 A press on the scene counts as a tap until it moves more than 8 px, so a tap never takes the camera, pauses a tour, or stops a camera journey.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
+The one exception is a focused catalogue moon: a locator ring marks where it is, and the camera looks across the line to its parent planet from far enough out that the planet sits half way from the centre to the edge of the narrower side of the view; the moon's name sits on the side away from the planet, and its card claims no size.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
 Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, or in the open sky beside or above an open card that covers the centre, by the same rule as the lens shift below.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.

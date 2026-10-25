@@ -626,3 +626,71 @@ for (const [start, viewport] of [
     });
   });
 }
+
+// A catalogue moon has no radius, so it has no disc to draw. Focused, it
+// gets a marker, and the camera stands back so its planet is in view
+// beside it; its name keeps off the planet's disc, and the card claims no
+// size.
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+]) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`a focused catalogue moon shows a marker beside its planet at ${size}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    const marker = page.locator(".focused-moon-marker");
+    const jupiter = page.locator('.body-label[data-body-id="jupiter"]');
+    for (const [name, moonId] of [
+      ["Amalthea", "horizons-moon-505"],
+      ["Pasiphae", "horizons-moon-508"],
+    ] as const) {
+      await focus.fill(`${name} (Jupiter)`);
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute("data-focus-body", moonId);
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+      await expect(marker, name).toBeVisible();
+      const sceneBounds = await scene.boundingBox();
+      const markerBounds = await marker.boundingBox();
+      if (sceneBounds === null || markerBounds === null) {
+        throw new Error("The scene or the marker has no box");
+      }
+      expect(markerBounds.x, name).toBeGreaterThan(sceneBounds.x);
+      expect(markerBounds.x + markerBounds.width, name).toBeLessThan(
+        sceneBounds.x + sceneBounds.width,
+      );
+      // Jupiter is on screen too.
+      await expect(jupiter).toHaveAttribute("data-in-camera-frustum", "true");
+      const jupiterX = Number(await jupiter.getAttribute("data-screen-x"));
+      const jupiterY = Number(await jupiter.getAttribute("data-screen-y"));
+      expect(jupiterX, name).toBeGreaterThan(0);
+      expect(jupiterX, name).toBeLessThan(sceneBounds.width);
+      expect(jupiterY, name).toBeGreaterThan(0);
+      expect(jupiterY, name).toBeLessThan(sceneBounds.height);
+      // The moon's name keeps off Jupiter's disc.
+      const moonLabel = page.locator(`.body-label[data-body-id="${moonId}"]`);
+      await expect(moonLabel).toHaveText(name);
+      await expect
+        .poll(() => discReachIntoLabel(scene, "jupiter", moonLabel), {
+          message: `${name} at ${size}`,
+        })
+        .toBeLessThanOrEqual(0);
+      // No size: the catalogue has no radius for it.
+      const card = page.locator(".selected-body-detail");
+      await expect(card).toContainText(name);
+      await expect(card.getByText("Size", { exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`${name.toLowerCase()}-${size}.png`),
+      });
+    }
+  });
+}

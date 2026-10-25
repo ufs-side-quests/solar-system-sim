@@ -70,6 +70,28 @@ export function focusNearPlaneAu(
   );
 }
 
+// A catalogue moon has no radius, so the camera frames it with its parent:
+// seen across the line between them, the parent sits half way from the
+// centre to the edge of the narrower side of the view.
+export function catalogueMoonFocusDistanceAu(
+  separationAu: number,
+  verticalFovDeg: number,
+  aspect: number,
+): number {
+  if (!Number.isFinite(separationAu) || separationAu <= 0) {
+    throw new Error("Catalogue moon separation must be positive and finite");
+  }
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    throw new Error("Camera aspect must be positive and finite");
+  }
+  const halfHeightRad = (verticalFovDeg * Math.PI) / 360;
+  const halfNarrowRad = Math.min(
+    halfHeightRad,
+    Math.atan(Math.tan(halfHeightRad) * aspect),
+  );
+  return separationAu / Math.tan(halfNarrowRad / 2);
+}
+
 // A camera distance tuned for a landscape view. The field of view is vertical,
 // so in a portrait view the camera moves out by the aspect ratio: the region
 // that fits the landscape height then fits the portrait width.
