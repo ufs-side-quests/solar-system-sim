@@ -139,6 +139,7 @@ import {
 import type {
   CameraNavigationCommand,
   CameraOrientationPreset,
+  ZoomLimits,
 } from "./camera-view";
 import {
   circularOrbitSolution,
@@ -832,6 +833,8 @@ type SolarSystemSceneProps = Readonly<{
   onOrbitViewChange(enabled: boolean): void;
   onSemanticZoomChange(level: SemanticZoomLevel): void;
   onViewZoomChange(zoom: number): void;
+  /** Whether Zoom in and Zoom out can still move the camera. */
+  onZoomLimitsChange(limits: ZoomLimits): void;
   /** The camera transition with this sequence has settled or was interrupted. */
   onCameraTransitionSettled(sequence: number): void;
   onGpuStatus(status: SmallBodyGpuStatus): void;
@@ -898,6 +901,7 @@ export function SolarSystemScene({
   onOrbitViewChange,
   onSemanticZoomChange,
   onViewZoomChange,
+  onZoomLimitsChange,
   onCameraTransitionSettled,
   onGpuStatus,
   onGpuError,
@@ -954,6 +958,7 @@ export function SolarSystemScene({
   const manualExposureEvRef = useRef(manualExposureEv);
   const deepSpacePresentationRef = useRef(deepSpacePresentation);
   const onViewZoomChangeRef = useRef(onViewZoomChange);
+  const onZoomLimitsChangeRef = useRef(onZoomLimitsChange);
   const onCameraTransitionSettledRef = useRef(onCameraTransitionSettled);
   const onOrbitViewChangeRef = useRef(onOrbitViewChange);
   const onExposureStatusChangeRef = useRef(onExposureStatusChange);
@@ -1005,6 +1010,7 @@ export function SolarSystemScene({
   manualExposureEvRef.current = manualExposureEv;
   deepSpacePresentationRef.current = deepSpacePresentation;
   onViewZoomChangeRef.current = onViewZoomChange;
+  onZoomLimitsChangeRef.current = onZoomLimitsChange;
   onCameraTransitionSettledRef.current = onCameraTransitionSettled;
   onOrbitViewChangeRef.current = onOrbitViewChange;
   onExposureStatusChangeRef.current = onExposureStatusChange;
@@ -4596,6 +4602,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let lastCameraZoom = Number.NaN;
     let viewZoomReferenceDistanceAu = SOLAR_SYSTEM_CAMERA_POSITION.length();
     let lastReportedViewZoom = Number.NaN;
+    let lastZoomLimitsKey = "";
     let activeFrameEndTime: number | undefined;
     let lastSemanticZoomLevel: SemanticZoomLevel | undefined;
     let lastSmallBodyGpuUpdateAt = Number.NEGATIVE_INFINITY;
@@ -5980,6 +5987,12 @@ float saturnRingTransmission(vec3 surfacePosition) {
       camera.lookAt(controls.target);
     };
 
+    // The farthest distance Zoom out reaches: the controls' limit, or half
+    // the far plane when the controls set none.
+    const zoomOutLimitDistance = (): number =>
+      Number.isFinite(controls.maxDistance)
+        ? controls.maxDistance
+        : camera.far / 2;
     const applyCameraNavigationCommand = (
       command: CameraNavigationCommand,
       requestedFocusBodyId: string | null,
@@ -6008,9 +6021,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       } else {
         const currentDistance = camera.position.distanceTo(controls.target);
         const distanceMultiplier = command.action === "zoom-in" ? 1 / 1.7 : 1.7;
-        const maximumDistance = Number.isFinite(controls.maxDistance)
-          ? controls.maxDistance
-          : camera.far / 2;
+        const maximumDistance = zoomOutLimitDistance();
         const nextDistance = Math.min(
           maximumDistance,
           Math.max(controls.minDistance, currentDistance * distanceMultiplier),
@@ -8031,6 +8042,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
         camera.position.distanceTo(controls.target).toFixed(12),
       );
       const currentViewDistanceAu = camera.position.distanceTo(controls.target);
+      // One press moves 1.7 times; a press that would move under 0.1 % is
+      // a press at the limit.
+      const zoomLimits = {
+        atNearest: currentViewDistanceAu <= controls.minDistance * 1.001,
+        atFarthest: currentViewDistanceAu >= zoomOutLimitDistance() * 0.999,
+      };
+      const zoomLimitsKey = `${String(zoomLimits.atNearest)},${String(zoomLimits.atFarthest)}`;
+      if (zoomLimitsKey !== lastZoomLimitsKey) {
+        lastZoomLimitsKey = zoomLimitsKey;
+        setData(container, "zoomAtNearest", String(zoomLimits.atNearest));
+        setData(container, "zoomAtFarthest", String(zoomLimits.atFarthest));
+        onZoomLimitsChangeRef.current(zoomLimits);
+      }
       const effectiveViewZoom =
         currentViewDistanceAu > 0
           ? camera.zoom * (viewZoomReferenceDistanceAu / currentViewDistanceAu)

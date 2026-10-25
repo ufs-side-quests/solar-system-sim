@@ -88,6 +88,7 @@ import type {
   CameraNavigationAction,
   CameraNavigationCommand,
   CameraOrientationPreset,
+  ZoomLimits,
 } from "./scene/camera-view";
 import {
   circularOrbitSolution,
@@ -1203,6 +1204,10 @@ export function App() {
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
+  const [zoomLimits, setZoomLimits] = useState<ZoomLimits>({
+    atNearest: false,
+    atFarthest: false,
+  });
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -3738,6 +3743,7 @@ export function App() {
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
               onViewZoomChange={reportViewMagnification}
+              onZoomLimitsChange={setZoomLimits}
               onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
@@ -3763,7 +3769,11 @@ export function App() {
               type="button"
               aria-label="Zoom out"
               title="Zoom out"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atFarthest
+              }
               onClick={() => handleCameraNavigation("zoom-out")}
             >
               −
@@ -3772,7 +3782,11 @@ export function App() {
               type="button"
               aria-label="Zoom in"
               title="Zoom in"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atNearest
+              }
               onClick={() => handleCameraNavigation("zoom-in")}
             >
               +
