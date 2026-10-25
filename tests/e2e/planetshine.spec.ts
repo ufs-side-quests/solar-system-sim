@@ -96,6 +96,27 @@ async function cropMean(page: Page, crop: Crop): Promise<number> {
   return sum / (crop.size * crop.size);
 }
 
+/**
+ * The crop moved with the picture. The lens shift slides the whole picture
+ * clear of the card (right by data-lens-shift-px, up by
+ * data-lens-shift-up-px), so a crop measured with no shift follows it.
+ */
+async function shiftedCrop(scene: Locator, crop: Crop): Promise<Crop> {
+  const shift = await scene.evaluate((element) => {
+    const right = element.getAttribute("data-lens-shift-px");
+    const up = element.getAttribute("data-lens-shift-up-px");
+    if (right === null || up === null) {
+      throw new Error("The scene does not report its lens shift");
+    }
+    return { right: Number(right), up: Number(up) };
+  });
+  return {
+    ...crop,
+    left: Math.round(crop.left + shift.right),
+    top: Math.round(crop.top - shift.up),
+  };
+}
+
 /** The fill the scene's geometry predicts, from the surface integral. */
 async function predictedFill(
   scene: Locator,
@@ -159,7 +180,9 @@ for (const model of [
 
     const black = await cropMean(page, SKY);
     expect(black).toBeLessThan(10);
-    expect(await cropMean(page, model.crop)).toBeGreaterThan(black + 10);
+    expect(
+      await cropMean(page, await shiftedCrop(scene, model.crop)),
+    ).toBeGreaterThan(black + 10);
 
     await expect(scene).toHaveAttribute(
       "data-model-planetshine-source",
