@@ -3240,7 +3240,7 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel: "Speed relative to Io",
-        mass: "Made up, so here it weighs nothing",
+        mass: "Made up, so here it does not pull on anything",
         exactMass: "Fictional · excluded from gravity",
         composition: {
           summary:
@@ -3285,7 +3285,7 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Made up, so here it weighs nothing",
+        mass: "Made up, so here it does not pull on anything",
         exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
@@ -3336,7 +3336,7 @@ export function App() {
         speedLabel: isStation
           ? "Speed relative to Callisto"
           : "Patrol speed relative to Deep Space Nine",
-        mass: "Made up, so here it weighs nothing",
+        mass: "Made up, so here it does not pull on anything",
         exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary: isStation
