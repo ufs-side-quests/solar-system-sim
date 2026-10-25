@@ -57,9 +57,14 @@ test("ISS uses physical dimensions and only resolves at close range", async ({
   await expect(
     page.getByText("Speed relative to Earth", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("419,725 kg")).toBeVisible();
-  await expect(page.getByText("Orbit data", { exact: true })).toBeVisible();
+  await expect(page.getByText("About 420 tonnes")).toBeVisible();
+  await expect(page.getByText("Its path", { exact: true })).toBeVisible();
   await expect(page.getByText("109 × 73 m")).toBeVisible();
+  // The exact mass is in More detail.
+  const more = page.locator(".selected-body-more");
+  await more.getByText("More detail", { exact: true }).click();
+  await expect(page.getByText("419,725 kg")).toBeVisible();
+  await more.getByText("More detail", { exact: true }).click();
 
   await page.screenshot({
     path: testInfo.outputPath("iss-focused.png"),

@@ -91,6 +91,7 @@ import {
   operationalSpacecraftSnapshot,
 } from "../physics/operational-spacecraft";
 import {
+  catalogueMoonFocusDistanceAu,
   focusDistanceAu,
   focusNearPlaneAu,
   portraitFitDistanceAu,
@@ -251,7 +252,13 @@ import {
 import { isPhysicalBodyResolvable, orreryLayout } from "./scale";
 import { SmallBodyGpuLayer } from "./SmallBodyGpuLayer";
 import type { SmallBodyGpuStatus } from "./SmallBodyGpuLayer";
-import { pointInsideViewport, rayToViewportEdge } from "./sun-guide";
+import {
+  pointInsideViewport,
+  pointsAroundDisc,
+  rayToViewportEdge,
+  rectangleOverlapsDisc,
+  type ScreenPoint,
+} from "./sun-guide";
 import {
   hipparcosStarSnapshot,
   starDirectionIcrs,
@@ -1136,6 +1143,11 @@ export function SolarSystemScene({
       }
     });
     labelLayer.append(focusedKnownMoonLabel);
+    const focusedKnownMoonMarker = document.createElement("span");
+    focusedKnownMoonMarker.className =
+      "orrery-marker is-selected focused-moon-marker";
+    focusedKnownMoonMarker.hidden = true;
+    markerLayer.append(focusedKnownMoonMarker);
     const issLabel = document.createElement("button");
     issLabel.type = "button";
     issLabel.className = "body-label";
@@ -5190,25 +5202,58 @@ float saturnRingTransmission(vec3 surfacePosition) {
         .normalize();
     };
 
+    // A catalogue moon's parent, which frames the moon: the catalogue has no
+    // radius for it. Undefined for every other body.
+    const catalogueMoonParentPosition = (
+      bodyId: string,
+      current: SimulationState,
+    ): Vector3 | undefined => {
+      const moon = knownSatelliteById.get(bodyId);
+      if (moon === undefined) {
+        return undefined;
+      }
+      const parentState = bodyStateById(current, moon.parentId);
+      if (parentState === undefined) {
+        throw new Error(`The parent of catalogue moon ${bodyId} has no state`);
+      }
+      return scenePosition(parentState.positionM);
+    };
+
     // Spacecraft and fictional models turn off the Sun line so their shadows
-    // show the shape; planets and moons keep the near-full sunlit view.
+    // show the shape; planets and moons keep the near-full sunlit view. A
+    // catalogue moon is seen across the line to its parent, so the parent is
+    // beside its marker, never behind it.
     const sunFacingCameraDirection = (
       bodyId: string,
       bodyPosition: Vector3,
       sunPosition: Vector3,
-      elapsedSeconds: number,
-    ): Vector3 =>
-      spacecraftBoundingRadiusM(bodyId) === undefined
-        ? parentFacingCameraDirection(
-            bodyId,
-            bodyPosition,
-            sunPosition,
-            elapsedSeconds,
-          )
-        : sunlitModelViewDirection(
-            sunPosition.clone().sub(bodyPosition),
-            ECLIPTIC_NORTH,
-          );
+      current: SimulationState,
+    ): Vector3 => {
+      const direction =
+        spacecraftBoundingRadiusM(bodyId) === undefined
+          ? parentFacingCameraDirection(
+              bodyId,
+              bodyPosition,
+              sunPosition,
+              current.timeSeconds,
+            )
+          : sunlitModelViewDirection(
+              sunPosition.clone().sub(bodyPosition),
+              ECLIPTIC_NORTH,
+            );
+      const parentPosition = catalogueMoonParentPosition(bodyId, current);
+      if (parentPosition === undefined) {
+        return direction;
+      }
+      const axis = parentPosition.sub(bodyPosition).normalize();
+      direction.addScaledVector(axis, -direction.dot(axis));
+      if (direction.lengthSq() < 1e-12) {
+        direction
+          .copy(ECLIPTIC_NORTH)
+          .addScaledVector(axis, -ECLIPTIC_NORTH.dot(axis));
+      }
+      return direction.normalize();
+    };
 
     const apolloInspectionPose = (): Readonly<{
       siteId: string;
@@ -5323,6 +5368,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         throw new Error(`Focus body ${requestedFocusBodyId} is unavailable`);
       }
       const focusPosition = scenePosition(focusState.positionM);
+      const catalogueMoonParent = catalogueMoonParentPosition(
+        requestedFocusBodyId,
+        current,
+      );
       const requestedTargetBodyId = cameraTargetBodyIdRef.current;
       const targetState =
         requestedTargetBodyId === undefined
@@ -5373,6 +5422,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
       delete container.dataset["cameraObserverAltitudeKm"];
       delete container.dataset["cameraObserverStyle"];
       const overrideDistance = cameraDistanceOverrideAuRef.current;
+      const bodyFocusDistanceAu = (): number => {
+        if (catalogueMoonParent !== undefined) {
+          return catalogueMoonFocusDistanceAu(
+            focusPosition.distanceTo(catalogueMoonParent),
+            camera.fov,
+            camera.aspect,
+          );
+        }
+        if (focusDefinition === undefined) {
+          throw new Error(`Focus body ${requestedFocusBodyId} has no radius`);
+        }
+        return focusDistanceAu(focusDefinition, bodyVisibilityRef.current);
+      };
       const focusDistance =
         (overrideDistance !== undefined &&
         fitCameraDistanceToPortraitRef.current
@@ -5382,9 +5444,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         // is the null focus above.
         (isSpacecraftFocus
           ? spacecraftFocusDistanceAu(requestedFocusBodyId)
-          : focusDefinition === undefined
-            ? 0.003
-            : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
+          : bodyFocusDistanceAu());
       if (!Number.isFinite(focusDistance) || focusDistance <= 0) {
         throw new Error("Camera focus distance must be positive and finite");
       }
@@ -5400,7 +5460,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
               requestedFocusBodyId,
               focusPosition,
               scenePosition(sunState.positionM),
-              current.timeSeconds,
+              current,
             );
       camera.position
         .copy(focusPosition)
@@ -5527,6 +5587,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (
         preset === "sun-facing" &&
+        current !== undefined &&
         focusState !== undefined &&
         sunState !== undefined
       ) {
@@ -5534,7 +5595,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           requestedFocusBodyId ?? "sun",
           target,
           scenePosition(sunState.positionM),
-          current?.timeSeconds ?? 0,
+          current,
         );
         camera.up.copy(ECLIPTIC_NORTH);
       } else if (
@@ -6149,6 +6210,11 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // minimised or collapsed card leaves the centre clear.
       const leftPanels = panelBoxes(OPEN_SKY_CARD_SELECTOR);
       const rightPanels = panelBoxes(".display-panel");
+      // The controls along the top of the scene, which a guide label moved off
+      // a disc must not hide under.
+      const topPanels = panelBoxes(
+        ".camera-dock, .focus-breadcrumb, .status-cluster, .global-simulation-clock, .reality-navigation-map",
+      );
       const guideObstacles =
         wayfinderModeRef.current === "off"
           ? []
@@ -8374,12 +8440,21 @@ float saturnRingTransmission(vec3 surfacePosition) {
         Math.abs(projectedDeepSun.x) <= 1 &&
         Math.abs(projectedDeepSun.y) <= 1;
       setHidden(deepSunLabel, !deepSunInView);
+      // The origin label sits centred under the Sun, below the Sun guide's
+      // label beside the Sun's marker, and the body labels move clear of it.
+      let deepSunLabelRectangle: LabelRectangle | null = null;
       if (deepSunInView) {
-        setTransform(
-          deepSunLabel,
-          ((projectedDeepSun.x + 1) * viewportWidth) / 2,
-          ((-projectedDeepSun.y + 1) * viewportHeight) / 2,
-        );
+        const width = deepSunLabel.offsetWidth;
+        const left = ((projectedDeepSun.x + 1) * viewportWidth) / 2 - width / 2;
+        const top =
+          ((-projectedDeepSun.y + 1) * viewportHeight) / 2 + labelFontPx;
+        setTransform(deepSunLabel, left, top);
+        deepSunLabelRectangle = {
+          left,
+          right: left + width,
+          top,
+          bottom: top + deepSunLabel.offsetHeight,
+        };
       }
 
       setHidden(navigationMap, viewModeRef.current !== "reality");
@@ -8854,9 +8929,15 @@ float saturnRingTransmission(vec3 surfacePosition) {
                   focalLengthPx,
                 );
           };
-          const subjectDiscRadiusPx = discRadiusPx(
-            cameraTargetBodyIdRef.current ?? focusBodyIdRef.current,
-          );
+          const subjectBodyId =
+            cameraTargetBodyIdRef.current ?? focusBodyIdRef.current;
+          const subjectDiscRadiusPx = discRadiusPx(subjectBodyId);
+          // The subject's disc with a little air around it.
+          const subjectDisc = {
+            x: focusScreen.x,
+            y: focusScreen.y,
+            radius: subjectDiscRadiusPx + 4,
+          };
           let sunLocation: "behind" | "off-screen" | "on-screen" = "on-screen";
           let sunDistanceAu = 0;
           let sunLineVisible = false;
@@ -9036,18 +9117,91 @@ float saturnRingTransmission(vec3 surfacePosition) {
                 setAttr(visual.line, "y2", String(endpoint.y));
               }
             }
-            const preferredLabelX = labelOnRight
-              ? endpoint.x + labelGap
-              : endpoint.x - labelWidth - labelGap;
-            const labelX = Math.min(
-              viewportWidth - labelWidth - labelMargin,
-              Math.max(labelMargin, preferredLabelX),
-            );
             const laneOffset = index === 1 ? 28 : index === 2 ? -28 : 0;
-            const labelY = Math.min(
-              guideFloor(labelX, labelX + labelWidth) - 30,
-              Math.max(30, endpoint.y + laneOffset),
-            );
+            const labelHalfHeight = labelBounds.height / 2;
+            // Where the label sits for a marker at a point, on one side.
+            const labelPlace = (
+              point: ScreenPoint,
+              onRight: boolean,
+            ): Readonly<{
+              x: number;
+              y: number;
+              rectangle: LabelRectangle;
+            }> => {
+              const x = Math.min(
+                viewportWidth - labelWidth - labelMargin,
+                Math.max(
+                  labelMargin,
+                  onRight
+                    ? point.x + labelGap
+                    : point.x - labelWidth - labelGap,
+                ),
+              );
+              const y = Math.min(
+                guideFloor(x, x + labelWidth) - 30,
+                Math.max(30, point.y + laneOffset),
+              );
+              return {
+                x,
+                y,
+                rectangle: {
+                  left: x,
+                  right: x + labelWidth,
+                  top: y - labelHalfHeight,
+                  bottom: y + labelHalfHeight,
+                },
+              };
+            };
+            let place = labelPlace(endpoint, labelOnRight);
+            // A label that would still lie on the subject's disc moves, with
+            // the guide's end, to the nearest place around the disc where it
+            // is clear, on the side away from the disc and out from under the
+            // panels. Where the disc fills all the open sky, as on a phone in
+            // portrait, the label keeps its place.
+            if (
+              targetBodyId !== subjectBodyId &&
+              subjectDiscRadiusPx > 0 &&
+              rectangleOverlapsDisc(place.rectangle, subjectDisc)
+            ) {
+              for (const point of pointsAroundDisc(
+                subjectDisc,
+                {
+                  x: endpoint.x - subjectDisc.x,
+                  y: endpoint.y - subjectDisc.y,
+                },
+                discClearancePx,
+              )) {
+                const candidate = labelPlace(point, point.x >= subjectDisc.x);
+                if (
+                  pointInsideViewport(
+                    point,
+                    viewportWidth,
+                    guideFloor(point.x, point.x),
+                    GUIDE_EDGE_MARGIN_PX,
+                  ) &&
+                  !rectangleOverlapsDisc(candidate.rectangle, subjectDisc) &&
+                  ![...topPanels, ...leftPanels, ...rightPanels].some(
+                    (panel) =>
+                      candidate.rectangle.left < panel.right &&
+                      candidate.rectangle.right > panel.left &&
+                      candidate.rectangle.top < panel.bottom &&
+                      candidate.rectangle.bottom > panel.top,
+                  )
+                ) {
+                  endpoint = point;
+                  place = candidate;
+                  setAttr(visual.endpoint, "cx", String(endpoint.x));
+                  setAttr(visual.endpoint, "cy", String(endpoint.y));
+                  if (lineShown) {
+                    setAttr(visual.line, "x2", String(endpoint.x));
+                    setAttr(visual.line, "y2", String(endpoint.y));
+                  }
+                  break;
+                }
+              }
+            }
+            const labelX = place.x;
+            const labelY = place.y;
             const previousLabelX = Number(visual.label.dataset["positionX"]);
             const previousLabelY = Number(visual.label.dataset["positionY"]);
             const repositionThresholdPx = targetBodyId === "sun" ? 0 : 6;
@@ -9308,6 +9462,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         throw new Error("Body label font size is unavailable");
       }
       const bodyLabelRectangles: LabelRectangle[] = [];
+      const guideLabelRectangles =
+        deepSunLabelRectangle === null
+          ? wayfinderLabelRectangles
+          : [...wayfinderLabelRectangles, deepSunLabelRectangle];
       for (const body of majorBodySnapshot.bodies) {
         const mesh = bodyMeshes.get(body.id);
         const label = bodyLabels.get(body.id);
@@ -9403,7 +9561,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           fontPx: labelFontPx,
           viewportWidth,
           viewportHeight,
-          guideRectangles: wayfinderLabelRectangles,
+          guideRectangles: guideLabelRectangles,
           bodyRectangles: bodyLabelRectangles,
           panelRectangles:
             body.id === focusedBodyId || isCameraTarget
@@ -9490,7 +9648,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
       // The easter egg hints placed below give way to these labels.
       hintOccupiedRectangles = [
         ...bodyLabelRectangles,
-        ...wayfinderLabelRectangles,
+        ...guideLabelRectangles,
       ];
       hintPlaces.clear();
       if (current !== undefined) {
@@ -10179,32 +10337,78 @@ float saturnRingTransmission(vec3 surfacePosition) {
         current === undefined || focusedKnownSatelliteId === null
           ? undefined
           : bodyStateById(current, focusedKnownSatelliteId);
+      // The catalogue has no radius for the focused moon, so it has no disc:
+      // in Reality a marker shows where it is. Its name sits on the side
+      // away from its planet, off the planet's disc.
+      let focusedKnownMoonScreen: ScreenPoint | undefined;
       if (
-        showLabelsRef.current &&
+        current !== undefined &&
         focusedKnownSatellite?.availability === "available" &&
         focusedKnownSatelliteState !== undefined
       ) {
         const projected = scenePosition(
           focusedKnownSatelliteState.positionM,
         ).project(camera);
-        const visible =
+        if (
           projected.z >= -1 &&
           projected.z <= 1 &&
           Math.abs(projected.x) <= 1 &&
-          Math.abs(projected.y) <= 1;
-        setHidden(focusedKnownMoonLabel, !visible);
-        if (visible) {
-          focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
-          setData(focusedKnownMoonLabel, "bodyId", focusedKnownSatellite.id);
-          focusedKnownMoonLabel.title = LABEL_TITLE;
-          showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
-          setTransform(
-            focusedKnownMoonLabel,
-            ((projected.x + 1) * viewportWidth) / 2,
-            ((-projected.y + 1) * viewportHeight) / 2,
-          );
-          visibleLabelCount += 1;
+          Math.abs(projected.y) <= 1
+        ) {
+          focusedKnownMoonScreen = {
+            x: ((projected.x + 1) * viewportWidth) / 2,
+            y: ((-projected.y + 1) * viewportHeight) / 2,
+          };
         }
+      }
+      const focusedKnownMoonMarkerVisible =
+        focusedKnownMoonScreen !== undefined &&
+        viewModeRef.current === "reality";
+      setHidden(focusedKnownMoonMarker, !focusedKnownMoonMarkerVisible);
+      if (
+        focusedKnownMoonScreen !== undefined &&
+        focusedKnownMoonMarkerVisible
+      ) {
+        setTransform(
+          focusedKnownMoonMarker,
+          focusedKnownMoonScreen.x,
+          focusedKnownMoonScreen.y,
+        );
+      }
+      if (
+        showLabelsRef.current &&
+        current !== undefined &&
+        focusedKnownSatellite !== undefined &&
+        focusedKnownMoonScreen !== undefined
+      ) {
+        const parentState = bodyStateById(
+          current,
+          focusedKnownSatellite.parentId,
+        );
+        if (parentState === undefined) {
+          throw new Error(
+            `The parent of catalogue moon ${focusedKnownSatellite.id} has no state`,
+          );
+        }
+        const parentProjected = scenePosition(parentState.positionM).project(
+          camera,
+        );
+        setHidden(focusedKnownMoonLabel, false);
+        focusedKnownMoonLabel.textContent = focusedKnownSatellite.name;
+        setData(focusedKnownMoonLabel, "bodyId", focusedKnownSatellite.id);
+        focusedKnownMoonLabel.title = LABEL_TITLE;
+        showLabelSelection(focusedKnownMoonLabel, focusedKnownSatellite.id);
+        focusedKnownMoonLabel.classList.toggle(
+          "is-left-of-point",
+          ((parentProjected.x + 1) * viewportWidth) / 2 >
+            focusedKnownMoonScreen.x,
+        );
+        setTransform(
+          focusedKnownMoonLabel,
+          focusedKnownMoonScreen.x,
+          focusedKnownMoonScreen.y,
+        );
+        visibleLabelCount += 1;
       } else {
         setHidden(focusedKnownMoonLabel, true);
         focusedKnownMoonLabel.classList.remove("is-selected");

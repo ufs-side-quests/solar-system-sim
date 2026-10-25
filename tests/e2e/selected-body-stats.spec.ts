@@ -30,10 +30,7 @@ test("selected body stats identify their source and velocity reference", async (
   ).toBeVisible();
   await page.getByText("More detail", { exact: true }).click();
   await expect(page.getByText("5.9722 × 10²⁴ kg")).toBeVisible();
-  await page.getByText("More detail", { exact: true }).click();
-  await expect(
-    page.getByText("Speed relative to the Sun", { exact: true }),
-  ).toBeVisible();
+  // Composition is under More detail.
   await expect(page.getByText("Composition", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
@@ -44,6 +41,10 @@ test("selected body stats identify their source and velocity reference", async (
     "href",
     "https://science.nasa.gov/earth/facts/",
   );
+  await page.getByText("More detail", { exact: true }).click();
+  await expect(
+    page.getByText("Speed relative to the Sun", { exact: true }),
+  ).toBeVisible();
 
   await selectFocus(focus, "Moon");
   await expect(scene).toHaveAttribute("data-focus-body", "moon");
@@ -489,4 +490,52 @@ test("the card and the time line use words a child can read", async ({
   const time = page.locator(".time-readout output");
   await expect(time).toHaveText(/after the start$/u);
   await expect(time).toHaveAttribute("title", /^TDB \+/u);
+});
+
+test("spacecraft and fictional cards use plain words, with exact values in More detail", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const more = card.locator(".selected-body-more");
+  const mainText = async (): Promise<string> =>
+    card.evaluate((element) => {
+      const copy = element.cloneNode(true) as HTMLElement;
+      copy.querySelector(".selected-body-more")?.remove();
+      return copy.textContent;
+    });
+  const jargon =
+    /Orbit data|Horizons|Hermite|REBOUND|two-body|massless|gravity|barycentric|Display-only|Canonical|\d,\d{3} kg|Maximum footprint|Unknown · fictional|Fictional ·/u;
+
+  for (const [name, bodyId, heavy] of [
+    ["Hubble Space Telescope", "hubble", "About 11 tonnes"],
+    ["Voyager 1 (interstellar space)", "voyager-1", "About 733 kg"],
+    ["International Space Station (Earth)", "iss", "About 420 tonnes"],
+    ["Death Star I (fictional)", "death-star-1", "Made up"],
+    ["Discovery One (fictional)", "discovery-one", "Made up"],
+    ["Jovian Monolith (fictional)", "jovian-monolith", "Nobody knows"],
+  ] as const) {
+    await selectFocus(focus, name);
+    await expect(scene).toHaveAttribute("data-focus-body", bodyId);
+    await expect(card).toContainText("How heavy");
+    await expect(card).toContainText("Its path");
+    await expect(card).toContainText(heavy);
+    expect(await mainText(), name).not.toMatch(jargon);
+    await more.getByText("More detail", { exact: true }).click();
+    await expect(more).toContainText("Orbit data");
+    await expect(more).toContainText("Mass");
+    await more.getByText("More detail", { exact: true }).click();
+  }
 });

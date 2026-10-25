@@ -490,3 +490,207 @@ test("real bodies win label space over a hidden-surprise hint", async ({
     path: testInfo.outputPath("sun-zoomed-out-labels.png"),
   });
 });
+
+// A guide label never lies on the subject: the Sun guide of a focused
+// planet keeps clear of its disc once the flight ends. On a phone in
+// portrait the disc fills all the open sky, so there the label keeps its
+// place (sun-guide.spec taps it).
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 768, height: 1024 },
+]) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`the Sun guide label lies clear of a focused planet's disc at ${size}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    const sunGuide = page.locator(".sun-guide-label");
+    for (const name of ["Mars", "Jupiter", "Venus"]) {
+      await focus.fill(name);
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute(
+        "data-focus-body",
+        name.toLowerCase(),
+      );
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+      await expect(sunGuide).toBeVisible();
+      await expect
+        .poll(() => discReachIntoLabel(scene, name.toLowerCase(), sunGuide), {
+          timeout: 10_000,
+          message: `${name} at ${size}`,
+        })
+        .toBeLessThanOrEqual(0);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `${name.toLowerCase()}-sun-guide-${size}.png`,
+        ),
+      });
+    }
+  });
+}
+
+// Every visible body or guide label whose text overlaps the text of the
+// labels the selector names.
+async function labelOverlaps(
+  scene: Locator,
+  selector: string,
+): Promise<string[]> {
+  return scene.evaluate((element, chosen) => {
+    const visible = (label: Element): DOMRect | null => {
+      if (!(label instanceof HTMLElement) || label.hidden) return null;
+      if (getComputedStyle(label).display === "none") return null;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const box = range.getBoundingClientRect();
+      return box.width > 0 ? box : null;
+    };
+    const found: string[] = [];
+    for (const label of element.querySelectorAll(chosen)) {
+      const a = visible(label);
+      if (a === null) continue;
+      for (const other of element.querySelectorAll(
+        ".body-label, .wayfinder-label",
+      )) {
+        const b = visible(other);
+        if (
+          b !== null &&
+          a.left < b.right &&
+          a.right > b.left &&
+          a.top < b.bottom &&
+          a.bottom > b.top
+        ) {
+          found.push(`${label.textContent} on ${other.textContent}`);
+        }
+      }
+    }
+    return found;
+  }, selector);
+}
+
+// Zoomed out past the planets, the Sun's origin label names the Sun beside
+// its guide label and the planets' names.
+for (const [start, viewport] of [
+  ["the overview", { width: 1280, height: 800 }],
+  ["the overview", { width: 768, height: 1024 }],
+  ["the overview", { width: 390, height: 844 }],
+  ["the Sun", { width: 1280, height: 800 }],
+] as const) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`zoomed out from ${start} at ${size}, the Sun's origin label keeps clear of the other labels`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const zoomOut = page.getByRole("button", { name: "Zoom out" });
+    const origin = page.locator(".deep-space-sun-label");
+    if (start === "the Sun") {
+      const focus = page.getByRole("combobox", { name: "Focus" });
+      await focus.fill("Sun");
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute("data-focus-body", "sun");
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+    }
+    // The origin label shows from 150 AU out; each press moves 1.7 times
+    // farther.
+    for (let press = 0; press < 20 && !(await origin.isVisible()); press += 1) {
+      const before = await scene.getAttribute(
+        "data-camera-navigation-sequence",
+      );
+      await zoomOut.click();
+      await expect(scene).not.toHaveAttribute(
+        "data-camera-navigation-sequence",
+        before ?? "",
+      );
+    }
+    await expect(origin).toBeVisible();
+    await expect(page.locator(".sun-guide-label")).toBeVisible();
+    await expect
+      .poll(() => labelOverlaps(scene, ".deep-space-sun-label"))
+      .toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `zoomed-out-from-${start === "the Sun" ? "sun" : "overview"}-${size}.png`,
+      ),
+    });
+  });
+}
+
+// A catalogue moon has no radius, so it has no disc to draw. Focused, it
+// gets a marker, and the camera stands back so its planet is in view
+// beside it; its name keeps off the planet's disc, and the card claims no
+// size.
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+]) {
+  const size = `${String(viewport.width)}x${String(viewport.height)}`;
+  test(`a focused catalogue moon shows a marker beside its planet at ${size}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(viewport);
+    const scene = await pausedScene(page);
+    const focus = page.getByRole("combobox", { name: "Focus" });
+    const marker = page.locator(".focused-moon-marker");
+    const jupiter = page.locator('.body-label[data-body-id="jupiter"]');
+    for (const [name, moonId] of [
+      ["Amalthea", "horizons-moon-505"],
+      ["Pasiphae", "horizons-moon-508"],
+    ] as const) {
+      await focus.fill(`${name} (Jupiter)`);
+      await focus.press("Enter");
+      await expect(scene).toHaveAttribute("data-focus-body", moonId);
+      await expect(scene).toHaveAttribute(
+        "data-camera-transition-phase",
+        "settled",
+        { timeout: 30_000 },
+      );
+      await expect(marker, name).toBeVisible();
+      const sceneBounds = await scene.boundingBox();
+      const markerBounds = await marker.boundingBox();
+      if (sceneBounds === null || markerBounds === null) {
+        throw new Error("The scene or the marker has no box");
+      }
+      expect(markerBounds.x, name).toBeGreaterThan(sceneBounds.x);
+      expect(markerBounds.x + markerBounds.width, name).toBeLessThan(
+        sceneBounds.x + sceneBounds.width,
+      );
+      // Jupiter is on screen too.
+      await expect(jupiter).toHaveAttribute("data-in-camera-frustum", "true");
+      const jupiterX = Number(await jupiter.getAttribute("data-screen-x"));
+      const jupiterY = Number(await jupiter.getAttribute("data-screen-y"));
+      expect(jupiterX, name).toBeGreaterThan(0);
+      expect(jupiterX, name).toBeLessThan(sceneBounds.width);
+      expect(jupiterY, name).toBeGreaterThan(0);
+      expect(jupiterY, name).toBeLessThan(sceneBounds.height);
+      // The moon's name keeps off Jupiter's disc.
+      const moonLabel = page.locator(`.body-label[data-body-id="${moonId}"]`);
+      await expect(moonLabel).toHaveText(name);
+      await expect
+        .poll(() => discReachIntoLabel(scene, "jupiter", moonLabel), {
+          message: `${name} at ${size}`,
+        })
+        .toBeLessThanOrEqual(0);
+      // No size: the catalogue has no radius for it.
+      const card = page.locator(".selected-body-detail");
+      await expect(card).toContainText(name);
+      await expect(card.getByText("Size", { exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`${name.toLowerCase()}-${size}.png`),
+      });
+    }
+  });
+}

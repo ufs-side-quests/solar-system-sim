@@ -871,6 +871,11 @@ h1 {
   box-shadow: 0 0 0 5px rgb(2 5 9 / 88%);
 }
 
+/* A name on the left of its point, away from the planet beside it. */
+.body-label.is-left-of-point {
+  translate: calc(-100% - 0.55rem) -50%;
+}
+
 .body-label.is-bracket {
   color: var(--accent-strong);
 }
@@ -2372,6 +2377,24 @@ h1 {
   );
   overflow-y: auto;
   border-radius: 1rem;
+}
+
+/* Sticks to the card's foot while more is below; the negative margin keeps it
+   from adding to the scroll height. Taps go through to the row under it. */
+.selected-body-more-below {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  height: 2.2rem;
+  margin-top: -2.2rem;
+  padding-bottom: 0.3rem;
+  background: linear-gradient(transparent, var(--surface-strong) 70%);
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .selected-body-detail.is-collapsed {

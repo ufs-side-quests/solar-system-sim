@@ -49,7 +49,9 @@ After the child taps one, the narrower globe shrinks to its true size, a "Wider"
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 The card's "How heavy" row compares the sourced mass with Earth's, such as "As heavy as 318 Earths" for Jupiter or "Earth is about 81 times heavier" for the Moon.
 Exact mass in kilograms, exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and the kind of surface map in plain words (such as "Real spacecraft pictures joined into one map") remain under More detail.
-The ISS card says "From the centre of Earth" and whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+The ISS card says "From the centre of Earth" and, under "Its path", whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+Spacecraft and fictional cards use the same plain rows: "How big", "Its path" (such as "Real: NASA's tracking of its path round Earth" or "From a story: a simple circle around Io, 400 km up"), and "How heavy" in tonnes or kilograms (such as "About 11 tonnes"), or that a made-up object weighs nothing here.
+The exact mass and the orbit data (the Horizons solution, interpolation, or the fictional orbit's model) are under More detail.
 The time controls say how far the clock is from the start in plain words, such as "4 hours after the start"; the exact TDB offset is the line's tooltip.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
@@ -62,6 +64,7 @@ The race restarts the simulation from the snapshot epoch with a fresh physics wo
 When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
 While a cool shot is active, the clock runs, and no discovery message shows, a caption names it, says what to watch, and offers Stop; Stop, Home, a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
 A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
+Stop flies back to the object the child had in focus and selected before the shot, or to the Solar System overview when the shot started there.
 When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, except one the child changed in the Display panel during the shot.
 The playback rate and direction from before the shot come back too, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
@@ -86,11 +89,14 @@ Each button explains the resulting camera position, while free drag changes the 
 A press on the scene counts as a tap until it moves more than 8 px, so a tap never takes the camera, pauses a tour, or stops a camera journey.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
+The one exception is a focused catalogue moon: a locator ring marks where it is, and the camera looks across the line to its parent planet from far enough out that the planet sits half way from the centre to the edge of the narrower side of the view; the moon's name sits on the side away from the planet, and its card claims no size.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
 Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, or in the open sky beside or above an open card that covers the centre, by the same rule as the lens shift below.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
 Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
+A guide label never lies on the focused body's disc: when its usual place would, the guide ends at the nearest place around the disc where its label is clear.
+Zoomed out past 150 AU, the "Sun · Solar System origin" label sits centred under the Sun, below the Sun guide's label, and body labels move clear of it.
 Body and wayfinder labels are borderless transparent annotations at 0.7rem or larger; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
 A label focused from the keyboard shows a 2 px accent ring on a dark chip, which keeps the ring readable over the Sun's disc; the navigation map shows the same ring.
 The time controls support paused, stepped, and continuous forward or backward integration from one second per real second through one simulated year per real second.
@@ -325,6 +331,7 @@ Readouts that follow the scene every frame (exposure, magnification, orbit fligh
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
+Typed text matches the start of a word, never letters inside one: names that start with it come first, then names with a later word that starts with it, such as a moon's planet in "Pan (Saturn)", then whole category words such as "satellite" or "telescope", so "Sat" lists Saturn and its moons.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
 Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
 Focusing the Sun frames its disc from its own radius, as for every other body; the full-system 90 AU framing belongs to the Solar System overview, which Home and the "Solar System" breadcrumb open.
@@ -337,6 +344,8 @@ The optional Orrery minor-body trail uses fading screen-space history of actual 
 Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
 When the installed Horizons satellite catalogue does not provide mass, composition or a surface map, the card leaves that row out rather than substituting an estimate.
+The sourced composition sits first under More detail, so the card's face fits a 1280 by 800 screen for most bodies.
+A card still taller than the room between the navigation map and the time controls scrolls inside itself under its fixed heading, and a "More below" cue at its foot shows until the child reaches the end.
 Re-centre or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
 On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
 At every screen size a tour (the Scale tour or the Eclipse story) shows only the clock and the tour card; the command bar, camera dock, time controls, and navigation map come back when it ends.
@@ -360,7 +369,7 @@ If the clock leaves that time, the view says "The Moon's dark shadow is not on E
 A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
 A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
 Any way out of a tour (Exit, Fly home, Escape, or choosing another object) restores the display, surface observer, playback rate, and direction settings from before the tour.
-Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x.
+Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x; on a step that focuses the Sun they land on the Solar System overview instead, as a focused Sun would fill the view.
 A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
 When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour for the Solar System overview, as Home does, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
 When focus was inside the tour card, it moves to Fly home.

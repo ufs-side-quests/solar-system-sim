@@ -86,6 +86,7 @@ import {
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
   EARTH_MASS_KG,
   formatMassComparedWithEarth,
+  formatPlainCraftMass,
   PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
 } from "./scene/body-physical-facts";
 import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
@@ -659,6 +660,49 @@ const FOCUS_BROWSE_OPTIONS = NON_EGG_OPTIONS.filter(
   (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
 );
 
+// How well typed text matches an option: 0 at the start of its name, 1 at
+// the start of a later word of its name, 2 as whole words of its other
+// search words (a category such as "satellite", or a story such as
+// "2001"), or undefined. Letters inside a word match nothing, so "Sat"
+// lists Saturn and its moons, not every moon that is a satellite.
+function focusMatchRank(
+  option: FocusOption,
+  normalizedInput: string,
+): number | undefined {
+  const label = option.label.toLocaleLowerCase();
+  if (label.startsWith(normalizedInput)) {
+    return 0;
+  }
+  const escaped = normalizedInput.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  if (new RegExp(`[^\\p{L}\\p{N}]${escaped}`, "u").test(label)) {
+    return 1;
+  }
+  return new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`,
+    "u",
+  ).test(option.searchText.toLocaleLowerCase())
+    ? 2
+    : undefined;
+}
+
+// The options that match typed text, names first, each rank in list order.
+function focusSearchResults(
+  options: readonly FocusOption[],
+  normalizedInput: string,
+): FocusOption[] {
+  return options
+    .map((option) => ({
+      option,
+      rank: focusMatchRank(option, normalizedInput),
+    }))
+    .filter(
+      (match): match is { option: FocusOption; rank: number } =>
+        match.rank !== undefined,
+    )
+    .sort((a, b) => a.rank - b.rank)
+    .map((match) => match.option);
+}
+
 const FocusSelect = memo(function FocusSelect({
   value,
   foundEasterEggIds,
@@ -737,9 +781,7 @@ const FocusSelect = memo(function FocusSelect({
       setFilteredOptions(
         normalizedInput.length === 0
           ? browseOptions
-          : searchOptions.filter((option) =>
-              option.searchText.toLocaleLowerCase().includes(normalizedInput),
-            ),
+          : focusSearchResults(searchOptions, normalizedInput),
       );
     },
     onSelectedItemChange: ({ selectedItem }) => {
@@ -1300,6 +1342,13 @@ export function App() {
   // The view settings from before the active cool shot, or null when no shot
   // runs.
   const viewBeforeShotRef = useRef<ViewSettingsBeforeShot | null>(null);
+  // The focus, selection and Back history from before the active cool shot,
+  // which Stop brings back, or null when no shot runs.
+  const focusBeforeShotRef = useRef<{
+    focusBodyId: string;
+    selectedBodyId: string;
+    historyLength: number;
+  } | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -1327,6 +1376,42 @@ export function App() {
   } | null>(null);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
     useState(matchesPhoneLayout);
+  // The card scrolls inside itself when it is taller than the room under the
+  // map. A cue at its foot shows while more is below.
+  const [cardMoreBelow, setCardMoreBelow] = useState(false);
+  const cardWatchStopRef = useRef<(() => void) | null>(null);
+  const selectedBodyCardRef = useCallback((card: HTMLElement | null): void => {
+    cardWatchStopRef.current?.();
+    cardWatchStopRef.current = null;
+    if (card === null) {
+      return;
+    }
+    const update = (): void => {
+      setCardMoreBelow(
+        card.scrollTop + card.clientHeight < card.scrollHeight - 1,
+      );
+    };
+    // The card's own height and the height of each part it holds (More
+    // detail opening, a collapse) change how much is below.
+    const resize = new ResizeObserver(update);
+    const watchParts = (): void => {
+      resize.disconnect();
+      resize.observe(card);
+      for (const part of card.children) {
+        resize.observe(part);
+      }
+      update();
+    };
+    const parts = new MutationObserver(watchParts);
+    parts.observe(card, { childList: true });
+    card.addEventListener("scroll", update, { passive: true });
+    watchParts();
+    cardWatchStopRef.current = () => {
+      resize.disconnect();
+      parts.disconnect();
+      card.removeEventListener("scroll", update);
+    };
+  }, []);
   // A screen that becomes a phone (a resize or a turn) also makes the card
   // short.
   const [cardPhoneLayout, setCardPhoneLayout] = useState(phoneLayout);
@@ -1855,6 +1940,7 @@ export function App() {
   const endCinematicShot = useCallback((): number | null => {
     const view = viewBeforeShotRef.current;
     viewBeforeShotRef.current = null;
+    focusBeforeShotRef.current = null;
     if (view !== null) {
       setViewMode(view.viewMode);
       setBodyVisibilityPercent(view.bodyVisibilityPercent);
@@ -1973,6 +2059,12 @@ export function App() {
   const exitTour = useCallback((): void => {
     if (endTour() === null) {
       throw new Error("The display settings from before the tour are missing");
+    }
+    // A step on the Sun shows the Solar System around it, so leaving there
+    // lands on the overview; a focused Sun would fill the view.
+    if (focusBodyIdRef.current === "sun") {
+      focusBodyIdRef.current = "";
+      setFocusBodyId("");
     }
     requestResetView();
   }, [endTour, requestResetView]);
@@ -2501,12 +2593,20 @@ export function App() {
   }, [tourKind]);
 
   // Stop removes the shot caption that holds it, so focus goes back to the
-  // button that started the shot.
+  // button that started the shot. The camera goes back to the body the child
+  // had before the shot, or to the overview.
   const shotFocusReturnRef = useRef<Element | null>(null);
   const stopCinematicShot = (): void => {
     const returnTo = shotFocusReturnRef.current;
     shotFocusReturnRef.current = null;
+    const focusBefore = focusBeforeShotRef.current;
     endCinematicShot();
+    if (focusBefore !== null) {
+      focusHistoryRef.current.length = focusBefore.historyLength;
+      focusBodyIdRef.current = focusBefore.focusBodyId;
+      setFocusBodyId(focusBefore.focusBodyId);
+      setSelectedBodyId(focusBefore.selectedBodyId);
+    }
     requestResetView();
     requestAnimationFrame(() => {
       if (returnTo instanceof HTMLElement && returnTo.checkVisibility()) {
@@ -2798,6 +2898,11 @@ export function App() {
       showPlanetTrails,
     };
     playbackBeforeShotRef.current ??= { direction, timeRateIndex };
+    focusBeforeShotRef.current ??= {
+      focusBodyId: focusBodyIdRef.current,
+      selectedBodyId,
+      historyLength: focusHistoryRef.current.length,
+    };
     if (shot.loopEndTimeSeconds !== null) {
       restartSimulation();
     }
@@ -3094,7 +3199,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Unknown · fictional",
+        mass: "Nobody knows: it is from a story",
+        exactMass: "Unknown · fictional",
         composition: {
           summary:
             "Unknown fictional material; the story does not provide a physical composition",
@@ -3103,8 +3209,14 @@ export function App() {
             "https://www.nasa.gov/history/50-years-ago-1968-welcomed-2001/",
         },
         dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString("en-GB")} m · 1:4:9`,
-        ephemerisStatus:
-          "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+        path: "From a story: it floats between Jupiter and Io",
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+          },
+        ],
       };
     }
     if (isDiscoveryOne) {
@@ -3128,7 +3240,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel: "Speed relative to Io",
-        mass: "Fictional · excluded from gravity",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · excluded from gravity",
         composition: {
           summary:
             "Fictional crewed spacecraft with command sphere, long truss spine and nuclear propulsion module",
@@ -3136,7 +3249,13 @@ export function App() {
           sourceUrl: asset.pageUrl,
         },
         dimensionsM: `${DISCOVERY_ONE_LENGTH_M.toFixed(1)} m long · ${DISCOVERY_ONE_MAXIMUM_DIAMETER_M.toFixed(1)} m maximum diameter`,
-        ephemerisStatus: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+        path: `From a story: a simple circle around Io, ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km up`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+          },
+        ],
       };
     }
     if (isFictionalOrbiter) {
@@ -3166,7 +3285,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Fictional · treated as a massless visualization",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
             "Fictional armoured space station; no real mass or material properties are assigned",
@@ -3177,8 +3297,14 @@ export function App() {
           sourceUrl: licensedAsset?.pageUrl ?? orbiter.sourceUrl,
         },
         dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString("en-GB")} km diameter`,
-        ephemerisStatus:
-          "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+        path: `From a story: a simple circle around ${parentDefinition?.name ?? orbiter.parentBodyId}`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+          },
+        ],
       };
     }
     if (isDeepSpaceNineObject) {
@@ -3210,7 +3336,8 @@ export function App() {
         speedLabel: isStation
           ? "Speed relative to Callisto"
           : "Patrol speed relative to Deep Space Nine",
-        mass: "Fictional · treated as a massless visualization",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary: isStation
             ? "Fictional Cardassian-built orbital station with docking rings and pylons"
@@ -3225,9 +3352,17 @@ export function App() {
         dimensionsM: isStation
           ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString("en-GB")} m diameter`
           : `${USS_DEFIANT_LENGTH_M.toFixed(2)} m long`,
-        ephemerisStatus: isStation
-          ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
-          : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+        path: isStation
+          ? `From a story: a simple circle ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km above Callisto`
+          : `From a story: it flies round Deep Space Nine every ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minutes`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: isStation
+              ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
+              : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+          },
+        ],
       };
     }
     if (definition === undefined) {
@@ -3257,16 +3392,31 @@ export function App() {
           speedLabel,
           mass:
             bodyId === "roadster"
+              ? `${formatPlainCraftMass(operationalSpacecraft.massKg)}: the car alone`
+              : formatPlainCraftMass(operationalSpacecraft.massKg),
+          exactMass:
+            bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
               : formatMassKg(operationalSpacecraft.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(operationalSpacecraft.maximumDimensionM)} m maximum dimension`,
-          ephemerisStatus:
+          path:
             bodyId === "roadster"
-              ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+              ? "Real: worked out from 374 telescope sightings, up to 2090"
               : operationalSpacecraft.center === "500@399"
-                ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
-                : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+                ? "Real: NASA's tracking of its path round Earth"
+                : "Real: NASA's tracking of its path",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                bodyId === "roadster"
+                  ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+                  : operationalSpacecraft.center === "500@399"
+                    ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
+                    : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+            },
+          ],
         };
       }
       if (isVoyager) {
@@ -3286,11 +3436,18 @@ export function App() {
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel: "Speed relative to the Sun",
-          mass: formatMassKg(voyager.massKg),
+          mass: formatPlainCraftMass(voyager.massKg),
+          exactMass: formatMassKg(voyager.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(voyager.maximumDimensionM)} m span · ${String(voyager.highGainAntennaDiameterM)} m antenna`,
-          ephemerisStatus:
-            "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+          path: "Real: starts from NASA's 2026 tracking, then the simulation moves it",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+            },
+          ],
         };
       }
       if (isIss) {
@@ -3316,10 +3473,11 @@ export function App() {
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel,
-          mass: formatMassKg(issSnapshot.physicalDimensions.massKg),
+          mass: formatPlainCraftMass(issSnapshot.physicalDimensions.massKg),
+          exactMass: formatMassKg(issSnapshot.physicalDimensions.massKg),
           composition,
           dimensionsM: `${String(issSnapshot.physicalDimensions.overallEndToEndM)} × ${String(issSnapshot.physicalDimensions.solarArrayLengthM)} m`,
-          ephemerisStatus: isIssEphemerisWithinValidity(state.timeSeconds)
+          path: isIssEphemerisWithinValidity(state.timeSeconds)
             ? "Up to date for this day"
             : `Not shown: we only know where it is near ${formatPlainSimulationDate(ISS_EPOCH_SIMULATION_SECONDS)}`,
           technicalRows: [
@@ -4346,6 +4504,7 @@ export function App() {
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
           <aside
+            ref={selectedBodyCardRef}
             className={
               selectedBodyPanelCollapsed
                 ? "selected-body-detail is-collapsed"
@@ -4542,8 +4701,14 @@ export function App() {
                 )}
                 {selectedBodyDetail.dimensionsM === undefined ? null : (
                   <span>
-                    <small>Maximum footprint</small>
+                    <small>How big</small>
                     {selectedBodyDetail.dimensionsM}
+                  </span>
+                )}
+                {selectedBodyDetail.path === undefined ? null : (
+                  <span>
+                    <small>Its path</small>
+                    {selectedBodyDetail.path}
                   </span>
                 )}
                 {selectedBodyDetail.ephemerisStatus === undefined ? null : (
@@ -4579,28 +4744,29 @@ export function App() {
                     {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
                   </span>
                 )}
-                {selectedBodyDetail.composition === undefined ? null : (
-                  <span className="selected-body-composition">
-                    <small>
-                      <span>Composition</span>
-                      <a
-                        href={selectedBodyDetail.composition.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Source: ${selectedBodyDetail.composition.authority}`}
-                      >
-                        Source
-                      </a>
-                    </small>
-                    {selectedBodyDetail.composition.summary}
-                  </span>
-                )}
                 {selectedBodyDetail.distanceRows === undefined &&
                 selectedBodyDetail.surfaceTechnical === undefined &&
-                selectedBodyDetail.technicalRows === undefined ? null : (
+                selectedBodyDetail.technicalRows === undefined &&
+                selectedBodyDetail.composition === undefined ? null : (
                   <details className="selected-body-more">
                     <summary>More detail</summary>
                     <div className="selected-body-more-grid">
+                      {selectedBodyDetail.composition === undefined ? null : (
+                        <span className="selected-body-composition">
+                          <small>
+                            <span>Composition</span>
+                            <a
+                              href={selectedBodyDetail.composition.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Source: ${selectedBodyDetail.composition.authority}`}
+                            >
+                              Source
+                            </a>
+                          </small>
+                          {selectedBodyDetail.composition.summary}
+                        </span>
+                      )}
                       {selectedBodyDetail.distanceRows === undefined ? null : (
                         <span>
                           <small>
@@ -4729,6 +4895,11 @@ export function App() {
                 )}
               </div>
             )}
+            {cardMoreBelow ? (
+              <div className="selected-body-more-below" aria-hidden="true">
+                More below ↓
+              </div>
+            ) : null}
           </aside>
         )}
 

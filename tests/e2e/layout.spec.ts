@@ -311,3 +311,76 @@ test("the plain time line stays clear of the time buttons", async ({
       .toBeLessThanOrEqual(0);
   }
 });
+
+// At 1280x800 the card fits between the navigation map and the time
+// controls. Composition waits under More detail; a card still taller than
+// the room scrolls inside itself, and a cue at its foot says more is below
+// until the child reaches the end.
+test("the selected-body card is never cut off without a cue at 1280x800", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const focus = page.getByRole("combobox", { name: "Focus" });
+  const card = page.locator(".selected-body-detail");
+  const cue = card.locator(".selected-body-more-below");
+  const navigationMap = page.locator(".reality-navigation-map");
+  const timeControls = page.getByRole("region", { name: "Time controls" });
+  for (const name of ["Moon", "Jupiter", "Earth", "Saturn"]) {
+    await focus.fill(name);
+    await focus.press("Enter");
+    await expect(scene).toHaveAttribute("data-focus-body", name.toLowerCase());
+    await expect(scene).toHaveAttribute(
+      "data-camera-transition-phase",
+      "settled",
+      { timeout: 30_000 },
+    );
+    const [cardBox, mapBox, timeBox] = await Promise.all([
+      card.boundingBox(),
+      navigationMap.boundingBox(),
+      timeControls.boundingBox(),
+    ]);
+    if (cardBox === null || mapBox === null || timeBox === null) {
+      throw new Error("The card, the map or the time controls have no box");
+    }
+    expect(cardBox.y, name).toBeGreaterThanOrEqual(mapBox.y + mapBox.height);
+    expect(cardBox.y + cardBox.height, name).toBeLessThanOrEqual(timeBox.y);
+    // Composition is under More detail, not on the card's face.
+    await expect(
+      card
+        .locator(".selected-body-metrics > span")
+        .getByText("Composition", { exact: true }),
+      name,
+    ).toHaveCount(0);
+    await expect(
+      card.locator(".selected-body-more").getByText("Composition"),
+      name,
+    ).toHaveCount(1);
+    const overflowPx = await card.evaluate(
+      (element) => element.scrollHeight - element.clientHeight,
+    );
+    if (overflowPx > 1) {
+      await expect(cue, name).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`card-${name.toLowerCase()}-cue.png`),
+      });
+      await card.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(cue, name).toBeHidden();
+      await card.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+    } else {
+      await expect(cue, name).toBeHidden();
+    }
+  }
+});
