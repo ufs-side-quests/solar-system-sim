@@ -5665,11 +5665,6 @@ export function App() {
                     ? `${selectedTimeRate.label.replace(" / second", "/s")} requested · ${formatEffectiveRate(effectiveRate)} achieved${playbackBuffered ? " · buffered" : ""}`
                     : "Paused"}
             </span>
-            {clockMoveNotice === null ? null : (
-              <p className="clock-move-notice" role="status">
-                {clockMoveNotice}
-              </p>
-            )}
             <span
               className={`model-validity${outsideValidatedWindow ? " is-warning" : ""}`}
               data-model-regime="present-day-propagation"
@@ -5733,6 +5728,11 @@ export function App() {
             />
             <output>{selectedTimeRate.label}</output>
           </label>
+          {clockMoveNotice === null ? null : (
+            <p className="clock-move-notice" role="status">
+              {clockMoveNotice}
+            </p>
+          )}
         </section>
       </section>
     </main>
