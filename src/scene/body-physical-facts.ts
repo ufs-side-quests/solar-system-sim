@@ -498,6 +498,16 @@ export function formatMassComparedWithEarth(
   return `Earth is about ${plainCount(1 / ratio)} times heavier`;
 }
 
+/** A spacecraft's "How heavy" line: tonnes, or kilograms under a tonne. */
+export function formatPlainCraftMass(massKg: number): string {
+  if (!Number.isFinite(massKg) || massKg <= 0) {
+    throw new Error("Spacecraft mass must be positive and finite");
+  }
+  return massKg >= 1_000
+    ? `About ${plainCount(massKg / 1_000)} tonnes`
+    : `About ${plainCount(massKg)} kg`;
+}
+
 /** Plain words for each surface map kind, for "More detail". */
 export const PLAIN_SURFACE_MAP_BY_CLASSIFICATION: Readonly<
   Record<

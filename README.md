@@ -49,7 +49,9 @@ After the child taps one, the narrower globe shrinks to its true size, a "Wider"
 Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
 The card's "How heavy" row compares the sourced mass with Earth's, such as "As heavy as 318 Earths" for Jupiter or "Earth is about 81 times heavier" for the Moon.
 Exact mass in kilograms, exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and the kind of surface map in plain words (such as "Real spacecraft pictures joined into one map") remain under More detail.
-The ISS card says "From the centre of Earth" and whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+The ISS card says "From the centre of Earth" and, under "Its path", whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+Spacecraft and fictional cards use the same plain rows: "How big", "Its path" (such as "Real: NASA's tracking of its path round Earth" or "From a story: a simple circle around Io, 400 km up"), and "How heavy" in tonnes or kilograms (such as "About 11 tonnes"), or that a made-up object weighs nothing here.
+The exact mass and the orbit data (the Horizons solution, interpolation, or the fictional orbit's model) are under More detail.
 The time controls say how far the clock is from the start in plain words, such as "4 hours after the start"; the exact TDB offset is the line's tooltip.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.

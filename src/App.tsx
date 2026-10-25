@@ -86,6 +86,7 @@ import {
   SIDEREAL_ORBITAL_PERIOD_BY_ID,
   EARTH_MASS_KG,
   formatMassComparedWithEarth,
+  formatPlainCraftMass,
   PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
 } from "./scene/body-physical-facts";
 import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
@@ -3162,7 +3163,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Unknown · fictional",
+        mass: "Nobody knows: it is from a story",
+        exactMass: "Unknown · fictional",
         composition: {
           summary:
             "Unknown fictional material; the story does not provide a physical composition",
@@ -3171,8 +3173,14 @@ export function App() {
             "https://www.nasa.gov/history/50-years-ago-1968-welcomed-2001/",
         },
         dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString("en-GB")} m · 1:4:9`,
-        ephemerisStatus:
-          "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+        path: "From a story: it floats between Jupiter and Io",
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+          },
+        ],
       };
     }
     if (isDiscoveryOne) {
@@ -3196,7 +3204,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel: "Speed relative to Io",
-        mass: "Fictional · excluded from gravity",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · excluded from gravity",
         composition: {
           summary:
             "Fictional crewed spacecraft with command sphere, long truss spine and nuclear propulsion module",
@@ -3204,7 +3213,13 @@ export function App() {
           sourceUrl: asset.pageUrl,
         },
         dimensionsM: `${DISCOVERY_ONE_LENGTH_M.toFixed(1)} m long · ${DISCOVERY_ONE_MAXIMUM_DIAMETER_M.toFixed(1)} m maximum diameter`,
-        ephemerisStatus: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+        path: `From a story: a simple circle around Io, ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km up`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+          },
+        ],
       };
     }
     if (isFictionalOrbiter) {
@@ -3234,7 +3249,8 @@ export function App() {
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Fictional · treated as a massless visualization",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
             "Fictional armoured space station; no real mass or material properties are assigned",
@@ -3245,8 +3261,14 @@ export function App() {
           sourceUrl: licensedAsset?.pageUrl ?? orbiter.sourceUrl,
         },
         dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString("en-GB")} km diameter`,
-        ephemerisStatus:
-          "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+        path: `From a story: a simple circle around ${parentDefinition?.name ?? orbiter.parentBodyId}`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+          },
+        ],
       };
     }
     if (isDeepSpaceNineObject) {
@@ -3278,7 +3300,8 @@ export function App() {
         speedLabel: isStation
           ? "Speed relative to Callisto"
           : "Patrol speed relative to Deep Space Nine",
-        mass: "Fictional · treated as a massless visualization",
+        mass: "Made up, so here it weighs nothing",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary: isStation
             ? "Fictional Cardassian-built orbital station with docking rings and pylons"
@@ -3293,9 +3316,17 @@ export function App() {
         dimensionsM: isStation
           ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString("en-GB")} m diameter`
           : `${USS_DEFIANT_LENGTH_M.toFixed(2)} m long`,
-        ephemerisStatus: isStation
-          ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
-          : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+        path: isStation
+          ? `From a story: a simple circle ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km above Callisto`
+          : `From a story: it flies round Deep Space Nine every ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minutes`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: isStation
+              ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
+              : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+          },
+        ],
       };
     }
     if (definition === undefined) {
@@ -3325,16 +3356,31 @@ export function App() {
           speedLabel,
           mass:
             bodyId === "roadster"
+              ? `${formatPlainCraftMass(operationalSpacecraft.massKg)}: the car alone`
+              : formatPlainCraftMass(operationalSpacecraft.massKg),
+          exactMass:
+            bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
               : formatMassKg(operationalSpacecraft.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(operationalSpacecraft.maximumDimensionM)} m maximum dimension`,
-          ephemerisStatus:
+          path:
             bodyId === "roadster"
-              ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+              ? "Real: worked out from 374 telescope sightings, up to 2090"
               : operationalSpacecraft.center === "500@399"
-                ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
-                : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+                ? "Real: NASA's tracking of its path round Earth"
+                : "Real: NASA's tracking of its path",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                bodyId === "roadster"
+                  ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+                  : operationalSpacecraft.center === "500@399"
+                    ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
+                    : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+            },
+          ],
         };
       }
       if (isVoyager) {
@@ -3354,11 +3400,18 @@ export function App() {
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel: "Speed relative to the Sun",
-          mass: formatMassKg(voyager.massKg),
+          mass: formatPlainCraftMass(voyager.massKg),
+          exactMass: formatMassKg(voyager.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(voyager.maximumDimensionM)} m span · ${String(voyager.highGainAntennaDiameterM)} m antenna`,
-          ephemerisStatus:
-            "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+          path: "Real: starts from NASA's 2026 tracking, then the simulation moves it",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+            },
+          ],
         };
       }
       if (isIss) {
@@ -3384,10 +3437,11 @@ export function App() {
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel,
-          mass: formatMassKg(issSnapshot.physicalDimensions.massKg),
+          mass: formatPlainCraftMass(issSnapshot.physicalDimensions.massKg),
+          exactMass: formatMassKg(issSnapshot.physicalDimensions.massKg),
           composition,
           dimensionsM: `${String(issSnapshot.physicalDimensions.overallEndToEndM)} × ${String(issSnapshot.physicalDimensions.solarArrayLengthM)} m`,
-          ephemerisStatus: isIssEphemerisWithinValidity(state.timeSeconds)
+          path: isIssEphemerisWithinValidity(state.timeSeconds)
             ? "Up to date for this day"
             : `Not shown: we only know where it is near ${formatPlainSimulationDate(ISS_EPOCH_SIMULATION_SECONDS)}`,
           technicalRows: [
@@ -4601,8 +4655,14 @@ export function App() {
                 )}
                 {selectedBodyDetail.dimensionsM === undefined ? null : (
                   <span>
-                    <small>Maximum footprint</small>
+                    <small>How big</small>
                     {selectedBodyDetail.dimensionsM}
+                  </span>
+                )}
+                {selectedBodyDetail.path === undefined ? null : (
+                  <span>
+                    <small>Its path</small>
+                    {selectedBodyDetail.path}
                   </span>
                 )}
                 {selectedBodyDetail.ephemerisStatus === undefined ? null : (

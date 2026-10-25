@@ -12,6 +12,7 @@ import {
   formatMassComparedWithEarth,
   formatMassKg,
   formatOrbitalPeriod,
+  formatPlainCraftMass,
   formatPlainDistance,
   formatSourcedOrbitalPeriod,
   formatSpeedWithJetComparison,
@@ -75,6 +76,15 @@ describe("selected-body physical facts", () => {
     expect(compare("mimas")).toBe("Earth is about 159,000 times heavier");
     expect(compare("phobos")).toBe("Earth is about 560 million times heavier");
     expect(compare("deimos")).toBe("Earth is about 4 billion times heavier");
+  });
+
+  it("says how heavy a spacecraft is in tonnes or kilograms", () => {
+    expect(formatPlainCraftMass(419_725)).toBe("About 420 tonnes");
+    expect(formatPlainCraftMass(11_110)).toBe("About 11 tonnes");
+    expect(formatPlainCraftMass(6_200)).toBe("About 6.2 tonnes");
+    expect(formatPlainCraftMass(1_250)).toBe("About 1.3 tonnes");
+    expect(formatPlainCraftMass(733)).toBe("About 733 kg");
+    expect(() => formatPlainCraftMass(0)).toThrow();
   });
 
   it("names every surface map kind in plain words", () => {
