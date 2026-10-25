@@ -5585,6 +5585,7 @@ export function App() {
               max={String(USER_TIME_RATE_INDEXES.length - 1)}
               step="1"
               value={playbackRateSliderIndex}
+              aria-valuetext={selectedTimeRate.label}
               onChange={(event) => {
                 const selectedIndex =
                   USER_TIME_RATE_INDEXES[Number(event.currentTarget.value)];
