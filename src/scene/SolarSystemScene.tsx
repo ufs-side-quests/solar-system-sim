@@ -8239,6 +8239,58 @@ float saturnRingTransmission(vec3 surfacePosition) {
       setData(container, "deepSpaceLayer", "same-three-scene");
       setData(container, "heliosphereVisible", String(showHeliosphere));
       setData(container, "oortCloudVisible", String(showOortCloud));
+      // The outer shell's outline on screen, from the circle where the
+      // camera's lines of sight touch the sphere, as left,top,right,bottom
+      // CSS px. "surrounds" when the camera is inside the shell.
+      if (showOortCloud) {
+        const sunToCamera = camera.position.clone().sub(liveSunPosition);
+        const cameraSunDistanceAu = sunToCamera.length();
+        if (cameraSunDistanceAu <= OORT_CLOUD_OUTER_MAX_AU) {
+          setData(container, "oortShellScreenBounds", "surrounds");
+        } else {
+          const towardCamera = sunToCamera.normalize();
+          const tangentRatio = OORT_CLOUD_OUTER_MAX_AU / cameraSunDistanceAu;
+          const tangentCentre = liveSunPosition
+            .clone()
+            .addScaledVector(
+              towardCamera,
+              OORT_CLOUD_OUTER_MAX_AU * tangentRatio,
+            );
+          const tangentRadiusAu =
+            OORT_CLOUD_OUTER_MAX_AU * Math.sqrt(1 - tangentRatio ** 2);
+          const across = new Vector3()
+            .crossVectors(towardCamera, camera.up)
+            .normalize();
+          const along = new Vector3().crossVectors(across, towardCamera);
+          let left = Infinity;
+          let top = Infinity;
+          let right = -Infinity;
+          let bottom = -Infinity;
+          for (let index = 0; index < 64; index += 1) {
+            const angle = (index / 64) * Math.PI * 2;
+            const projected = tangentCentre
+              .clone()
+              .addScaledVector(across, tangentRadiusAu * Math.cos(angle))
+              .addScaledVector(along, tangentRadiusAu * Math.sin(angle))
+              .project(camera);
+            const x = ((projected.x + 1) * viewportWidth) / 2;
+            const y = ((-projected.y + 1) * viewportHeight) / 2;
+            left = Math.min(left, x);
+            top = Math.min(top, y);
+            right = Math.max(right, x);
+            bottom = Math.max(bottom, y);
+          }
+          setData(
+            container,
+            "oortShellScreenBounds",
+            [left, top, right, bottom]
+              .map((value) => value.toFixed(1))
+              .join(","),
+          );
+        }
+      } else {
+        delete container.dataset["oortShellScreenBounds"];
+      }
       setData(container, "alphaCentauriVisible", String(showAlphaCentauri));
       const sunToCameraDirection = camera.position
         .clone()

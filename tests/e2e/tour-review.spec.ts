@@ -106,3 +106,116 @@ test("renders every authored tour scene without browser or simulation errors", a
 
   expect(errors).toEqual([]);
 });
+
+type ScreenBox = Readonly<{
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}>;
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 800 },
+]) {
+  test(`at ${String(viewport.width)} x ${String(viewport.height)} the Oort Cloud shell and its label fit the view`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Scale tour" }).click();
+    const tour = page.getByRole("dialog", {
+      name: "Scale of the Solar System tour",
+    });
+    const scene = page.getByRole("img", {
+      name: /Physics-driven Solar System/u,
+    });
+    const boxOf = async (
+      locator: ReturnType<typeof page.locator>,
+    ): Promise<ScreenBox> => {
+      const box = await locator.boundingBox();
+      if (box === null) throw new Error("The element must be laid out");
+      return {
+        left: box.x,
+        top: box.y,
+        right: box.x + box.width,
+        bottom: box.y + box.height,
+      };
+    };
+    const shellBounds = async (): Promise<ScreenBox> => {
+      const value = await scene.getAttribute("data-oort-shell-screen-bounds");
+      const [left, top, right, bottom] = (value ?? "").split(",").map(Number);
+      if (
+        left === undefined ||
+        top === undefined ||
+        right === undefined ||
+        bottom === undefined ||
+        [left, top, right, bottom].some((part) => !Number.isFinite(part))
+      ) {
+        throw new Error(
+          `The shell must be outside the camera: ${String(value)}`,
+        );
+      }
+      return { left, top, right, bottom };
+    };
+    const expectInside = (inner: ScreenBox, outer: ScreenBox, what: string) => {
+      const detail = `${what}: ${JSON.stringify({ inner, outer })}`;
+      expect(inner.left, detail).toBeGreaterThanOrEqual(outer.left);
+      expect(inner.top, detail).toBeGreaterThanOrEqual(outer.top);
+      expect(inner.right, detail).toBeLessThanOrEqual(outer.right);
+      expect(inner.bottom, detail).toBeLessThanOrEqual(outer.bottom);
+    };
+    const view = {
+      left: 0,
+      top: 0,
+      right: viewport.width,
+      bottom: viewport.height,
+    };
+    const oortLabel = page.getByText("Oort Cloud · estimated 2,000-100,000 AU");
+    const sunLabel = page.getByText("Sun · Solar System origin");
+
+    for (const [index, stepId] of TOUR_SCENES.map(([id]) => id).entries()) {
+      await expect(tour).toHaveAttribute("data-tour-step", stepId);
+      if (stepId === "oort-cloud" || stepId === "alpha-centauri") {
+        await expect(async () => {
+          const shell = await shellBounds();
+          // The whole shell is on screen, and it is the subject, not a dot.
+          expectInside(shell, view, `${stepId} shell`);
+          expect(shell.bottom - shell.top).toBeGreaterThan(
+            viewport.height * (stepId === "oort-cloud" ? 0.5 : 0.3),
+          );
+          // Its label sits on the shell, and the Sun's label is clear of
+          // the card.
+          const label = await boxOf(oortLabel);
+          expectInside(label, view, `${stepId} label`);
+          expect(label.top).toBeGreaterThanOrEqual(shell.top);
+          expect(label.bottom).toBeLessThanOrEqual(shell.bottom);
+          const sun = await boxOf(sunLabel);
+          const card = await boxOf(tour);
+          expect(
+            sun.right <= card.left ||
+              sun.left >= card.right ||
+              sun.bottom <= card.top ||
+              sun.top >= card.bottom,
+            `Sun label ${JSON.stringify({ sun, card })}`,
+          ).toBe(true);
+        }).toPass({ timeout: 10_000 });
+      }
+      if (stepId === "alpha-centauri") {
+        expectInside(
+          await boxOf(page.getByText("Alpha Centauri · 4.3 light-years")),
+          view,
+          "Alpha Centauri label",
+        );
+      }
+      if (index < TOUR_SCENES.length - 1) {
+        await tour.getByRole("button", { name: "Next" }).click();
+      }
+    }
+  });
+}
