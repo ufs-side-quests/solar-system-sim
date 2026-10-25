@@ -236,7 +236,9 @@ p {
 
 .command-bar {
   position: relative;
-  z-index: 20;
+  /* Above the simulation clock (60) and the size lineup (70), so the open
+     Focus list covers them. */
+  z-index: 80;
   min-height: 4rem;
   display: grid;
   grid-template-columns: auto auto minmax(12rem, 22rem) 1fr;
@@ -388,14 +390,21 @@ h1 {
   width: min(18rem, 23vw);
 }
 
-.focus-control input {
-  width: min(16rem, 20vw);
-}
-
 .focus-input-group input {
   width: 100%;
   min-width: 0;
+  padding: 0.35rem 0.55rem;
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 0.55rem 0 0 0.55rem;
+  background: var(--surface-soft);
+}
+
+/* iOS zooms the page into a text box whose text is under 16 px. */
+@media (max-width: 980px), (pointer: coarse) {
+  .focus-input-group input {
+    font-size: 1rem;
+  }
 }
 
 .focus-input-group button {
@@ -3000,7 +3009,7 @@ h1 {
 
 @media (max-width: 980px) {
   .reality-navigation-map {
-    top: 7.2rem;
+    top: 8.5rem;
   }
 
   .interstellar-scale-scene,
@@ -3030,7 +3039,7 @@ h1 {
     grid-row: 2;
   }
 
-  .focus-control input {
+  .focus-input-group {
     width: min(24rem, 60vw);
   }
 
@@ -3041,6 +3050,12 @@ h1 {
 
   .camera-dock {
     top: 3.3rem;
+  }
+
+  /* The dock fills the middle of the top row here, so the date sits below it
+     and the navigation map below the date. */
+  .global-simulation-clock {
+    top: 6.6rem;
   }
 
   /* Below the camera dock and the camera journey label (up to three lines). */
@@ -3071,8 +3086,9 @@ h1 {
 }
 
 @media (max-width: 650px) {
+  /* Below the two-row camera dock (5.8rem + 5.1rem tall). */
   .reality-navigation-map {
-    top: 9rem;
+    top: 11.3rem;
     left: 0.55rem;
     width: 12rem;
   }
@@ -3191,13 +3207,19 @@ h1 {
     grid-row: 3;
   }
 
-  .focus-control input {
-    width: 100%;
+  .focus-input-group {
+    flex: 1;
+    width: auto;
   }
 
   .command-actions {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  /* Between the breadcrumb and the camera dock. */
+  .global-simulation-clock {
+    top: 3.5rem;
   }
 
   .command-actions button:not(.display-button, .fullscreen-button) {
@@ -3226,19 +3248,21 @@ h1 {
   }
 
   .cinematic-shot-caption {
+    top: 11.4rem;
     right: 0.55rem;
     max-width: calc(100% - 13.6rem);
     font-size: 0.74rem;
   }
 
+  /* Eight buttons at least 44 px wide do not fit one row of a 360 px phone,
+     so the dock has two rows of four equal buttons. */
   .camera-dock-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
 
-  /* Equal shares from a zero basis keep every dock button, the 2rem zoom
-     buttons too, at least 44 px wide. */
   .camera-dock-actions button {
-    flex: 1 1 0;
+    flex: 1 1 calc((100% - 0.75rem) / 4);
     min-width: 2.75rem;
     padding-inline: 0.3rem;
   }
@@ -3277,10 +3301,10 @@ h1 {
     display: none;
   }
 
-  /* The card keeps its top below the camera dock (5.8rem + 2.9rem tall). */
+  /* The card keeps its top below the camera dock (5.8rem + 5.1rem tall). */
   .selected-body-detail {
     --selected-body-detail-bottom: 10.6rem;
-    --selected-body-detail-min-top: 9.2rem;
+    --selected-body-detail-min-top: 11.4rem;
 
     left: 0.55rem;
     width: calc(100% - 1.1rem);
@@ -3582,7 +3606,8 @@ button.selected-body-size-line {
   --lineup-largest: clamp(6.5rem, 14vw, 12rem);
 
   position: absolute;
-  /* Above the simulation clock (60), below the Focus popover (100). */
+  /* Above the simulation clock (60), below the header and its Focus list
+     (80). */
   z-index: 70;
   top: 50%;
   left: 50%;
