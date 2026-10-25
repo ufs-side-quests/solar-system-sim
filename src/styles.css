@@ -2887,8 +2887,10 @@ h1 {
     24px 24px;
 }
 
+/* Above the map note, as the bodies were before the stage held them. */
 .schematic-stage {
   position: absolute;
+  z-index: 4;
   top: 50%;
   left: 50%;
   width: min(100cqw, 100cqh);

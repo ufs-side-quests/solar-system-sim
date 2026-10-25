@@ -121,6 +121,7 @@ import {
   easeLensShiftPx,
   lensShiftTargetPx,
   lensShiftUpTargetPx,
+  OPEN_SKY_CARD_SELECTOR,
   projectedSphereRadiusPx,
   type PanelBox,
 } from "./lens-shift";
@@ -6073,9 +6074,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           }));
       // The open tour card or selected-body card, and the Display panel. A
       // minimised or collapsed card leaves the centre clear.
-      const leftPanels = panelBoxes(
-        ".scale-tour:not(.is-minimised), .selected-body-detail:not(.is-collapsed)",
-      );
+      const leftPanels = panelBoxes(OPEN_SKY_CARD_SELECTOR);
       const rightPanels = panelBoxes(".display-panel");
       const guideObstacles =
         wayfinderModeRef.current === "off"

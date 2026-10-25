@@ -81,7 +81,7 @@ A press on the scene counts as a tap until it moves more than 8 px, so a tap nev
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
-Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, clear of the card and the time controls.
+Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, or in the open sky beside or above an open card that covers the centre, by the same rule as the lens shift below.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
 Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.

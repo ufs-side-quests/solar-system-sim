@@ -1,3 +1,8 @@
+// The cards the subject keeps clear of: the open tour card and the open
+// selected-body card. A minimised or collapsed card leaves the centre clear.
+export const OPEN_SKY_CARD_SELECTOR =
+  ".scale-tour:not(.is-minimised), .selected-body-detail:not(.is-collapsed)";
+
 // The shift settles in about 300 ms: three time constants of 75 ms leave 5%.
 const LENS_SHIFT_TIME_CONSTANT_MS = 75;
 const LENS_SHIFT_SNAP_PX = 0.5;
