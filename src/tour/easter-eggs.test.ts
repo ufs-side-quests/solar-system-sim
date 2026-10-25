@@ -128,6 +128,23 @@ describe("hidden surprise rows", () => {
     }
   });
 
+  it("flies a clue that names the Sun to the Solar System overview", () => {
+    // Focusing the Sun frames its disc, so the Roadster between Earth and
+    // Mars is out of view; the overview with the Sun selected shows its hint.
+    const focusBodyIds = hiddenSurpriseRows(new Set()).map((row) =>
+      row.kind === "clue" ? [row.eggId, row.focusBodyId] : row,
+    );
+    expect(focusBodyIds).toEqual([
+      ["death-star-1", "callisto"],
+      ["death-star-2", "ganymede"],
+      ["deep-space-nine", "callisto"],
+      ["uss-defiant", "callisto"],
+      ["discovery-one", "io"],
+      ["jovian-monolith", "io"],
+      ["roadster", ""],
+    ]);
+  });
+
   it("names found eggs and keeps clues for the rest", () => {
     const found = new Set<EasterEggId>(["death-star-1", "roadster"]);
     const rows = hiddenSurpriseRows(found);

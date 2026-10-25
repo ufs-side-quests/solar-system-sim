@@ -182,7 +182,7 @@ The first selection reveals the real name, shows a short "You found" message wit
 Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
 Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
 The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
-The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Sun: the Roadster is usually far from both planets, and its hint is in view from the Sun.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Solar System overview and selects the Sun: the Roadster is usually far from both planets, a focused Sun fills the view, and from the overview its hint is in view.
 Once found, the Roadster joins the map's Spacecraft list as a real craft.
 Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
 The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
@@ -316,7 +316,7 @@ The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet,
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
 Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
 Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
-Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
+Focusing the Sun frames its disc from its own radius, as for every other body; the full-system 90 AU framing belongs to the Solar System overview, which Home and the "Solar System" breadcrumb open.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.
 The optional Moon and planet trails contain only exact physics endpoint samples.

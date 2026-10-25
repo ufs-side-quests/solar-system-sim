@@ -41,7 +41,9 @@ function fictionalOrbiterParentBodyId(
  * hides the hint while the egg is behind it. `cardHint` marks eggs that stay
  * near their hint body, so the selected-body card can promise one is close.
  * `clue` names `clueBodyId`, the body the Focus list flies to before the egg
- * is found, so the list never names an unfound egg.
+ * is found, so the list never names an unfound egg. A clue that names the
+ * Sun flies to the Solar System overview with the Sun selected: a focused
+ * Sun fills the view, and the overview shows the Sun's neighbourhood.
  */
 export const EASTER_EGGS = [
   {
@@ -105,7 +107,8 @@ export const EASTER_EGGS = [
     id: ROADSTER_BODY_ID,
     clue: "Circles the Sun between Earth and Mars",
     // The Roadster is usually far from both planets, so its hint label is
-    // out of view from either. From the Sun it is in view.
+    // out of view from either. From the overview, with the Sun selected, it
+    // is in view.
     clueBodyId: "sun",
     name: "Starman's Tesla Roadster",
     origin: "real, launched by SpaceX in 2018",
@@ -205,7 +208,15 @@ export function hiddenSurprisesHeading(
 
 export type HiddenSurpriseRow = Readonly<
   | { kind: "found"; eggId: EasterEggId }
-  | { kind: "clue"; eggId: EasterEggId; bodyId: string; label: string }
+  | {
+      kind: "clue";
+      eggId: EasterEggId;
+      // The body the clue names, which the clue selects.
+      bodyId: string;
+      // Where the camera flies: the body, or "" for the overview.
+      focusBodyId: string;
+      label: string;
+    }
 >;
 
 /** One row per egg: found eggs by id, unfound eggs as a clue to fly to. */
@@ -219,6 +230,7 @@ export function hiddenSurpriseRows(
           kind: "clue",
           eggId: egg.id,
           bodyId: egg.clueBodyId,
+          focusBodyId: egg.clueBodyId === "sun" ? "" : egg.clueBodyId,
           label: `? ${egg.clue}`,
         },
   );

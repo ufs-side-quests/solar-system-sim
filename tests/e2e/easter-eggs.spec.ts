@@ -380,10 +380,15 @@ test("the Roadster clue flies to the Sun, where its hint is in view", async ({
     .locator(".focus-popover")
     .getByRole("option", { name: "? Circles the Sun between Earth and Mars" })
     .click();
-  await expect(scene).toHaveAttribute("data-focus-body", "sun");
-  await expect(scene).toHaveAttribute(
+  // A focused Sun fills the view, so the clue flies to the overview with the
+  // Sun selected.
+  await expect(scene).toHaveAttribute("data-focus-body", "solar-system");
+  await expect(scene).toHaveAttribute("data-selected-body", "sun");
+  // The first screen is already the overview: no flight runs, or one has
+  // settled.
+  await expect(scene).not.toHaveAttribute(
     "data-camera-transition-phase",
-    "settled",
+    /^(?!settled$)./u,
     { timeout: 60_000 },
   );
   await expect(page.locator('.body-label[data-body-id="roadster"]')).toHaveText(

@@ -5304,13 +5304,13 @@ float saturnRingTransmission(vec3 surfacePosition) {
         fitCameraDistanceToPortraitRef.current
           ? portraitFitDistanceAu(overrideDistance, camera.aspect)
           : overrideDistance) ??
-        (requestedFocusBodyId === "sun"
-          ? SOLAR_SYSTEM_CAMERA_POSITION.length()
-          : isSpacecraftFocus
-            ? spacecraftFocusDistanceAu(requestedFocusBodyId)
-            : focusDefinition === undefined
-              ? 0.003
-              : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
+        // The Sun is framed like every other body. The Solar System overview
+        // is the null focus above.
+        (isSpacecraftFocus
+          ? spacecraftFocusDistanceAu(requestedFocusBodyId)
+          : focusDefinition === undefined
+            ? 0.003
+            : focusDistanceAu(focusDefinition, bodyVisibilityRef.current));
       if (!Number.isFinite(focusDistance) || focusDistance <= 0) {
         throw new Error("Camera focus distance must be positive and finite");
       }
