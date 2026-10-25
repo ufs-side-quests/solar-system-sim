@@ -349,7 +349,9 @@ Each step owns its camera distance, orientation, view mode, body-size treatment,
 Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
 While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
-The Scale tour clock waits at the time the step began, because Scale steps set no time; the Eclipse story clock waits at the step's time.
+The Scale tour clock waits at the time the step began, because Scale steps set no time, except "Saturn seen from Titan"; the Eclipse story clock waits at the step's time.
+"Saturn seen from Titan" moves the clock to 8 Jan 2026 20:00 UTC, when Titan is on Saturn's sunlit side: over the step's 28 hours the simulated Sun-Saturn-Titan angle falls from about 25 to 4 degrees, and a unit test checks it with the app's REBOUND model.
+Titan orbits within half a degree of Saturn's ring plane, so its card says the rings show edge-on, as a thin line about 12 degrees long.
 A Scale tour that starts with the clock outside the validated ±1 year window first restarts the simulation from the epoch.
 A step's time on screen starts only when its clock has landed and its camera has settled, so a long seek or flight never shortens the step.
 While an Eclipse story step moves the clock, the card says "Moving the clock to 12 Aug 2026…" and hides the live eclipse readouts until the clock lands.

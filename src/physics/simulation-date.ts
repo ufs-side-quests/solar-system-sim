@@ -19,6 +19,14 @@ export function simulationDateUtc(timeSeconds: number): Date {
   ).date;
 }
 
+// The simulation time of a UTC instant: seconds of terrestrial time since
+// the snapshot epoch.
+export function simulationSecondsForUtc(isoUtc: string): number {
+  const time = new AstroTime(new Date(isoUtc));
+  const epochDaysSinceJ2000 = majorBodySnapshot.epoch.value - J2000_JULIAN_DAY;
+  return (time.tt - epochDaysSinceJ2000) * SECONDS_PER_DAY;
+}
+
 export function formatSimulationDateUtc(timeSeconds: number): string {
   const date = simulationDateUtc(timeSeconds);
   const day = date.getUTCDate().toString().padStart(2, "0");
