@@ -3410,18 +3410,12 @@ export function App() {
           ? undefined
           : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
       speedLabel,
-      mass:
-        definition.massKg === undefined
-          ? undefined
-          : formatMassComparedWithEarth(
-              definition.id,
-              definition.massKg,
-              EARTH_MASS_KG,
-            ),
-      exactMass:
-        definition.massKg === undefined
-          ? undefined
-          : formatMassKg(definition.massKg),
+      mass: formatMassComparedWithEarth(
+        definition.id,
+        definition.massKg,
+        EARTH_MASS_KG,
+      ),
+      exactMass: formatMassKg(definition.massKg),
       composition,
       rotationHours: siderealRotationPeriodHours(definition),
       primeMeridianDeg: normalizedDegrees(
