@@ -120,6 +120,7 @@ import {
 import {
   easeLensShiftPx,
   lensShiftTargetPx,
+  lensShiftUpTargetPx,
   projectedSphereRadiusPx,
   type PanelBox,
 } from "./lens-shift";
@@ -4616,27 +4617,30 @@ float saturnRingTransmission(vec3 surfacePosition) {
     let frameIntervalEmaMs = 1000 / 60;
 
     // The lens shift moves the whole picture right, so the subject sits in
-    // the open sky beside a left-hand panel. It shifts the projection itself,
+    // the open sky beside a left-hand panel, and up, so it sits above a card
+    // along the bottom of a portrait screen. It shifts the projection itself,
     // so labels, picking, guides and the GPU layer all follow it.
     let lensShiftPx = 0;
+    let lensShiftUpPx = 0;
     // The scene size from the last resize. setViewOffset sets the camera
     // aspect from the full size, so it takes the same size resize gave it.
     let sceneWidthPx = 0;
     let sceneHeightPx = 0;
     const applyLensShift = (): void => {
-      if (lensShiftPx === 0) {
+      if (lensShiftPx === 0 && lensShiftUpPx === 0) {
         camera.clearViewOffset();
       } else {
         camera.setViewOffset(
           sceneWidthPx,
           sceneHeightPx,
           -lensShiftPx,
-          0,
+          lensShiftUpPx,
           sceneWidthPx,
           sceneHeightPx,
         );
       }
       setData(container, "lensShiftPx", lensShiftPx.toFixed(3));
+      setData(container, "lensShiftUpPx", lensShiftUpPx.toFixed(3));
     };
     // Half the subject's size on screen. A shot that frames more than its
     // target body fills the frame height. Otherwise the subject is the camera
@@ -6099,21 +6103,27 @@ float saturnRingTransmission(vec3 surfacePosition) {
       lastRenderedAtMs = frameRenderStartedAtMs;
       frameIntervalEmaMs = frameIntervalEmaMs * 0.92 + frameIntervalMs * 0.08;
       // Surface view keeps its deliberate framing, and on a phone the card
-      // lies along the bottom edge with no sky beside it. A drag holds the
-      // shift still, so the sky does not slide under the child's finger.
-      // Reduced motion moves the picture in one step.
+      // lies along the bottom edge with no sky beside it, so only the open
+      // sky above it counts. A drag holds the shift still, so the sky does
+      // not slide under the child's finger. Reduced motion moves the picture
+      // in one step.
       if (canvasPresses.size === 0) {
         const subjectRadiusPx = subjectRadiusOnScreenPx(viewportHeight);
+        const openSkyLayout = {
+          sceneWidthPx: viewportWidth,
+          sceneHeightPx: viewportHeight,
+          subjectRadiusPx,
+          subjectLabelReachPx: cameraTargetLabelReachPx(labelFontPx),
+          leftPanels,
+          rightPanels,
+        };
         const targetLensShiftPx =
           surfaceObserverRef.current === null && !phoneLayoutQuery.matches
-            ? lensShiftTargetPx({
-                sceneWidthPx: viewportWidth,
-                sceneHeightPx: viewportHeight,
-                subjectRadiusPx,
-                subjectLabelReachPx: cameraTargetLabelReachPx(labelFontPx),
-                leftPanels,
-                rightPanels,
-              })
+            ? lensShiftTargetPx(openSkyLayout)
+            : 0;
+        const targetLensShiftUpPx =
+          surfaceObserverRef.current === null
+            ? lensShiftUpTargetPx(openSkyLayout)
             : 0;
         setData(
           container,
@@ -6125,8 +6135,19 @@ float saturnRingTransmission(vec3 surfacePosition) {
         const nextLensShiftPx = reducedMotionQuery.matches
           ? targetLensShiftPx
           : easeLensShiftPx(lensShiftPx, targetLensShiftPx, frameIntervalMs);
-        if (nextLensShiftPx !== lensShiftPx) {
+        const nextLensShiftUpPx = reducedMotionQuery.matches
+          ? targetLensShiftUpPx
+          : easeLensShiftPx(
+              lensShiftUpPx,
+              targetLensShiftUpPx,
+              frameIntervalMs,
+            );
+        if (
+          nextLensShiftPx !== lensShiftPx ||
+          nextLensShiftUpPx !== lensShiftUpPx
+        ) {
           lensShiftPx = nextLensShiftPx;
+          lensShiftUpPx = nextLensShiftUpPx;
           applyLensShift();
         }
       }
@@ -8619,7 +8640,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
           const focusScreen =
             focusPosition === undefined ||
             cameraTargetBodyIdRef.current !== undefined
-              ? { x: viewportWidth / 2 + lensShiftPx, y: viewportHeight / 2 }
+              ? {
+                  x: viewportWidth / 2 + lensShiftPx,
+                  y: viewportHeight / 2 - lensShiftUpPx,
+                }
               : (() => {
                   const projected = focusPosition.clone().project(camera);
                   return {

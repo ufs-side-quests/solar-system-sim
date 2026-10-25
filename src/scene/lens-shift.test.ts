@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   easeLensShiftPx,
   lensShiftTargetPx,
+  lensShiftUpTargetPx,
   projectedSphereRadiusPx,
   type PanelBox,
 } from "./lens-shift";
@@ -37,10 +38,18 @@ describe("lensShiftTargetPx", () => {
       subjectRadiusPx: 200,
       rightPanels: [],
     };
+    // The subject's left edge is at 520 px: a card ending at 494 px keeps
+    // clear of it.
     expect(
-      lensShiftTargetPx({ ...layout, leftPanels: [leftCard(542, 100, 880)] }),
+      lensShiftTargetPx({ ...layout, leftPanels: [leftCard(494, 100, 880)] }),
     ).toBe(0);
     expect(lensShiftTargetPx({ ...layout, leftPanels: [] })).toBe(0);
+    // A card ending at 542 px hides 22 px of the rim, so the subject goes to
+    // the open sky.
+    expect(
+      1440 / 2 +
+        lensShiftTargetPx({ ...layout, leftPanels: [leftCard(542, 100, 880)] }),
+    ).toBe((542 + 1440) / 2);
   });
 
   it("leaves the picture alone when the card sits below the subject", () => {
@@ -124,6 +133,21 @@ describe("lensShiftTargetPx", () => {
     ).toBe((542 + 1024) / 2 - 512);
   });
 
+  it("moves a large subject whose rim the selected-body card covers", () => {
+    // At 1280 x 800 the scene is 1280 x 736 and the card ends at 494 px:
+    // a focused body 235 px in radius starts at 405 px, under the card.
+    const shift = lensShiftTargetPx({
+      sceneWidthPx: 1280,
+      sceneHeightPx: 736,
+      subjectLabelReachPx: 33,
+      subjectRadiusPx: 235,
+      leftPanels: [leftCard(494, 328, 630)],
+      rightPanels: [],
+    });
+    expect(1280 / 2 + shift).toBe((494 + 1280) / 2);
+    expect(1280 / 2 + shift - 235).toBeGreaterThan(494);
+  });
+
   it("never moves a subject that surrounds the camera", () => {
     expect(
       lensShiftTargetPx({
@@ -135,6 +159,73 @@ describe("lensShiftTargetPx", () => {
         rightPanels: [],
       }),
     ).toBe(0);
+  });
+});
+
+describe("lensShiftUpTargetPx", () => {
+  // A full-width card along the bottom of a 390 x 844 phone.
+  const phoneCard: PanelBox = { left: 8, right: 382, top: 470, bottom: 834 };
+
+  it("moves a small subject to the middle of the open sky above a bottom card", () => {
+    const shift = lensShiftUpTargetPx({
+      sceneWidthPx: 390,
+      sceneHeightPx: 844,
+      subjectLabelReachPx: 33,
+      subjectRadiusPx: 100,
+      leftPanels: [phoneCard],
+      rightPanels: [],
+    });
+    expect(844 / 2 - shift).toBe(470 / 2);
+  });
+
+  it("moves a subject taller than the open sky only until its top meets the canvas edge", () => {
+    const shift = lensShiftUpTargetPx({
+      sceneWidthPx: 390,
+      sceneHeightPx: 844,
+      subjectLabelReachPx: 33,
+      subjectRadiusPx: 260,
+      leftPanels: [phoneCard],
+      rightPanels: [],
+    });
+    expect(844 / 2 - shift - 260).toBe(0);
+  });
+
+  it("leaves the picture alone for a card beside the subject or below its label", () => {
+    const layout = {
+      sceneWidthPx: 1280,
+      sceneHeightPx: 736,
+      subjectLabelReachPx: 33,
+      subjectRadiusPx: 235,
+      rightPanels: [],
+    };
+    // The desktop card starts above the centre: it is beside the subject.
+    expect(
+      lensShiftUpTargetPx({ ...layout, leftPanels: [leftCard(494, 328, 630)] }),
+    ).toBe(0);
+    // A bottom card below the subject covers none of it.
+    expect(
+      lensShiftUpTargetPx({
+        ...layout,
+        subjectRadiusPx: 20,
+        leftPanels: [{ left: 8, right: 1272, top: 600, bottom: 730 }],
+      }),
+    ).toBe(0);
+    expect(lensShiftUpTargetPx({ ...layout, leftPanels: [] })).toBe(0);
+  });
+
+  it("never moves a subject that fills the frame or surrounds the camera", () => {
+    for (const subjectRadiusPx of [844 / 2, Number.POSITIVE_INFINITY]) {
+      expect(
+        lensShiftUpTargetPx({
+          sceneWidthPx: 390,
+          sceneHeightPx: 844,
+          subjectLabelReachPx: 33,
+          subjectRadiusPx,
+          leftPanels: [phoneCard],
+          rightPanels: [],
+        }),
+      ).toBe(0);
+    }
   });
 });
 
