@@ -291,13 +291,36 @@ export function SizeLineup({
     <aside
       className="size-lineup"
       role="dialog"
-      aria-modal="false"
+      aria-modal="true"
       aria-labelledby={titleId}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
           onClose();
+          return;
+        }
+        // Tab and Shift+Tab go round the dialog's own controls, so the
+        // keyboard never reaches the card buttons behind it.
+        if (event.key !== "Tab") {
+          return;
+        }
+        const stops = [
+          ...event.currentTarget.querySelectorAll<HTMLElement>(
+            "button:not([disabled]), a[href]",
+          ),
+        ];
+        const first = stops[0];
+        const last = stops.at(-1);
+        if (first === undefined || last === undefined) {
+          return;
+        }
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
         }
       }}
     >

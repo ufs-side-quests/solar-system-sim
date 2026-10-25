@@ -509,11 +509,34 @@ test("a tour closes Compare sizes, so only the clock and the tour card show", as
   await page.goto("/");
   const { dialog } = await openDuel(page);
   await expect(dialog).toBeVisible();
-  // The lineup is not modal: the dock's Scale tour button still takes focus.
+  // Tab stays in the lineup, but a script or a click still reaches the dock.
   await page.getByRole("button", { name: "Scale tour" }).focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("dialog", { name: "Scale of the Solar System tour" }),
   ).toBeVisible();
   await expect(dialog).toHaveCount(0);
+});
+
+test("Tab and Shift+Tab stay inside Compare sizes while it is open", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const { dialog } = await openDuel(page);
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+  const focusInDialog = async (): Promise<boolean> =>
+    dialog.evaluate((element) => element.contains(document.activeElement));
+  const stops = await dialog
+    .locator("button:not([disabled]), a[href]")
+    .count();
+  for (let press = 0; press < stops + 2; press += 1) {
+    await page.keyboard.press("Tab");
+    expect(await focusInDialog(), `Tab ${String(press + 1)}`).toBe(true);
+  }
+  for (let press = 0; press < stops + 2; press += 1) {
+    await page.keyboard.press("Shift+Tab");
+    expect(await focusInDialog(), `Shift+Tab ${String(press + 1)}`).toBe(true);
+  }
 });
