@@ -649,6 +649,9 @@ const FocusSelect = memo(function FocusSelect({
   const [filteredOptions, setFilteredOptions] =
     useState<FocusOption[]>(browseOptions);
   const [catalogueSearchActive, setCatalogueSearchActive] = useState(false);
+  // Typing highlights the first match, so Enter picks it. The first Arrow
+  // Down after typing moves into the list onto that row, not past it.
+  const typedHighlightRef = useRef(false);
   const showBrowseOptions = (): void => {
     setCatalogueSearchActive(false);
     setFilteredOptions(browseOptions);
@@ -674,6 +677,7 @@ const FocusSelect = memo(function FocusSelect({
     getMenuProps,
     getToggleButtonProps,
     closeMenu,
+    highlightedIndex,
     isOpen,
     openMenu,
   } = useCombobox<FocusOption>({
@@ -684,6 +688,7 @@ const FocusSelect = memo(function FocusSelect({
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
+      typedHighlightRef.current = true;
       const normalizedInput = inputValue.trim().toLocaleLowerCase();
       setCatalogueSearchActive(normalizedInput.length > 0);
       setFilteredOptions(
@@ -713,8 +718,22 @@ const FocusSelect = memo(function FocusSelect({
               openMenu();
             },
             onKeyDown: (event) => {
+              const typedHighlight = typedHighlightRef.current;
+              typedHighlightRef.current = false;
               if (event.key === "ArrowDown" && !isOpen) {
                 showBrowseOptions();
+              }
+              if (
+                event.key === "ArrowDown" &&
+                isOpen &&
+                typedHighlight &&
+                highlightedIndex === 0
+              ) {
+                (
+                  event.nativeEvent as KeyboardEvent & {
+                    preventDownshiftDefault?: boolean;
+                  }
+                ).preventDownshiftDefault = true;
               }
               if (
                 event.key === "Enter" &&
