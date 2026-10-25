@@ -218,12 +218,21 @@ test("the ground under an Earth observer is dark at night and lit by day", async
   const lookDown = async (): Promise<void> => {
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("Scene canvas has no bounding box");
-    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.8, {
-      steps: 10,
-    });
-    await page.mouse.up();
+    // A drag turns the look a fixed angle per pixel, about 80 degrees here,
+    // down from the Moon. The Moon's altitude depends on when the Pause
+    // click landed: at Greenwich it is near 50 degrees, so one drag ended
+    // either side of -30 degrees. Two drags turn the look 160 degrees, so
+    // it ends at least 70 degrees down from any start.
+    for (let drag = 0; drag < 2; drag += 1) {
+      await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.2);
+      await page.mouse.down();
+      await page.mouse.move(
+        box.x + box.width * 0.75,
+        box.y + box.height * 0.8,
+        { steps: 10 },
+      );
+      await page.mouse.up();
+    }
     await expect
       .poll(async () =>
         Number(await scene.getAttribute("data-surface-look-altitude-deg")),
@@ -232,7 +241,8 @@ test("the ground under an Earth observer is dark at night and lit by day", async
     await page.waitForTimeout(300);
   };
 
-  // The paused clock is near 02:00 at Greenwich on 1 January 2026.
+  // The paused clock is a little after midnight at Greenwich on 1 January
+  // 2026. How far after depends on when the Pause click lands.
   const greenwichSolarHours = Number(
     await scene.getAttribute("data-surface-local-solar-time-hours"),
   );

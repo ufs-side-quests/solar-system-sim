@@ -203,12 +203,20 @@ test("a presentation clicker steps the tour with Page Down and Page Up", async (
   await page.evaluate(() => {
     const record = window as unknown as Window & { pageKeysTaken: boolean[] };
     record.pageKeysTaken = [];
+    // Read at the key's keyup, once every keydown listener has run. The
+    // press returns after its keyup is handled, so the record is complete
+    // when the press returns. A timer here ran late when frames were slow:
+    // the record read [true] and gained its second entry later.
+    let pageKey: KeyboardEvent | null = null;
     window.addEventListener("keydown", (event) => {
       if (event.key === "PageDown" || event.key === "PageUp") {
-        // Read once every listener has run.
-        window.setTimeout(() =>
-          record.pageKeysTaken.push(event.defaultPrevented),
-        );
+        pageKey = event;
+      }
+    });
+    window.addEventListener("keyup", (event) => {
+      if (pageKey !== null && event.key === pageKey.key) {
+        record.pageKeysTaken.push(pageKey.defaultPrevented);
+        pageKey = null;
       }
     });
   });
