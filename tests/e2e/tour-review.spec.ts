@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 
 const TOUR_SCENES = [
   ["earth", "Earth is already enormous"],
@@ -219,3 +220,66 @@ for (const viewport of [
     }
   });
 }
+
+test("Saturn seen from Titan shows Saturn's sunlit side at the step's own time", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.locator("canvas.major-body-layer")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Scale tour" }).click();
+  const tour = page.getByRole("dialog", {
+    name: "Scale of the Solar System tour",
+  });
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  for (const [stepId] of TOUR_SCENES) {
+    await expect(tour).toHaveAttribute("data-tour-step", stepId);
+    if (stepId === "saturn-from-titan") break;
+    await tour.getByRole("button", { name: "Next" }).click();
+  }
+  // Reduced motion holds the tour, so the clock stays at the step's time.
+  await expect(page.locator("time.global-simulation-clock")).toHaveAttribute(
+    "datetime",
+    "2026-01-08T20:00:00Z",
+    { timeout: 30_000 },
+  );
+  await expect(scene).toHaveAttribute("data-camera-target-body", "saturn");
+  await expect(tour).toContainText("thin line");
+  await expect(tour.getByText("exact model time")).toHaveText(
+    "8 January 2026 · exact model time",
+  );
+
+  // The middle of Saturn's disc is sunlit, not the dark night side.
+  await page.waitForTimeout(500);
+  const x = Number(await scene.getAttribute("data-camera-target-screen-x"));
+  const y = Number(await scene.getAttribute("data-camera-target-screen-y"));
+  const sceneBox = await scene.boundingBox();
+  if (sceneBox === null) throw new Error("The scene must be laid out");
+  const png = await page.screenshot({
+    clip: {
+      x: sceneBox.x + x - 12,
+      y: sceneBox.y + y - 20,
+      width: 24,
+      height: 12,
+    },
+    animations: "disabled",
+  });
+  const { data, info } = await sharp(png)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let sum = 0;
+  for (const byte of data) sum += byte;
+  const brightness = sum / (info.width * info.height * info.channels);
+  await page.screenshot({
+    path: testInfo.outputPath("saturn-from-titan.png"),
+    animations: "disabled",
+  });
+  expect(brightness).toBeGreaterThan(60);
+});

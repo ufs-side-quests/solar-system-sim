@@ -2310,8 +2310,8 @@ export function App() {
       }
     }
     rememberDisplaySettingsBeforeTour();
-    // Scale steps set no time: they run on from the clock, so a clock outside
-    // the validated window starts again from the epoch first.
+    // Most Scale steps set no time: they run on from the clock, so a clock
+    // outside the validated window starts again from the epoch first.
     const currentTimeSeconds = displayedStateRef.current?.timeSeconds;
     if (
       currentTimeSeconds !== undefined &&
@@ -2709,9 +2709,9 @@ export function App() {
     setTourTransitionSequence((current) => current + 1);
   }, [queueTourSeek, tourKind, tourPresentationToken, tourStepIndex]);
 
-  // A step's clock holds while the camera flies there (an Eclipse step at its
-  // own time, a Scale step at the time it began, because Scale steps set no
-  // time), so the event the step names happens in front of the settled camera.
+  // A step's clock holds while the camera flies there (at the step's own time,
+  // or for a Scale step that sets none, at the time it began), so the event
+  // the step names happens in front of the settled camera.
   // The scene defers a reset flight until the focus body has a state, so a
   // step on a body with an ephemeris window (the ISS, JWST) at a time outside
   // that window would hold the clock forever. No tour step focuses one.
@@ -4180,7 +4180,16 @@ export function App() {
                     </p>
                   ) : activeTourStep.timeUtc !== undefined ? (
                     <time dateTime={activeTourStep.timeUtc}>
-                      12 August 2026 · exact model time
+                      {new Date(activeTourStep.timeUtc).toLocaleDateString(
+                        "en-GB",
+                        {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        },
+                      )}{" "}
+                      · exact model time
                     </time>
                   ) : null}
                   {tourKind === "eclipse" &&

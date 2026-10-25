@@ -1,10 +1,13 @@
+import { simulationSecondsForUtc } from "../physics/simulation-date";
 import type { CameraOrientationPreset } from "../scene/camera-view";
 import { narrationFor, type TourNarration } from "./narration";
 
 export type ScaleTourStep = Readonly<{
   id: string;
-  timeUtc?: never;
-  timeSeconds?: never;
+  // A step that needs a moment of the sky, such as Titan on Saturn's sunlit
+  // side, moves the clock there. Other steps go on from the clock as it is.
+  timeUtc?: string;
+  timeSeconds?: number;
   surfaceObserver?: never;
   focusBodyId: string;
   cameraTargetBodyId?: string;
@@ -306,6 +309,10 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
   },
   {
     id: "saturn-from-titan",
+    // Titan then lies on Saturn's sunlit side: over the step's 28 hours the
+    // simulated Sun-Saturn-Titan angle falls from about 25 to 4 degrees.
+    timeUtc: "2026-01-08T20:00:00.000Z",
+    timeSeconds: simulationSecondsForUtc("2026-01-08T20:00:00.000Z"),
     focusBodyId: "titan",
     cameraTargetBodyId: "saturn",
     orientation: "perspective",
@@ -328,10 +335,11 @@ export const SCALE_TOUR_STEPS: readonly ScaleTourStep[] = [
     },
     eyebrow: "Beyond Titan's haze",
     title: "Saturn seen from Titan",
-    kidLine: "Titan, the moon we watch from, is wider than the planet Mercury.",
-    scale: "The rings span several degrees of sky",
+    kidLine:
+      "Titan orbits in the plane of Saturn's rings, so they look like a thin line.",
+    scale: "Saturn about 5.5° wide · the ring line about 12° long",
     description:
-      "Titan is 5,150 km across, wider than Mercury's 4,879 km, and orbits about 1.2 million kilometres from Saturn. Above its dense orange atmosphere, Saturn and its rings would stretch across several degrees of sky.",
+      "Titan is 5,150 km across, wider than Mercury's 4,879 km, and orbits about 1.2 million kilometres from Saturn. On this day it is on Saturn's sunlit side. Seen from clear space above Titan's haze, Saturn is about 5.5 degrees wide. Titan orbits in the plane of the rings, so they show edge-on, as a thin line about 12 degrees long.",
     visualKey:
       "Physical sizes and live separation · clear-space observer at Titan",
     narration: narrationFor("saturn-from-titan"),

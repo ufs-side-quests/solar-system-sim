@@ -1,16 +1,12 @@
 import {
-  AstroTime,
   EclipseKind,
   Observer,
   SearchLocalSolarEclipse,
 } from "astronomy-engine";
 
-import { majorBodySnapshot } from "../physics/solar-system";
+import { simulationSecondsForUtc } from "../physics/simulation-date";
 import type { CameraOrientationPreset } from "../scene/camera-view";
 import { narrationFor, type TourNarration } from "../tour/narration";
-
-const SECONDS_PER_DAY = 86_400;
-const J2000_JULIAN_DAY = 2_451_545;
 
 export const ECLIPSE_SOURCE_URL =
   "https://science.nasa.gov/eclipses/future-eclipses/total-solar-eclipse-on-august-12-2026/";
@@ -28,12 +24,6 @@ export const SPAIN_CENTRE_LINE_OBSERVER = Object.freeze({
   latitudeDeg: 43 + 22.3 / 60,
   longitudeDeg: -(6 + 11.3 / 60),
 });
-
-function simulationSecondsForUtc(isoUtc: string): number {
-  const time = new AstroTime(new Date(isoUtc));
-  const epochDaysSinceJ2000 = majorBodySnapshot.epoch.value - J2000_JULIAN_DAY;
-  return (time.tt - epochDaysSinceJ2000) * SECONDS_PER_DAY;
-}
 
 const londonEclipse = SearchLocalSolarEclipse(
   new Date("2026-08-11T00:00:00.000Z"),
