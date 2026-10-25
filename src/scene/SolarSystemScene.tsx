@@ -397,6 +397,8 @@ const scratchOrientationEnd = new Vector3();
 const ALPHA_CENTAURI_DISTANCE_AU = 272_000;
 const VOYAGER_1_HELIOPAUSE_AU = 122;
 const VOYAGER_2_HELIOPAUSE_AU = 119;
+// The NASA Black Marble city glow on Earth's night side, seen from space.
+const EARTH_NIGHT_LIGHT_INTENSITY = 0.32;
 const OORT_CLOUD_INNER_MIN_AU = 2_000;
 const OORT_CLOUD_INNER_MAX_AU = 5_000;
 const OORT_CLOUD_OUTER_MIN_AU = 10_000;
@@ -1712,6 +1714,17 @@ export function SolarSystemScene({
     const atmosphereMeshes = new Map<string, Mesh>();
     const atmosphereMaterials = new Map<string, ShaderMaterial>();
     const surfaceMaterials = new Map<string, MeshStandardMaterial>();
+    const showEarthNightLights = (visible: boolean): void => {
+      const earthSurface = surfaceMaterials.get("earth");
+      if (earthSurface === undefined) {
+        throw new Error(
+          "Earth night lights require the Earth surface material",
+        );
+      }
+      earthSurface.emissiveIntensity = visible
+        ? EARTH_NIGHT_LIGHT_INTENSITY
+        : 0;
+    };
     type SolarOcclusionUniforms = Readonly<{
       receiverBodyId: string;
       sunFromReceiverAu: IUniform<Vector3>;
@@ -4398,7 +4411,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
           nasaEarthNightLightAsset.file,
           true,
         );
-        surfaceMaterial.emissiveIntensity = 0.32;
+        surfaceMaterial.emissiveIntensity = EARTH_NIGHT_LIGHT_INTENSITY;
         container.dataset["earthNightLightAsset"] = "NASA-Black-Marble-2016";
       }
       if (bodyId === "earth" && nasaEarthCloudAsset !== undefined) {
@@ -7871,6 +7884,7 @@ float saturnRingTransmission(vec3 surfacePosition) {
         for (const atmosphere of atmosphereMeshes.values()) {
           atmosphere.visible = true;
         }
+        showEarthNightLights(true);
         delete container.dataset["surfaceObserverBody"];
         delete container.dataset["surfaceObserverTarget"];
         delete container.dataset["surfaceObserverLatitudeDeg"];
@@ -7982,6 +7996,10 @@ float saturnRingTransmission(vec3 surfacePosition) {
         for (const [bodyId, atmosphere] of atmosphereMeshes) {
           atmosphere.visible = bodyId !== surfaceConfiguration.bodyId;
         }
+        // The night-light map is the glow of whole cities seen from orbit.
+        // The ground at the observer's feet is lit only by the Moon and the
+        // stars, so it stays dark at night.
+        showEarthNightLights(surfaceConfiguration.bodyId !== "earth");
         setData(container, "cameraTracking", "surface-observer");
         setData(container, "cameraOrientation", "local-horizontal");
         setData(container, "cameraObserverBody", surfaceConfiguration.bodyId);
