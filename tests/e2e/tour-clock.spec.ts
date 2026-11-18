@@ -26,10 +26,13 @@ async function clockAtSettle(
       const scene = document.querySelector<HTMLElement>(
         '[aria-label^="Physics-driven Solar System"]',
       );
+      // A seek can outlast the flight on a slow machine. Until it lands the
+      // clock still shows the time from before the step, and says Seeking.
       if (
         scene === null ||
         scene.dataset.cameraTransitionSequence === (previous ?? undefined) ||
-        scene.dataset.cameraTransitionPhase !== "settled"
+        scene.dataset.cameraTransitionPhase !== "settled" ||
+        document.querySelector(".run-status")?.textContent === "Seeking"
       ) {
         return false;
       }

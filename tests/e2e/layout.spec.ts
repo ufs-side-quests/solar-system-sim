@@ -270,10 +270,18 @@ test("on a tablet the flown-to planet's label is not under the card", async ({
 test("the plain time line stays clear of the time buttons", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   const time = page.locator(".time-readout output");
   const actions = page.locator(".time-actions");
-  // A long line such as "43.7 minutes after the start".
+  // A long line such as "43.7 minutes after the start". At 1 hour per second
+  // that line shows for under a second, which a slow machine can skip; at
+  // 1 minute per second it shows from 10 to 60 seconds after the start.
+  await expect(time).toHaveText("At the start");
+  await page.getByRole("slider", { name: "Playback rate" }).fill("1");
+  await expect(
+    page.getByText("1 minute / second", { exact: true }),
+  ).toBeVisible();
   await expect(time).toHaveText(/^\d{2}\.\d minutes after the start$/u, {
     timeout: 60_000,
   });

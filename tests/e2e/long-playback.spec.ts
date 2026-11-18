@@ -5,7 +5,9 @@ const TEN_YEARS_SECONDS = 10 * 365.25 * 86_400;
 test("plays at one year per second for a decade without stopping the simulation", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // The macOS CI runner achieves about 16 days a second at this rate (a
+  // laptop about 190), so a decade takes up to about four minutes there.
+  test.setTimeout(360_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/");
@@ -24,7 +26,7 @@ test("plays at one year per second for a decade without stopping the simulation"
   await expect
     .poll(
       async () => Number(await timeOutput.getAttribute("data-time-seconds")),
-      { timeout: 60_000 },
+      { timeout: 300_000 },
     )
     .toBeGreaterThan(TEN_YEARS_SECONDS);
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
