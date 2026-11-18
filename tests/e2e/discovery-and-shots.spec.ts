@@ -206,6 +206,25 @@ test("the planets race starts at once from any date and repeats from the epoch",
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1024, height: 768 });
+  // Counts the physics workers the page starts. Each new one downloads and
+  // compiles REBOUND again, which made the race start seconds late.
+  await page.addInitScript(() => {
+    const counter = window as unknown as { physicsWorkers: number };
+    counter.physicsWorkers = 0;
+    const PageWorker = window.Worker;
+    window.Worker = class extends PageWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (options?.name === "rebound-physics") {
+          counter.physicsWorkers += 1;
+        }
+      }
+    };
+  });
+  const physicsWorkers = (): Promise<number> =>
+    page.evaluate(
+      () => (window as unknown as { physicsWorkers: number }).physicsWorkers,
+    );
   await page.goto("/");
   const timeOutput = page.locator(".time-readout output");
   await expect(timeOutput).toHaveAttribute("data-time-seconds", /\d/u, {
@@ -274,6 +293,8 @@ test("the planets race starts at once from any date and repeats from the epoch",
       attributeOldValue: true,
     });
   });
+  const workersBeforeRace = await physicsWorkers();
+  expect(workersBeforeRace).toBeGreaterThan(0);
   const tappedAtMs = await page.evaluate(() => performance.now());
   await page
     .getByRole("button", { name: "Planets racing", exact: true })
@@ -298,6 +319,9 @@ test("the planets race starts at once from any date and repeats from the epoch",
   const samples = await page.evaluate(
     () => (window as unknown as { raceSamples: RaceSample[] }).raceSamples,
   );
+  // The race start and its loop go back to the epoch in the running
+  // worker.
+  expect(await physicsWorkers()).toBe(workersBeforeRace);
 
   // The first tap starts the race at the epoch at once.
   const started = samples.find(
@@ -358,6 +382,47 @@ test("the planets race starts at once from any date and repeats from the epoch",
   await expect(page.getByText(/Outside ±1 year/u)).toHaveCount(0);
   await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
   await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+});
+
+test("the planets race starts again after the simulation stopped", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  const timeOutput = page.locator(".time-readout output");
+  await expect(timeOutput).toHaveAttribute("data-time-seconds", /\d/u, {
+    timeout: 30_000,
+  });
+  // The next call to the physics worker fails, as a solver error would.
+  await page.evaluate(() => {
+    const post: unknown = Reflect.get(Worker.prototype, "postMessage");
+    if (typeof post !== "function") {
+      throw new Error("Worker.postMessage is unavailable");
+    }
+    let failed = false;
+    Worker.prototype.postMessage = function (this: Worker, ...args: unknown[]) {
+      if (!failed) {
+        failed = true;
+        throw new Error("test solver failure");
+      }
+      Reflect.apply(post, this, args);
+    };
+  });
+  await expect(page.getByText(/Simulation stopped/u)).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Planets racing", exact: true })
+    .click();
+  await expect(page.getByText(/Simulation stopped/u)).toHaveCount(0);
+  await expect(page.locator(".cinematic-shot-caption")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        Number(await timeOutput.getAttribute("data-time-seconds")) / 86_400,
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(1);
 });
 
 test("running the clock backward ends the planets race", async ({ page }) => {
@@ -482,6 +547,10 @@ test("Pause and Run backward stop the planets race where it is on screen", async
 test("a discovery message takes the shot caption's place", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 768, height: 1024 });
+  // The message shows for 6 seconds of page time. The page clock stands
+  // still while the shot starts, so a slow machine cannot end the message
+  // before the test reads the screen.
+  await page.clock.install();
   await page.goto("/");
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
@@ -491,6 +560,7 @@ test("a discovery message takes the shot caption's place", async ({ page }) => {
     /-?\d+(?:\.\d+)?/u,
     { timeout: 30_000 },
   );
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
   // Selecting the Roadster finds it, an easter egg.
   await selectFocus(
     page.getByRole("combobox", { name: "Focus" }),
@@ -509,6 +579,7 @@ test("a discovery message takes the shot caption's place", async ({ page }) => {
   await expect(toast).toBeVisible();
   await expect(caption).toHaveCount(0);
   // The caption comes back when the message goes.
+  await page.clock.resume();
   await expect(toast).toHaveCount(0, { timeout: 10_000 });
   await expect(caption).toBeVisible();
 });
