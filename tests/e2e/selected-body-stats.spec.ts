@@ -343,6 +343,8 @@ test("selected body card gives distances a child can feel", async ({
 test("spacecraft and fictional cards keep distances steady and exact values in More detail", async ({
   page,
 }, testInfo) => {
+  // Four focus flights of up to 12 s each, plus the start.
+  test.setTimeout(120_000);
   await page.goto("/");
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
