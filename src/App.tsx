@@ -1430,6 +1430,7 @@ export function App() {
   const [simulationRunToken, setSimulationRunToken] = useState(0);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const playingRef = useRef(playing);
+  const errorRef = useRef(error);
   // A craft with tracked dates moves the clock to them; this keeps the
   // child's own clock, so leaving that craft brings it back.
   const clockBeforeCraftRef = useRef<Readonly<{
@@ -1457,6 +1458,7 @@ export function App() {
   const tourFullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
+  errorRef.current = error;
   orbitViewEnabledRef.current = orbitViewEnabled;
   directionRef.current = direction;
   timeRateIndexRef.current = timeRateIndex;
@@ -1657,11 +1659,11 @@ export function App() {
           const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
           if (directSeekTimeSeconds !== undefined) {
             directSeekTimeSecondsRef.current = undefined;
-            // A seek nearer the epoch than the clock starts again from the
-            // epoch state, the same state a fresh run starts from, instead
-            // of integrating across years.
+            // A seek no farther from the epoch than the clock starts again
+            // from the epoch state, the same state a fresh run starts from,
+            // instead of integrating across years.
             if (
-              Math.abs(directSeekTimeSeconds - epochTimeSeconds) <
+              Math.abs(directSeekTimeSeconds - epochTimeSeconds) <=
               Math.abs(directSeekTimeSeconds - solverTime)
             ) {
               await client.api.initialize(majorBodySystem);
@@ -1932,6 +1934,20 @@ export function App() {
     setClearTrailsToken((current) => current + 1);
     setSimulationRunToken((current) => current + 1);
   }, []);
+
+  // Takes the clock back to the epoch (time 0) in the running worker: the
+  // seek starts the solver again from the epoch state without a new worker,
+  // which would download and compile REBOUND again. A stopped simulation
+  // has no running worker, so it restarts.
+  const returnToEpoch = useCallback((): void => {
+    if (errorRef.current !== undefined) {
+      restartSimulation();
+      return;
+    }
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = 0;
+    setClearTrailsToken((current) => current + 1);
+  }, [restartSimulation]);
 
   // Ends the active cool shot. The view settings from before it come back. A
   // shot sets its own playback rate, so the rate and direction from before it
@@ -2916,7 +2932,7 @@ export function App() {
       historyLength: focusHistoryRef.current.length,
     };
     if (shot.loopEndTimeSeconds !== null) {
-      restartSimulation();
+      returnToEpoch();
     }
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
@@ -2951,9 +2967,9 @@ export function App() {
 
   // The time on screen, not the solver frame: the frame reaches the loop end
   // a keyframe before the screen does, and a restart then would cut the last
-  // day of the race from the clock and the planets. A new run's first frame
-  // jumps to the epoch, so the shown time changes in the same render that it
-  // starts and a restart is never repeated on a stale time.
+  // day of the race from the clock and the planets. The seek's frame jumps
+  // to the epoch, so the shown time changes in the same render that it lands
+  // and a restart is never repeated on a stale time.
   const activeShotTimeSeconds = state?.timeSeconds;
   const activeShotLoopEndTimeSeconds =
     activeCinematicShot?.loopEndTimeSeconds ?? null;
@@ -2972,8 +2988,8 @@ export function App() {
     ) {
       return;
     }
-    restartSimulation();
-  }, [activeShotLoopEndTimeSeconds, activeShotTimeSeconds, restartSimulation]);
+    returnToEpoch();
+  }, [activeShotLoopEndTimeSeconds, activeShotTimeSeconds, returnToEpoch]);
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
