@@ -547,6 +547,10 @@ test("Pause and Run backward stop the planets race where it is on screen", async
 test("a discovery message takes the shot caption's place", async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 768, height: 1024 });
+  // The message shows for 6 seconds of page time. The page clock stands
+  // still while the shot starts, so a slow machine cannot end the message
+  // before the test reads the screen.
+  await page.clock.install();
   await page.goto("/");
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
@@ -556,6 +560,7 @@ test("a discovery message takes the shot caption's place", async ({ page }) => {
     /-?\d+(?:\.\d+)?/u,
     { timeout: 30_000 },
   );
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
   // Selecting the Roadster finds it, an easter egg.
   await selectFocus(
     page.getByRole("combobox", { name: "Focus" }),
@@ -574,6 +579,7 @@ test("a discovery message takes the shot caption's place", async ({ page }) => {
   await expect(toast).toBeVisible();
   await expect(caption).toHaveCount(0);
   // The caption comes back when the message goes.
+  await page.clock.resume();
   await expect(toast).toHaveCount(0, { timeout: 10_000 });
   await expect(caption).toBeVisible();
 });
