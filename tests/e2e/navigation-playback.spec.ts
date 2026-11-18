@@ -17,7 +17,7 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
   const scene = page.getByRole("img", {
     name: /Physics-driven Solar System/u,
   });
-  const venusLabel = page.getByRole("button", { name: "Focus Venus" });
+  const venusLabel = page.getByRole("button", { name: "Venus", exact: true });
   await expect(venusLabel).toBeVisible();
   const cameraDirectionBeforeSelection = await scene.getAttribute(
     "data-camera-direction",
@@ -33,7 +33,10 @@ test("selects on one click, focuses explicitly, and re-centres the view", async 
   await expect(
     page.locator(".selected-body-detail").getByText("Venus", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(scene).toHaveAttribute("data-focus-body", "venus");
   await expect(page.getByRole("combobox", { name: "Focus" })).toHaveValue(
     "Venus",
@@ -81,6 +84,22 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   page,
 }, testInfo) => {
   test.setTimeout(360_000);
+  // Next object walks only found easter eggs, so this walk starts with all
+  // of them found.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "solar-explorer.found-eggs.v1",
+      JSON.stringify([
+        "death-star-1",
+        "death-star-2",
+        "deep-space-nine",
+        "uss-defiant",
+        "discovery-one",
+        "jovian-monolith",
+        "roadster",
+      ]),
+    );
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Pause" }).click();
   await page.getByRole("button", { name: "Display" }).click();
@@ -129,11 +148,17 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await page.getByRole("button", { name: "Next object" }).click();
   await expect(scene).toHaveAttribute("data-selected-body", "mars");
   await expect(focus).toHaveValue("Earth");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Mars");
   await page.getByRole("button", { name: "Parent" }).click();
   await expect(scene).toHaveAttribute("data-selected-body", "sun");
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(focus).toHaveValue("Mars");
@@ -141,28 +166,52 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
   await expect(focus).toHaveValue("Earth");
   await selectFocus(focus, "Hubble Space Telescope");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("James Webb Space Telescope");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Jovian Monolith (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Discovery One (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Death Star I (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Death Star II (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Deep Space Nine (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("USS Defiant (fictional)");
   await page.getByRole("button", { name: "Next object" }).click();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  await page
+    .locator(".selected-body-detail")
+    .getByRole("button", { name: "Fly there" })
+    .click();
   await expect(focus).toHaveValue("Sun");
   await page.getByRole("button", { name: "Home" }).click();
   await expect(focus).toHaveValue("Solar System");
@@ -219,4 +268,52 @@ test("navigates bodies, configures trails, and reports measured buffered playbac
     path: testInfo.outputPath("navigation-playback.png"),
     fullPage: true,
   });
+});
+
+test("Home keeps the clock running", async ({ page }) => {
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute(
+    "data-rendered-time-seconds",
+    /-?\d+(?:\.\d+)?/u,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "Pause" }).click();
+  await page.getByRole("slider", { name: "Playback rate" }).fill("3");
+  await page.getByRole("button", { name: "Run forward" }).click();
+  await selectFocus(page.getByRole("combobox", { name: "Focus" }), "Earth");
+  await expect(scene).toHaveAttribute("data-focus-body", "earth");
+
+  await page.getByRole("button", { name: "Home" }).click();
+
+  await expect(scene).toHaveAttribute("data-focus-body", "solar-system");
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect(page.locator(".run-status")).toContainText("1 day/s requested");
+  const timeOutput = page.locator(".time-readout output");
+  const startTime = Number(await timeOutput.getAttribute("data-time-seconds"));
+  await expect
+    .poll(
+      async () =>
+        Number(await timeOutput.getAttribute("data-time-seconds")) - startTime,
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(DAY_SECONDS);
+});
+
+test("the Playback rate slider speaks its rate, not its step number", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const slider = page.getByRole("slider", { name: "Playback rate" });
+  const rate = page.locator(".playback-rate-control output");
+  await expect(slider).toHaveAttribute("aria-valuetext", "1 hour / second");
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(rate).not.toHaveText("1 hour / second");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    (await rate.textContent()) ?? "",
+  );
 });

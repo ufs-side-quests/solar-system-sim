@@ -109,7 +109,7 @@ test("orbits a focused object and yields to manual camera control", async ({
     .click();
   const detailPanel = page.locator(".selected-body-detail");
   await expect(detailPanel).toHaveClass(/is-collapsed/u);
-  await expect(page.getByText("Mass", { exact: true })).toBeHidden();
+  await expect(page.getByText("How heavy", { exact: true })).toBeHidden();
   await expect(
     page.getByRole("button", {
       name: "Expand selected body details",
@@ -127,7 +127,7 @@ test("orbits a focused object and yields to manual camera control", async ({
       name: "Expand selected body details",
     })
     .click();
-  await expect(page.getByText("Mass", { exact: true })).toBeVisible();
+  await expect(page.getByText("How heavy", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByRole("tab", { name: "View" }).click();

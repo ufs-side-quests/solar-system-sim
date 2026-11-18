@@ -32,13 +32,15 @@ type GravityWellUniforms = Readonly<{
   displayMode: { value: number };
 }>;
 
-export type GravityWellUpdate = Readonly<{
-  mode: GravityWellMode;
-  scale: GravityWellScale;
-  centerAu: readonly [number, number, number];
-  extentAu: number;
-  sources: readonly GravityPotentialSource[];
-}>;
+export type GravityWellUpdate =
+  | Readonly<{ mode: "off" }>
+  | Readonly<{
+      mode: Exclude<GravityWellMode, "off">;
+      scale: GravityWellScale;
+      centerAu: readonly [number, number, number];
+      extentAu: number;
+      sources: readonly GravityPotentialSource[];
+    }>;
 
 export type GravityWellDiagnostics = GravityPotentialRange &
   Readonly<{

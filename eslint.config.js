@@ -5,6 +5,7 @@ import tseslint from "typescript-eslint";
 export default defineConfig(
   globalIgnores([
     "dist/",
+    ".tmp/",
     "public/draco/",
     "src/physics/wasm/generated/",
     "vendor/",

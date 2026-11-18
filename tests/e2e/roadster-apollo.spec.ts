@@ -68,7 +68,7 @@ test("shows the JPL Roadster and all six Moon-fixed Apollo landing sites", async
     .not.toBe("0");
 
   const apollo11 = page.getByRole("button", {
-    name: "Select Apollo 11 landing site at Tranquility Base",
+    name: "Apollo 11 landing site at Tranquility Base",
   });
   await expect(apollo11).toBeVisible();
   await apollo11.click();

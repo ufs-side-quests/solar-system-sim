@@ -178,10 +178,15 @@ export function propagateIss(
   };
 }
 
+// Outside the declared element window the ISS is absent from the state, as the
+// operational spacecraft are outside coverage. SGP4 far from epoch reports decay
+// (error 6), so propagating there would stop the whole simulation.
 export function withIssEphemeris(state: SimulationState): SimulationState {
-  const earthState = state.bodies.find(
-    (body) => body.id === ISS_PARENT_BODY_ID,
-  );
+  const bodies = state.bodies.filter((body) => body.id !== ISS_BODY_ID);
+  if (!isIssEphemerisWithinValidity(state.timeSeconds)) {
+    return { ...state, bodies };
+  }
+  const earthState = bodies.find((body) => body.id === ISS_PARENT_BODY_ID);
   if (earthState === undefined) {
     throw new Error(
       "Integrated Earth state is unavailable for ISS propagation",
@@ -189,9 +194,6 @@ export function withIssEphemeris(state: SimulationState): SimulationState {
   }
   return {
     ...state,
-    bodies: [
-      ...state.bodies.filter((body) => body.id !== ISS_BODY_ID),
-      propagateIss(earthState, state.timeSeconds),
-    ],
+    bodies: [...bodies, propagateIss(earthState, state.timeSeconds)],
   };
 }

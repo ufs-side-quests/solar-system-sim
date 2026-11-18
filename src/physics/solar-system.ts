@@ -7,6 +7,8 @@ import { majorBodySnapshot } from "./solar-system-data";
 import { voyagerInitialBodies } from "./voyager-ephemeris";
 
 export const ASTRONOMICAL_UNIT_M = 149_597_870_700;
+/** The speed of light in vacuum, exact by the SI definition of the metre. */
+export const SPEED_OF_LIGHT_MPS = 299_792_458;
 export const SUN_GRAVITATIONAL_PARAMETER_M3_S2 = Number(
   "1.3271244004127942e20",
 );

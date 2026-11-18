@@ -109,7 +109,7 @@ test("searches grouped focus targets and renders official operational spacecraft
   await expect(scene).toHaveAttribute("data-hubble-geometry-visible", "true");
   await expect(scene).toHaveAttribute(
     "data-operational-spacecraft-physics",
-    "NASA-JPL-Horizons-cubic-Hermite",
+    "roadster=barycentric-cubic-Hermite hubble=geocentric-two-body jwst=barycentric-cubic-Hermite",
   );
   await expect(page.getByRole("complementary")).toContainText("11,110 kg");
   await expect(page.getByRole("complementary")).toContainText(

@@ -10,14 +10,44 @@ export type CinematicShot = Readonly<{
   orientation: Exclude<CameraOrientationPreset, "custom">;
   cameraDistanceAu?: number;
   cameraZoom: number;
+  // The shot frames more than its target body, such as the Earth-Moon
+  // system or the heliosphere, so the open sky beside a card keeps the whole
+  // frame height on screen. Absent for a shot of its target body alone,
+  // whose size the scene measures.
+  subjectFillsFrame?: true;
   timeRateSecondsPerSecond: number;
+  // A looping shot restarts the simulation from the snapshot epoch (time
+  // zero) and restarts it again, with clear trails, when time passes this;
+  // null for shots that run on from the current time.
+  loopEndTimeSeconds: number | null;
   viewMode: Exclude<ViewMode, "schematic">;
   bodyVisibilityPercent: number;
   orbitGuides: boolean;
+  planetTrails: boolean;
   labels: boolean;
 }>;
 
+export const PLANETS_RACING_SHOT: CinematicShot = {
+  id: "planets-racing",
+  name: "Planets racing round the Sun",
+  description: "Closer planets go round faster. Watch Mercury lap Earth.",
+  focusBodyId: "sun",
+  orientation: "overhead",
+  cameraDistanceAu: 6,
+  cameraZoom: 1,
+  subjectFillsFrame: true,
+  timeRateSecondsPerSecond: 30 * 86_400,
+  // Stay inside the ±1 year validated ephemeris window after the epoch.
+  loopEndTimeSeconds: 360 * 86_400,
+  viewMode: "orrery",
+  bodyVisibilityPercent: 100,
+  orbitGuides: true,
+  planetTrails: true,
+  labels: true,
+};
+
 export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
+  PLANETS_RACING_SHOT,
   {
     id: "earth-daylight",
     name: "Earth in daylight",
@@ -28,9 +58,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.00018,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -43,9 +75,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.0024,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -58,9 +92,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.0018,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 3_600,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -73,9 +109,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     cameraDistanceAu: 0.00005,
     cameraZoom: 1,
     timeRateSecondsPerSecond: 600,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -87,9 +125,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     orientation: "sun-facing",
     cameraZoom: 1.8,
     timeRateSecondsPerSecond: 86_400,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
   {
@@ -102,9 +142,11 @@ export const CINEMATIC_SHOTS: readonly CinematicShot[] = [
     orientation: "parent-facing",
     cameraZoom: 16,
     timeRateSecondsPerSecond: 3_600,
+    loopEndTimeSeconds: null,
     viewMode: "reality",
     bodyVisibilityPercent: 100,
     orbitGuides: false,
+    planetTrails: false,
     labels: false,
   },
 ];

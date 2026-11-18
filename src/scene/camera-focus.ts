@@ -1,3 +1,5 @@
+import { Vector3 } from "three";
+
 import type { MajorBodyDefinition } from "../physics/solar-system";
 import {
   SATURN_MAIN_RING_OUTER_RADIUS_KM,
@@ -16,16 +18,24 @@ const RING_SYSTEM_OUTER_RADIUS_KM: Readonly<Record<string, number>> = {
   uranus: URANUS_MAIN_RING_OUTER_RADIUS_KM,
 };
 
+// The radius of everything a body shows, its rings included, when the body
+// itself is drawn with the given radius.
+export function visualExtentAu(
+  body: MajorBodyDefinition,
+  drawnRadiusAu: number,
+): number {
+  const ringOuterRadiusKm = RING_SYSTEM_OUTER_RADIUS_KM[body.id];
+  if (ringOuterRadiusKm === undefined) {
+    return drawnRadiusAu;
+  }
+  return (drawnRadiusAu * (ringOuterRadiusKm * 1_000)) / body.meanRadiusM;
+}
+
 function displayedVisualExtentAu(
   body: MajorBodyDefinition,
   visibilityBoost: number,
 ): number {
-  const bodyRadius = displayedRadiusAu(body, visibilityBoost);
-  const ringOuterRadiusKm = RING_SYSTEM_OUTER_RADIUS_KM[body.id];
-  if (ringOuterRadiusKm === undefined) {
-    return bodyRadius;
-  }
-  return (bodyRadius * (ringOuterRadiusKm * 1_000)) / body.meanRadiusM;
+  return visualExtentAu(body, displayedRadiusAu(body, visibilityBoost));
 }
 
 function physicalVisualExtentAu(body: MajorBodyDefinition): number {
@@ -58,4 +68,59 @@ export function focusNearPlaneAu(
     maximumNearPlane,
     focusDistance / FOCUS_DISTANCE_TO_NEAR_PLANE_RATIO,
   );
+}
+
+// A catalogue moon has no radius, so the camera frames it with its parent:
+// seen across the line between them, the parent sits half way from the
+// centre to the edge of the narrower side of the view.
+export function catalogueMoonFocusDistanceAu(
+  separationAu: number,
+  verticalFovDeg: number,
+  aspect: number,
+): number {
+  if (!Number.isFinite(separationAu) || separationAu <= 0) {
+    throw new Error("Catalogue moon separation must be positive and finite");
+  }
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    throw new Error("Camera aspect must be positive and finite");
+  }
+  const halfHeightRad = (verticalFovDeg * Math.PI) / 360;
+  const halfNarrowRad = Math.min(
+    halfHeightRad,
+    Math.atan(Math.tan(halfHeightRad) * aspect),
+  );
+  return separationAu / Math.tan(halfNarrowRad / 2);
+}
+
+// A camera distance tuned for a landscape view. The field of view is vertical,
+// so in a portrait view the camera moves out by the aspect ratio: the region
+// that fits the landscape height then fits the portrait width.
+export function portraitFitDistanceAu(
+  distanceAu: number,
+  aspect: number,
+): number {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    throw new Error("Camera aspect must be positive and finite");
+  }
+  return distanceAu / Math.min(1, aspect);
+}
+
+// A model seen from straight down the Sun line shows no shadows and reads
+// flat. The camera turns sideways and north off that line to a phase angle of
+// about 40 degrees: about 88% of the visible side stays sunlit, so the view
+// is still the sunlit side, and the shadows show the shape.
+const MODEL_VIEW_SIDE_OFFSET = 0.75;
+const MODEL_VIEW_NORTH_OFFSET = 0.35;
+
+export function sunlitModelViewDirection(
+  sunDirection: Vector3,
+  north: Vector3,
+): Vector3 {
+  const sun = sunDirection.clone().normalize();
+  const side = sun.clone().cross(north).normalize();
+  const up = north.clone().addScaledVector(sun, -north.dot(sun)).normalize();
+  return sun
+    .addScaledVector(side, MODEL_VIEW_SIDE_OFFSET)
+    .addScaledVector(up, MODEL_VIEW_NORTH_OFFSET)
+    .normalize();
 }
