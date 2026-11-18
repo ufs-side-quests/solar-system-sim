@@ -86,6 +86,7 @@ Authority-published gravitational parameters and rotation models are taken from 
 - NAIF planetary constants: <https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc>
 - NASA 3D Resources: <https://science.nasa.gov/3d-resources/>
 - NASA International Space Station 3D model: <https://science.nasa.gov/3d-resources/international-space-station-iss-d-igoal/>
+  Modified from the original: `scripts/repair-model-assets.mjs` deletes seven stray meshes (`bendedtru1`, `bendedtru2`, `bendedtru3`, `bendedtrus`, `pCylinder1`, `pCylinder2`, `pCylinder8`) that floated about 15 model units above the station.
 - NASA Voyager 3D model: <https://science.nasa.gov/resource/voyager-3d-model/>
 - NASA Hubble Space Telescope 3D model: <https://science.nasa.gov/resource/hubble-space-telescope-3d-model/>
 - NASA James Webb Space Telescope 3D models: <https://science.nasa.gov/mission/webb/multimedia/3d-models/>
@@ -125,7 +126,9 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/discovery-1-3c0b0c7bb5364305a04b74382f944935>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `b2cc068f824a5812b29045c10cd43f6d282a01244ed9b5ceec95ae02185498ac`
+- Installed SHA-256: `0f96f9f8cf72ddd050ae21bdd438ea07ac8fbb6431d155b297032f5daf2657c0`
+- Modified from the original: `scripts/repair-model-assets.mjs` sets metallicFactor 0 on the 13 materials that left it unset, so the hull renders as painted, not bare metal.
+  The original's SHA-256 is `b2cc068f824a5812b29045c10cd43f6d282a01244ed9b5ceec95ae02185498ac`.
 
 ### Death Star II
 
@@ -133,15 +136,20 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Licence: Creative Commons Attribution 4.0
 - Source: <https://sketchfab.com/3d-models/death-star-ii-17ccca0dbb6b4e338fa999202f9e6685>
 - Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `c721f3f11d2d6dee1497efca0c401de60df6de0b1fe8325069b8ee4b8ae126b3`
+- Installed SHA-256: `0cffcbf4da2f9873a201e999b3e627588ad878523a33ef949f2f19184cb4e3c2`
+- Modified from the original: `scripts/repair-model-assets.mjs` applies the node transforms to the vertices, turns the station about its axis so the superlaser dish faces +z, shows every material's colour texture at full value with metallicFactor 0 (the export dims them to between 0 and 17 % and leaves them metallic), sets the window emission to the calibrated lit-window luminance of 300 cd/m2, removes the window texture from two materials that do not emit, drops unused texture coordinates, and compresses the file with WebP textures and Draco.
+  The original's SHA-256 is `f4e2003cac1abc5887d0a631d8bc51a00091920fd76235f4e38244ca36a13ed1`, from <https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-084/17ccca0dbb6b4e338fa999202f9e6685.glb>.
 
 ### Deep Space Nine
 
-- Creator: neilken
+- Creator: rossrobotics (<https://sketchfab.com/rossrobotics>)
+- Title: Deep Space Nine - Star Trek
 - Licence: Creative Commons Attribution 4.0
-- Source: <https://sketchfab.com/3d-models/deep-space-nine-03368a8eed67471396b52fc3dce77cfa>
-- Archive: <https://objaverse.allenai.org/>
-- Installed SHA-256: `9f8d4af18650679039bb875e1de740938ddcc410f7acab3f6eb2d690a720d7ba`
+- Source: <https://sketchfab.com/3d-models/deep-space-nine-star-trek-3e1743fc00be4d83848c7d890b8a5988>
+- Archive: <https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-121/3e1743fc00be4d83848c7d890b8a5988.glb>
+- Installed SHA-256: `e4a63c9f355bda8dfb9fd81a00afb5b1ea391ea98437297e5749a7ac8c2881de`
+- Modified from the original: `scripts/repair-model-assets.mjs` applies the node transforms to the vertices, joins, welds and simplifies the meshes (about 410,000 triangles to about 130,000), gives the hull one painted grey material, adds lit windows on the habitat ring walls and the Promenade (window triangles with their own material, texture coordinates and a repeating window texture), and compresses the file with Draco.
+  The original's SHA-256 is `bd81edfcfb06c9871b30d345d9540d252b703c03fd3c7fb135e6a9831650947b`.
 
 ### USS Defiant
 
@@ -150,6 +158,7 @@ Each SHA-256 value identifies the exact derived file in this repository.
 - Source: <https://sketchfab.com/3d-models/defiant-170220edebe0462ba477772c3325679a>
 - Archive: <https://objaverse.allenai.org/>
 - Installed SHA-256: `4f9e0ced7ea55a0390946a8d1f2371a7a3bcf0f8e943ba9bb059a38e88e7b3cc`
+- The file is unmodified; the application lights its windows when it loads the model.
 
 The story places Discovery in orbit around Io but does not publish precise osculating elements, so the application identifies its authored massless circular orbit as fictional.
 Death Star I uses an original generated PBR texture atlas and authored Three.js geometry.
@@ -176,3 +185,34 @@ The Hipparcos and Tycho Catalogues are distributed under the Creative Commons At
 The catalogue data remains subject to that source licence and is not relicensed under the application GPL.
 Required catalogue credit: `Credit: ESA`.
 VizieR requests acknowledgement of the VizieR catalogue access tool, CDS, Strasbourg, France, with DOI `10.26093/cds/vizier`.
+
+## Solar photosphere colour inputs
+
+`data/cie-1931-2deg-cmf.csv` holds the CIE 1931 2 degree standard observer colour matching functions at 1 nm.
+The data originates from the International Commission on Illumination (CIE), which publishes it in CIE 015 Colorimetry and ISO/CIE 11664-1 (CIE standard colorimetric observers).
+The file is copied verbatim from colour-science 0.4.7, which takes the tables from the Colour and Vision Research Laboratory (CVRL).
+
+- colour-science source file: <https://github.com/colour-science/colour/blob/v0.4.7/colour/colorimetry/datasets/cmfs.py>
+- CVRL tables: <http://cvrl.ioo.ucl.ac.uk/cie.htm>
+- CIE 015 Colorimetry: <https://cie.co.at/publications/colorimetry-4th-edition>
+
+The colour-science source file states `__copyright__ = "Copyright 2013 Colour Developers"` and `__license__ = "BSD-3-Clause"`.
+Its licence, verbatim from <https://github.com/colour-science/colour/blob/v0.4.7/LICENSE>:
+
+```text
+Copyright 2013 Colour Developers
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE
+```
+
+`scripts/derive-solar-photosphere.mjs` uses the limb-darkening polynomial coefficients of SolarSoft `darklimb_u.pro` and `darklimb_v.pro` (D. Alexander, 1996), fits to the constants in Allen's Astrophysical Quantities.
+
+- SolarSoft mirror: <https://github.com/lmco/SolarSoft/tree/master/gen/idl/solar>

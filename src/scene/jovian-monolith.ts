@@ -2,6 +2,9 @@ import type { BodyState, SimulationState } from "../physics/contracts";
 
 export const JOVIAN_MONOLITH_BODY_ID = "jovian-monolith";
 export const JOVIAN_MONOLITH_NAME = "Jovian Monolith (fictional)";
+// The monolith sits between these two bodies, at their inner Lagrange point.
+export const JOVIAN_MONOLITH_PRIMARY_BODY_ID = "jupiter";
+export const JOVIAN_MONOLITH_SECONDARY_BODY_ID = "io";
 
 // 2010 describes the Jovian monolith as about two kilometres long. The
 // 1:4:9 proportions are the recurring dimensions used for the monoliths in
@@ -36,8 +39,8 @@ function requiredBody(state: SimulationState, bodyId: string): BodyState {
  * inserted into the gravitational integration.
  */
 export function jovianMonolithState(state: SimulationState): BodyState {
-  const jupiter = requiredBody(state, "jupiter");
-  const io = requiredBody(state, "io");
+  const jupiter = requiredBody(state, JOVIAN_MONOLITH_PRIMARY_BODY_ID);
+  const io = requiredBody(state, JOVIAN_MONOLITH_SECONDARY_BODY_ID);
   const delta = [
     jupiter.positionM[0] - io.positionM[0],
     jupiter.positionM[1] - io.positionM[1],

@@ -36,7 +36,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   );
   await expect(scene).toHaveAttribute(
     "data-solar-photosphere",
-    "temperature-colour-procedural-granulation",
+    "blackbody-colour-allen-limb-darkening",
   );
   await expect(scene).toHaveAttribute("data-solar-corona-layers", "3d-shell");
   await expect(scene).toHaveAttribute("data-solar-prominence-count", "0");
@@ -62,7 +62,9 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const labelFontSize = await earthLabel.evaluate((element) =>
     Number.parseFloat(window.getComputedStyle(element).fontSize),
   );
-  expect(labelFontSize).toBeLessThan(10);
+  // Readable for a child, yet still a small annotation over the planet.
+  expect(labelFontSize).toBeGreaterThanOrEqual(11);
+  expect(labelFontSize).toBeLessThan(12);
   await expect(scene).toHaveAttribute("data-orbit-guide-count", "0");
   await expect(scene).toHaveAttribute("data-tactical-overlay-visible", "false");
   await expect(scene).toHaveAttribute("data-planet-trails-visible", "false");
@@ -128,11 +130,20 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const fittedDistance = Number(
     await scene.getAttribute("data-camera-distance-au"),
   );
-  await page.getByRole("button", { name: "Zoom out" }).click();
-  await expect(scene).toHaveAttribute(
-    "data-camera-navigation-action",
-    "zoom-out",
+  // A tour hides the camera dock: the wheel zooms out and the R key
+  // re-centres, the same actions as the dock's Zoom out and Re-centre.
+  await expect(cameraNavigation).toBeHidden();
+  const canvasBounds = await page
+    .locator("canvas.major-body-layer")
+    .boundingBox();
+  if (canvasBounds === null) {
+    throw new Error("Solar System canvas has no screen bounds");
+  }
+  await page.mouse.move(
+    canvasBounds.x + canvasBounds.width / 2,
+    canvasBounds.y + canvasBounds.height / 2,
   );
+  await page.mouse.wheel(0, 600);
   await expect
     .poll(async () =>
       Number(await scene.getAttribute("data-camera-distance-au")),
@@ -142,7 +153,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
   const resetTokenBeforeRecenter = Number(
     await scene.getAttribute("data-reset-view-token"),
   );
-  await page.getByRole("button", { name: "Re-centre" }).click();
+  await page.keyboard.press("r");
   await expect
     .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
     .toBeGreaterThan(resetTokenBeforeRecenter);
@@ -215,7 +226,7 @@ test("keeps escape navigation visible and guides the user through scale", async 
     .toBeCloseTo(0.032, 6);
   await expect(
     tour.getByText(
-      "Photosphere, chromosphere and quiet corona · solar activity is illustrative",
+      "Photosphere, chromosphere and quiet corona · the Sun is drawn much dimmer than real so its darker edge shows",
       { exact: true },
     ),
   ).toBeVisible();
@@ -268,6 +279,10 @@ test("keeps escape navigation visible and guides the user through scale", async 
       Number(await scene.getAttribute("data-camera-distance-au")),
     )
     .toBeCloseTo(0.025, 7);
+  // Easter egg hints stay out of the narrated science.
+  await expect(
+    page.locator(".body-label.is-hidden-surprise").filter({ visible: true }),
+  ).toHaveCount(0);
   await expect(
     tour.getByText(
       "Thin blue curves · major-moon orbits; all bodies retain physical size",
@@ -283,4 +298,45 @@ test("keeps escape navigation visible and guides the user through scale", async 
   await page.getByRole("button", { name: "Exit" }).click();
   await expect(tour).toHaveCount(0);
   await expect(cameraNavigation).toBeVisible();
+});
+
+// Outside a tour the camera dock shows, and its buttons do what they say.
+test("the dock's Zoom out and Re-centre buttons move the camera", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  const scene = page.getByRole("img", {
+    name: /Physics-driven Solar System/u,
+  });
+  await expect(scene).toHaveAttribute("data-rendered-time-seconds", /-?\d+/u, {
+    timeout: 30_000,
+  });
+  const cameraNavigation = page.getByRole("navigation", {
+    name: "Camera navigation",
+  });
+  await expect(cameraNavigation).toBeVisible();
+  const distanceBefore = Number(
+    await scene.getAttribute("data-camera-distance-au"),
+  );
+  expect(distanceBefore).toBeGreaterThan(0);
+
+  await cameraNavigation.getByRole("button", { name: "Zoom out" }).click();
+  await expect(scene).toHaveAttribute(
+    "data-camera-navigation-action",
+    "zoom-out",
+  );
+  await expect
+    .poll(async () =>
+      Number(await scene.getAttribute("data-camera-distance-au")),
+    )
+    .toBeGreaterThan(distanceBefore);
+
+  const resetTokenBefore = Number(
+    await scene.getAttribute("data-reset-view-token"),
+  );
+  await cameraNavigation.getByRole("button", { name: "Re-centre" }).click();
+  await expect
+    .poll(async () => Number(await scene.getAttribute("data-reset-view-token")))
+    .toBeGreaterThan(resetTokenBefore);
 });

@@ -4,14 +4,30 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { useCombobox } from "downshift";
 
+import { AUDIO_SETTINGS_STORAGE_KEY } from "./audio/audio-settings";
 import { useInterfaceAudio } from "./audio/use-interface-audio";
+import { matchesPhoneLayout, usePhoneLayout } from "./phone-layout";
+import {
+  discoveryMessage,
+  discoveryProgress,
+  type EasterEggId,
+  forgetFoundEasterEggs,
+  hiddenSurpriseRows,
+  HIDDEN_SURPRISES_GROUP,
+  hiddenSurprisesHeading,
+  hintsAtUnfoundEasterEgg,
+  isEasterEggId,
+  loadFoundEasterEggs,
+  saveFoundEasterEggs,
+} from "./tour/easter-eggs";
 import { createPhysicsClient } from "./physics/client";
 import type { BodyState, SimulationState } from "./physics/contracts";
 import { withKnownSatellites } from "./physics/known-satellite-ephemeris";
@@ -27,13 +43,16 @@ import {
   knownSatelliteById,
 } from "./physics/known-satellites";
 import {
-  ASTRONOMICAL_UNIT_M,
   majorBodySnapshot,
   majorBodySystem,
+  type MajorBodyDefinition,
 } from "./physics/solar-system";
 import {
+  formatPlainSimulationDate,
+  formatPlainSimulationOffset,
   formatSimulationDateUtc,
   simulationDateUtc,
+  VALIDATED_WINDOW_SECONDS,
 } from "./physics/simulation-date";
 import {
   isVoyagerBodyId,
@@ -47,14 +66,35 @@ import {
   operationalSpacecraftSnapshot,
 } from "./physics/operational-spacecraft";
 import { PARENT_BODY_ID } from "./scene/body-facts";
+import { bodyDisplayName } from "./scene/body-display-name";
 import {
   BODY_COMPOSITION_BY_ID,
+  EARTH_MEAN_RADIUS_M,
   formatMassKg,
+  formatLiveOrbitalPeriod,
+  formatSourcedOrbitalPeriod,
+  formatSpeedWithJetComparison,
+  formatSpinPeriod,
+  formatBodySize,
+  formatDistanceAu,
+  formatExactDistanceKm,
+  formatGapInParentWidths,
+  formatPlainDistance,
+  formatSunDistance,
+  formatSunlightTravelTime,
+  PLAIN_SURFACE_BY_BODY_ID,
+  SIDEREAL_ORBITAL_PERIOD_BY_ID,
+  EARTH_MASS_KG,
+  formatMassComparedWithEarth,
+  formatPlainCraftMass,
+  PLAIN_SURFACE_MAP_BY_CLASSIFICATION,
 } from "./scene/body-physical-facts";
+import { osculatingOrbitalPeriodSeconds } from "./scene/osculating-orbit";
 import type {
   CameraNavigationAction,
   CameraNavigationCommand,
   CameraOrientationPreset,
+  ZoomLimits,
 } from "./scene/camera-view";
 import {
   circularOrbitSolution,
@@ -70,13 +110,19 @@ import type {
   GravityWellMode,
   GravityWellScale,
 } from "./scene/gravity-potential";
-import { type SimulationFrame } from "./scene/interpolation";
+import {
+  enqueueTrailSteps,
+  type SimulationFrame,
+  type TrailQueue,
+} from "./scene/interpolation";
 import { interpolateDisplayedSimulationFrame } from "./scene/display-interpolation";
 import type { ExposureMode } from "./scene/physical-lighting";
+import type { ExposureStatus } from "./scene/SolarSystemScene";
 import {
   JOVIAN_MONOLITH_BODY_ID,
   JOVIAN_MONOLITH_DIMENSIONS_M,
   JOVIAN_MONOLITH_NAME,
+  JOVIAN_MONOLITH_PRIMARY_BODY_ID,
   jovianMonolithState,
 } from "./scene/jovian-monolith";
 import {
@@ -92,6 +138,7 @@ import {
 } from "./scene/lunar-landing-sites";
 import {
   bodyOrientationAngles,
+  planetSpinNote,
   siderealRotationRateRadPerSecond,
   siderealRotationPeriodHours,
 } from "./scene/orientation";
@@ -123,6 +170,7 @@ import {
 import { fictionalModelAssetByBodyId } from "./scene/fictional-model-assets";
 import type { SmallBodyGpuStatus } from "./scene/SmallBodyGpuLayer";
 import { SchematicSystemMap } from "./scene/SchematicSystemMap";
+import { isInSizeLineup, SizeLineup } from "./scene/SizeLineup";
 import {
   surfaceObserverBodies,
   surfaceObserverFrame,
@@ -132,6 +180,10 @@ import {
   nasaMaterialPresentationByBodyId,
   nasaTextureByBodyId,
 } from "./scene/visual-assets";
+import {
+  SUN_SURFACE_TECHNICAL,
+  SUN_SURFACE_WORDING,
+} from "./scene/solar-photosphere";
 import {
   VISUAL_QUALITY_PROFILES,
   type VisualQuality,
@@ -149,18 +201,24 @@ import type { WayfinderMode } from "./scene/wayfinder";
 import {
   ECLIPSE_PATH_SOURCE_URL,
   ECLIPSE_SOURCE_URL,
+  ECLIPSE_STORY_ENDING,
   ECLIPSE_STORY_STEP_DURATION_MS,
   ECLIPSE_STORY_STEPS,
   ECLIPSE_STORY_TRANSITION_DURATION_MS,
   type EclipseStoryStep,
 } from "./eclipse/eclipse-story";
 import {
+  SCALE_TOUR_ENDING,
   SCALE_TOUR_STEP_DURATION_MS,
   SCALE_TOUR_STEPS,
   SCALE_TOUR_TRANSITION_DURATION_MS,
   type ScaleTourStep,
 } from "./tour/scale-tour";
-import { CINEMATIC_SHOTS, type CinematicShot } from "./tour/cinematic-shots";
+import {
+  CINEMATIC_SHOTS,
+  PLANETS_RACING_SHOT,
+  type CinematicShot,
+} from "./tour/cinematic-shots";
 
 const SolarSystemScene = lazy(async () => {
   const module = await import("./scene/SolarSystemScene");
@@ -175,8 +233,50 @@ const PLAYBACK_BATCH_SIZE = TARGET_SOLVER_FRAMES_PER_SECOND;
 const DEFAULT_CAMERA_ZOOM = 1;
 const MANUAL_CAMERA_TRANSITION_DURATION_MS = 12_000;
 const ORIENTATION_CAMERA_TRANSITION_DURATION_MS = 4_000;
+// A modifier pressed alone (Shift, or the Cmd of Cmd+Tab) leaves the
+// blank-screen cover in place.
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "Control",
+  "Fn",
+  "Meta",
+  "Shift",
+]);
 type DisplayPanelTab = "view" | "camera" | "guides" | "sound";
 type GuidedTourKind = "scale" | "eclipse";
+// The settings a tour step overrides, restored when the tour ends.
+type DisplaySettingsBeforeTour = Readonly<{
+  viewMode: ViewMode;
+  bodyVisibilityPercent: number;
+  showLabels: boolean;
+  showOrbitGuides: boolean;
+  showTacticalOverlay: boolean;
+  showEclipticPlane: boolean;
+  showPlanetTrails: boolean;
+  showMoonTrail: boolean;
+  showMinorBodyTrails: boolean;
+  gravityWellMode: GravityWellMode;
+  referenceFrame: ReferenceFrame;
+  surfaceObserverBodyId: string;
+  surfaceObserverTargetBodyId: string;
+  surfaceObserverLatitudeDeg: number;
+  surfaceObserverLongitudeDeg: number;
+  direction: -1 | 1;
+  timeRateIndex: number;
+}>;
+// The view settings a cool shot overrides, restored when the shot ends.
+type ViewSettingsBeforeShot = Pick<
+  DisplaySettingsBeforeTour,
+  | "viewMode"
+  | "bodyVisibilityPercent"
+  | "showLabels"
+  | "showOrbitGuides"
+  | "showTacticalOverlay"
+  | "showEclipticPlane"
+  | "showPlanetTrails"
+>;
 type GuidedTourStep = ScaleTourStep | EclipseStoryStep;
 
 const CAMERA_ZOOM_PRESETS = [
@@ -242,6 +342,18 @@ const SEMANTIC_ZOOM_LABELS: Readonly<Record<SemanticZoomLevel, string>> = {
   "moon-system": "Moon system",
   surface: "Surface detail",
 };
+// How many times wider the real Sun is than a body, from the sourced radii.
+function sunWidthRatio(bodyId: string): number {
+  const sun = majorBodySnapshot.bodies.find((body) => body.id === "sun");
+  const body = majorBodySnapshot.bodies.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (sun === undefined || body === undefined) {
+    throw new Error(`Sourced radius is missing for the Sun or ${bodyId}`);
+  }
+  return Math.round(sun.meanRadiusM / body.meanRadiusM);
+}
+
 const VIEW_MODE_OPTIONS = [
   {
     mode: "reality",
@@ -252,8 +364,7 @@ const VIEW_MODE_OPTIONS = [
   {
     mode: "orrery",
     label: "Orrery",
-    description:
-      "Physical positions with enlarged bodies and markers so the system remains readable.",
+    description: `Physical positions with enlarged bodies and markers so the system remains readable. Sizes are squeezed so small worlds stay visible. The real Sun is about ${String(sunWidthRatio("jupiter"))} times wider than Jupiter and ${String(sunWidthRatio("earth"))} times wider than Earth.`,
   },
   {
     mode: "schematic",
@@ -300,7 +411,11 @@ type FocusOption = Readonly<{
   group: string;
   searchText: string;
   disabled: boolean;
+  // A clue row that flies to the overview selects the body it names.
+  selectBodyId?: string;
 }>;
+// The Focus list shows easter eggs only in the hidden surprises group, whose
+// heading carries the live count.
 const FOCUS_OPTIONS: readonly FocusOption[] = [
   {
     id: "",
@@ -358,7 +473,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: spacecraft.id,
     key: spacecraft.id,
     label: spacecraft.name,
-    group: "Spacecraft",
+    group: isEasterEggId(spacecraft.id) ? HIDDEN_SURPRISES_GROUP : "Spacecraft",
     searchText: `${spacecraft.name} ${spacecraft.id} ${spacecraft.id === "roadster" ? "Tesla Starman Falcon Heavy car" : "telescope"} spacecraft`,
     disabled: false,
   })),
@@ -366,7 +481,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: JOVIAN_MONOLITH_BODY_ID,
     key: JOVIAN_MONOLITH_BODY_ID,
     label: JOVIAN_MONOLITH_NAME,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText:
       "Jovian Monolith TMA-2 2001 2010 Space Odyssey Jupiter Io L1 fictional",
     disabled: false,
@@ -375,7 +490,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: DISCOVERY_ONE_BODY_ID,
     key: DISCOVERY_ONE_BODY_ID,
     label: DISCOVERY_ONE_NAME,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText:
       "Discovery One 2001 2010 Space Odyssey Io Jupiter spacecraft fictional",
     disabled: false,
@@ -384,7 +499,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: orbiter.id,
     key: orbiter.id,
     label: orbiter.name,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText: `${orbiter.name} Star Wars ${orbiter.parentBodyId} fictional battle station`,
     disabled: false,
   })),
@@ -392,7 +507,7 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
     id: object.id,
     key: object.id,
     label: object.name,
-    group: "Fictional references",
+    group: HIDDEN_SURPRISES_GROUP,
     searchText: `${object.name} Star Trek DS9 Defiant Callisto Jupiter fictional station spacecraft`,
     disabled: false,
   })),
@@ -401,9 +516,57 @@ const FOCUS_OPTIONS: readonly FocusOption[] = [
 const NAVIGABLE_FOCUS_OPTIONS = FOCUS_OPTIONS.filter(
   (option) => option.id !== "" && !option.disabled,
 );
-const FOCUS_BROWSE_OPTIONS = FOCUS_OPTIONS.filter(
-  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+const EGG_FOCUS_OPTION_BY_ID = new Map(
+  FOCUS_OPTIONS.filter((option) => isEasterEggId(option.id)).map((option) => [
+    option.id,
+    option,
+  ]),
 );
+
+const FOCUS_OPTION_BY_ID = new Map(
+  FOCUS_OPTIONS.map((option) => [option.id, option]),
+);
+
+function focusOption(bodyId: string): FocusOption {
+  const option = FOCUS_OPTION_BY_ID.get(bodyId);
+  if (option === undefined) {
+    throw new Error(`Focus option ${bodyId} is unavailable`);
+  }
+  return option;
+}
+
+/** An unfound egg stays out of browsing, search and Next object. */
+function isHiddenUntilFound(
+  option: FocusOption,
+  found: ReadonlySet<EasterEggId>,
+): boolean {
+  return isEasterEggId(option.id) && !found.has(option.id);
+}
+
+/** Found eggs by name, unfound eggs as clue rows that fly to the clue body. */
+function hiddenSurpriseFocusOptions(
+  found: ReadonlySet<EasterEggId>,
+): FocusOption[] {
+  const group = hiddenSurprisesHeading(found);
+  return hiddenSurpriseRows(found).map((row) => {
+    if (row.kind === "clue") {
+      return {
+        id: row.focusBodyId,
+        key: `clue:${row.eggId}`,
+        label: row.label,
+        group,
+        searchText: "",
+        disabled: false,
+        ...(row.focusBodyId === row.bodyId ? {} : { selectBodyId: row.bodyId }),
+      };
+    }
+    const option = EGG_FOCUS_OPTION_BY_ID.get(row.eggId);
+    if (option === undefined) {
+      throw new Error(`Easter egg ${row.eggId} has no focus option`);
+    }
+    return option;
+  });
+}
 
 function orbitParametersForBody(
   state: SimulationState | undefined,
@@ -447,32 +610,142 @@ function orbitParametersForBody(
   };
 }
 
+/**
+ * Where the clock must go to show a craft that has positions only for its
+ * tracked dates, or undefined when the craft is in view at timeSeconds.
+ */
+function trackedCraftClockTime(
+  bodyId: string,
+  timeSeconds: number,
+): Readonly<{ name: string; timeSeconds: number }> | undefined {
+  if (bodyId === ISS_BODY_ID) {
+    return isIssEphemerisWithinValidity(timeSeconds)
+      ? undefined
+      : {
+          name: "the International Space Station",
+          timeSeconds: ISS_EPOCH_SIMULATION_SECONDS,
+        };
+  }
+  if (
+    !isOperationalSpacecraftBodyId(bodyId) ||
+    isOperationalSpacecraftWithinValidity(bodyId, timeSeconds)
+  ) {
+    return undefined;
+  }
+  const spacecraft = operationalSpacecraftSnapshot.spacecraft.find(
+    (candidate) => candidate.id === bodyId,
+  );
+  if (spacecraft === undefined) {
+    throw new Error(`Operational spacecraft ${bodyId} is unavailable`);
+  }
+  return {
+    name: `the ${spacecraft.name}`,
+    timeSeconds: operationalSpacecraftRecommendedTimeSeconds(bodyId),
+  };
+}
+
+// The hidden surprises group is built per render from the found eggs.
 const FOCUS_GROUPS = Array.from(
   new Set(FOCUS_OPTIONS.map((option) => option.group)),
-).map((label) => ({
-  label,
-  options: FOCUS_OPTIONS.filter((option) => option.group === label),
-}));
+)
+  .filter((label) => label !== HIDDEN_SURPRISES_GROUP)
+  .map((label) => ({
+    label,
+    options: FOCUS_OPTIONS.filter((option) => option.group === label),
+  }));
+// Every option except the eggs, in the order the list shows them, so the
+// highlighted row and Enter pick the row on screen.
+const NON_EGG_OPTIONS = FOCUS_GROUPS.flatMap((group) => group.options);
+const FOCUS_BROWSE_OPTIONS = NON_EGG_OPTIONS.filter(
+  (option) => !ADDITIONAL_KNOWN_SATELLITE_IDS.has(option.id),
+);
+
+// How well typed text matches an option: 0 at the start of its name, 1 at
+// the start of a later word of its name, 2 as whole words of its other
+// search words (a category such as "satellite", or a story such as
+// "2001"), or undefined. Letters inside a word match nothing, so "Sat"
+// lists Saturn and its moons, not every moon that is a satellite.
+function focusMatchRank(
+  option: FocusOption,
+  normalizedInput: string,
+): number | undefined {
+  const label = option.label.toLocaleLowerCase();
+  if (label.startsWith(normalizedInput)) {
+    return 0;
+  }
+  const escaped = normalizedInput.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  if (new RegExp(`[^\\p{L}\\p{N}]${escaped}`, "u").test(label)) {
+    return 1;
+  }
+  return new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${escaped}(?:$|[^\\p{L}\\p{N}])`,
+    "u",
+  ).test(option.searchText.toLocaleLowerCase())
+    ? 2
+    : undefined;
+}
+
+// The options that match typed text, names first, each rank in list order.
+function focusSearchResults(
+  options: readonly FocusOption[],
+  normalizedInput: string,
+): FocusOption[] {
+  return options
+    .map((option) => ({
+      option,
+      rank: focusMatchRank(option, normalizedInput),
+    }))
+    .filter(
+      (match): match is { option: FocusOption; rank: number } =>
+        match.rank !== undefined,
+    )
+    .sort((a, b) => a.rank - b.rank)
+    .map((match) => match.option);
+}
 
 const FocusSelect = memo(function FocusSelect({
   value,
+  foundEasterEggIds,
   onSelect,
 }: Readonly<{
   value: string;
-  onSelect(bodyId: string): void;
+  foundEasterEggIds: ReadonlySet<EasterEggId>;
+  onSelect(option: FocusOption): void;
 }>) {
-  const selectedOption = FOCUS_OPTIONS.find((option) => option.id === value);
-  if (selectedOption === undefined) {
-    throw new Error(`Focus option ${value} is unavailable`);
-  }
-  const [filteredOptions, setFilteredOptions] = useState<FocusOption[]>([
-    ...FOCUS_BROWSE_OPTIONS,
-  ]);
+  const selectedOption = focusOption(value);
+  const hiddenSurpriseOptions = useMemo(
+    () => hiddenSurpriseFocusOptions(foundEasterEggIds),
+    [foundEasterEggIds],
+  );
+  const browseOptions = useMemo(
+    () => [...FOCUS_BROWSE_OPTIONS, ...hiddenSurpriseOptions],
+    [hiddenSurpriseOptions],
+  );
+  // Clue rows have no search text, so search lists found eggs only.
+  const searchOptions = useMemo(
+    () => [...NON_EGG_OPTIONS, ...hiddenSurpriseOptions],
+    [hiddenSurpriseOptions],
+  );
+  const groups = [
+    ...FOCUS_GROUPS,
+    {
+      label: hiddenSurprisesHeading(foundEasterEggIds),
+      options: hiddenSurpriseOptions,
+    },
+  ];
+  const [filteredOptions, setFilteredOptions] =
+    useState<FocusOption[]>(browseOptions);
   const [catalogueSearchActive, setCatalogueSearchActive] = useState(false);
+  // Typing highlights the first match, so Enter picks it. The first Arrow
+  // Down after typing moves into the list onto that row, not past it.
+  const typedHighlightRef = useRef(false);
   const showBrowseOptions = (): void => {
     setCatalogueSearchActive(false);
-    setFilteredOptions([...FOCUS_BROWSE_OPTIONS]);
+    setFilteredOptions(browseOptions);
   };
+  // Typing an egg's full name and pressing Enter still selects it (a parent's
+  // way in), and counts as finding it. Partial search never lists an unfound
+  // egg.
   const selectTypedOption = (candidate: string): boolean => {
     const normalizedCandidate = candidate.trim().toLocaleLowerCase();
     const option = FOCUS_OPTIONS.find(
@@ -481,7 +754,7 @@ const FocusSelect = memo(function FocusSelect({
         !focusOption.disabled,
     );
     if (option === undefined) return false;
-    onSelect(option.id);
+    onSelect(option);
     return true;
   };
   const {
@@ -491,28 +764,29 @@ const FocusSelect = memo(function FocusSelect({
     getMenuProps,
     getToggleButtonProps,
     closeMenu,
+    highlightedIndex,
     isOpen,
     openMenu,
   } = useCombobox<FocusOption>({
     items: filteredOptions,
     selectedItem: selectedOption,
-    itemToString: (item) => item?.label ?? "",
+    // A clue row names the body it flies to, as that body's own row does.
+    itemToString: (item) => (item === null ? "" : focusOption(item.id).label),
     isItemDisabled: (item) => item.disabled,
     defaultHighlightedIndex: 0,
     onInputValueChange: ({ inputValue }) => {
+      typedHighlightRef.current = true;
       const normalizedInput = inputValue.trim().toLocaleLowerCase();
       setCatalogueSearchActive(normalizedInput.length > 0);
       setFilteredOptions(
         normalizedInput.length === 0
-          ? [...FOCUS_BROWSE_OPTIONS]
-          : FOCUS_OPTIONS.filter((option) =>
-              option.searchText.toLocaleLowerCase().includes(normalizedInput),
-            ),
+          ? browseOptions
+          : focusSearchResults(searchOptions, normalizedInput),
       );
     },
     onSelectedItemChange: ({ selectedItem }) => {
       if (selectedItem !== null) {
-        onSelect(selectedItem.id);
+        onSelect(selectedItem);
       }
     },
   });
@@ -529,8 +803,22 @@ const FocusSelect = memo(function FocusSelect({
               openMenu();
             },
             onKeyDown: (event) => {
+              const typedHighlight = typedHighlightRef.current;
+              typedHighlightRef.current = false;
               if (event.key === "ArrowDown" && !isOpen) {
                 showBrowseOptions();
+              }
+              if (
+                event.key === "ArrowDown" &&
+                isOpen &&
+                typedHighlight &&
+                highlightedIndex === 0
+              ) {
+                (
+                  event.nativeEvent as KeyboardEvent & {
+                    preventDownshiftDefault?: boolean;
+                  }
+                ).preventDownshiftDefault = true;
               }
               if (
                 event.key === "Enter" &&
@@ -562,7 +850,7 @@ const FocusSelect = memo(function FocusSelect({
         className="focus-popover focus-listbox"
         hidden={!isOpen}
       >
-        {FOCUS_GROUPS.map((group) => {
+        {groups.map((group) => {
           const visibleOptions = group.options.filter((option) =>
             filteredOptions.includes(option),
           );
@@ -618,21 +906,6 @@ function bodyRelativeSpeedMps(first: BodyState, second: BodyState): number {
   );
 }
 
-function formatDistance(
-  distanceM: number,
-  semanticZoom: SemanticZoomLevel,
-): string {
-  if (
-    semanticZoom === "solar-system" &&
-    distanceM >= 0.1 * ASTRONOMICAL_UNIT_M
-  ) {
-    return `${(distanceM / ASTRONOMICAL_UNIT_M).toLocaleString(undefined, { maximumFractionDigits: 5 })} AU`;
-  }
-  return `${(distanceM / 1_000).toLocaleString(undefined, {
-    maximumFractionDigits: semanticZoom === "surface" ? 2 : 0,
-  })} km`;
-}
-
 function formatEffectiveRate(secondsPerSecond: number): string {
   const absolute = Math.abs(secondsPerSecond);
   if (absolute >= DAY_SECONDS) {
@@ -675,6 +948,90 @@ function formatSimulationOffset(seconds: number): string {
   return `${sign}${(absoluteSeconds / DAY_SECONDS).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`;
 }
 
+/** "the Sun" reads as a name; every other parent keeps its own name. */
+function parentPhrase(parent: MajorBodyDefinition): string {
+  return parent.id === "sun" ? "the Sun" : parent.name;
+}
+
+/** A card row whose value never shows without its label. */
+type LabelledValue = Readonly<{ label: string; value: string }>;
+
+/**
+ * The selected-body distance rows. Rounded child-first values sit on the
+ * card; the exact live kilometres (and AU for Sun orbiters) go to
+ * "More detail". None of them change with camera zoom.
+ */
+type DistanceRows = Readonly<{
+  distance: LabelledValue;
+  exactDistance: LabelledValue;
+  sunlight?: string;
+  distanceAu?: string;
+}>;
+
+/** A Sun orbiter compares with Earth's average distance and adds the sunlight time. */
+function sunDistanceRows(bodyId: string, distanceM: number): DistanceRows {
+  return {
+    distance: {
+      label: "From the Sun",
+      value: formatSunDistance(bodyId, distanceM),
+    },
+    exactDistance: {
+      label: "Distance from the Sun, centre to centre (live)",
+      value: formatExactDistanceKm(distanceM),
+    },
+    sunlight: formatSunlightTravelTime(distanceM),
+    distanceAu: formatDistanceAu(distanceM),
+  };
+}
+
+/** An Earth-centred or fictional object states its centre distance in plain words. */
+function plainDistanceRows(label: string, distanceM: number): DistanceRows {
+  return {
+    distance: { label, value: formatPlainDistance(distanceM) },
+    exactDistance: {
+      label: `${label} (live)`,
+      value: formatExactDistanceKm(distanceM),
+    },
+  };
+}
+
+/** Spacecraft: Sun orbiters get the Sun rows, the rest a plain distance. */
+function spacecraftDistanceRows(
+  bodyId: string,
+  parent: MajorBodyDefinition,
+  distanceM: number,
+): DistanceRows {
+  return parent.id === "sun"
+    ? sunDistanceRows(bodyId, distanceM)
+    : plainDistanceRows(`Distance from ${parentPhrase(parent)}`, distanceM);
+}
+
+/** Planets and Pluto get the Sun rows; moons compare the gap with the parent's width. */
+function majorBodyDistanceRows(
+  body: MajorBodyDefinition,
+  parent: MajorBodyDefinition,
+  distanceM: number,
+): DistanceRows {
+  if (parent.id === "sun") {
+    return sunDistanceRows(body.id, distanceM);
+  }
+  return {
+    distance: {
+      label: `From ${parent.name}`,
+      value: formatGapInParentWidths(
+        distanceM,
+        parent.name,
+        parent.meanRadiusM,
+        body.meanRadiusM,
+      ),
+    },
+    exactDistance: {
+      label: `Distance from ${parent.name}, centre to centre (live)`,
+      value: formatExactDistanceKm(distanceM),
+    },
+  };
+}
+
 function normalizedDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
 }
@@ -698,71 +1055,207 @@ function formatAngularDiameter(degrees: number): string {
   return `${(arcminutes * 60).toLocaleString(undefined, { maximumFractionDigits: 2 })}″`;
 }
 
-function useDisplayedSimulationState(
-  frame: SimulationFrame | undefined,
-): Readonly<{
+// React shows the clock, the facts, the magnification and the exposure at
+// most this often; the scene reads every solver frame and displayed state
+// from refs on each animation frame, and reports its camera on each one.
+const REACT_PRESENTATION_INTERVAL_MS = 100;
+// Trail states wait until the scene draws them. While nobody drains them (a
+// background tab, or the schematic map) only the newest are kept.
+const MAXIMUM_PENDING_TRAIL_STATES = 64;
+
+type PresentedSimulation = Readonly<{
   state: SimulationState | undefined;
+  // Achieved simulated seconds per second, measured by the playback loop.
+  effectiveRate: number;
+  // The scene camera's magnification and exposure.
+  viewMagnification: number;
+  exposureStatus: ExposureStatus;
+}>;
+
+function useSimulationFrames(): Readonly<{
+  presented: PresentedSimulation;
+  frameRef: RefObject<SimulationFrame | undefined>;
   stateRef: RefObject<SimulationState | undefined>;
+  trailQueueRef: RefObject<TrailQueue>;
+  publishFrame: (frame: SimulationFrame) => void;
+  reportEffectiveRate: (rate: number) => void;
+  reportViewMagnification: (
+    magnification: number,
+    presentNow?: boolean,
+  ) => void;
+  reportExposureStatus: (status: ExposureStatus) => void;
 }> {
-  const [displayedState, setDisplayedState] = useState<SimulationState>();
-  const displayedStateRef = useRef<SimulationState | undefined>(undefined);
-  useEffect(() => {
-    if (frame === undefined) {
-      displayedStateRef.current = undefined;
-      setDisplayedState(undefined);
+  const initialExposureStatus: ExposureStatus = {
+    ev: 0,
+    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
+    mode: "auto",
+  };
+  const [presented, setPresented] = useState<PresentedSimulation>({
+    state: undefined,
+    effectiveRate: 0,
+    viewMagnification: DEFAULT_CAMERA_ZOOM,
+    exposureStatus: initialExposureStatus,
+  });
+  const frameRef = useRef<SimulationFrame | undefined>(undefined);
+  const effectiveRateRef = useRef(0);
+  const viewMagnificationRef = useRef(DEFAULT_CAMERA_ZOOM);
+  const exposureStatusRef = useRef(initialExposureStatus);
+  const stateRef = useRef<SimulationState | undefined>(undefined);
+  const trailQueueRef = useRef<TrailQueue>({ steps: [], dropped: false });
+  const animationFrameRef = useRef(0);
+  const presentTimerRef = useRef<number | undefined>(undefined);
+  const lastPresentedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const present = useCallback((): void => {
+    window.clearTimeout(presentTimerRef.current);
+    presentTimerRef.current = undefined;
+    lastPresentedAtRef.current = performance.now();
+    setPresented({
+      state: stateRef.current,
+      effectiveRate: effectiveRateRef.current,
+      viewMagnification: viewMagnificationRef.current,
+      exposureStatus: exposureStatusRef.current,
+    });
+  }, []);
+  // The latest state always reaches React, at most one interval late.
+  const schedulePresent = useCallback((): void => {
+    if (presentTimerRef.current !== undefined) {
       return;
     }
-    if (
-      frame.transitionDurationMs <= 0 ||
-      frame.start.timeSeconds === frame.end.timeSeconds
-    ) {
-      displayedStateRef.current = frame.end;
-      setDisplayedState(frame.end);
-      return;
-    }
-    const startedAt = performance.now();
-    let lastReactPresentationAt = Number.NEGATIVE_INFINITY;
-    let animationFrame = 0;
-    const present = (now: number): void => {
-      const fraction = Math.min(
-        1,
-        Math.max(0, (now - startedAt) / frame.transitionDurationMs),
-      );
-      const nextState = interpolateDisplayedSimulationFrame(frame, fraction);
-      displayedStateRef.current = nextState;
-      if (now - lastReactPresentationAt >= 100 || fraction === 1) {
-        lastReactPresentationAt = now;
-        setDisplayedState(nextState);
+    presentTimerRef.current = window.setTimeout(
+      present,
+      Math.max(
+        0,
+        lastPresentedAtRef.current +
+          REACT_PRESENTATION_INTERVAL_MS -
+          performance.now(),
+      ),
+    );
+  }, [present]);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(animationFrameRef.current);
+      window.clearTimeout(presentTimerRef.current);
+    },
+    [],
+  );
+  const publishFrame = useCallback(
+    (frame: SimulationFrame): void => {
+      const previousFrame = frameRef.current;
+      frameRef.current = frame;
+      cancelAnimationFrame(animationFrameRef.current);
+      if (frame.end.timeSeconds !== previousFrame?.end.timeSeconds) {
+        const jumped = frame.transitionDurationMs <= 0;
+        enqueueTrailSteps(
+          trailQueueRef.current,
+          (frame.trailStates ?? [frame.end]).map((state) => ({
+            state,
+            jumped,
+          })),
+          MAXIMUM_PENDING_TRAIL_STATES,
+        );
       }
-      if (fraction < 1) {
-        animationFrame = requestAnimationFrame(present);
+      if (
+        frame.transitionDurationMs <= 0 ||
+        frame.start.timeSeconds === frame.end.timeSeconds
+      ) {
+        stateRef.current = frame.end;
+        present();
+        return;
       }
-    };
-    animationFrame = requestAnimationFrame(present);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [frame]);
-  return { state: displayedState, stateRef: displayedStateRef };
+      const startedAt = performance.now();
+      const interpolate = (now: number): void => {
+        const fraction = Math.min(
+          1,
+          Math.max(0, (now - startedAt) / frame.transitionDurationMs),
+        );
+        stateRef.current = interpolateDisplayedSimulationFrame(frame, fraction);
+        schedulePresent();
+        if (fraction < 1) {
+          animationFrameRef.current = requestAnimationFrame(interpolate);
+        }
+      };
+      animationFrameRef.current = requestAnimationFrame(interpolate);
+    },
+    [present, schedulePresent],
+  );
+  const reportEffectiveRate = useCallback(
+    (rate: number): void => {
+      effectiveRateRef.current = rate;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
+  // A child's own request shows at once: the slider it moves reads it back.
+  const reportViewMagnification = useCallback(
+    (magnification: number, presentNow = false): void => {
+      viewMagnificationRef.current = magnification;
+      if (presentNow) {
+        present();
+      } else {
+        schedulePresent();
+      }
+    },
+    [present, schedulePresent],
+  );
+  const reportExposureStatus = useCallback(
+    (status: ExposureStatus): void => {
+      exposureStatusRef.current = status;
+      schedulePresent();
+    },
+    [schedulePresent],
+  );
+  return {
+    presented,
+    frameRef,
+    stateRef,
+    trailQueueRef,
+    publishFrame,
+    reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
+  };
 }
+
+const DISCOVERY_TOAST_DURATION_MS = 6_000;
 
 export function App() {
   const audio = useInterfaceAudio();
-  const [frame, setFrame] = useState<SimulationFrame>();
-  const { state, stateRef: displayedStateRef } =
-    useDisplayedSimulationState(frame);
+  const {
+    presented: { state, effectiveRate, viewMagnification, exposureStatus },
+    frameRef,
+    stateRef: displayedStateRef,
+    trailQueueRef,
+    publishFrame,
+    reportEffectiveRate,
+    reportViewMagnification,
+    reportExposureStatus,
+  } = useSimulationFrames();
   const [error, setError] = useState<string>();
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState<-1 | 1>(1);
   const [timeRateIndex, setTimeRateIndex] = useState(4);
-  const [effectiveRate, setEffectiveRate] = useState(0);
   const [playbackBuffered, setPlaybackBuffered] = useState(false);
   const [seeking, setSeeking] = useState(false);
+  // True from the moment a tour step asks for its time until the scene shows
+  // that time: the card, the eclipse shadow and its camera wait for it.
+  const [tourSeekPending, setTourSeekPending] = useState(false);
+  // True until the solver lands the step's seek; a tour that ends first drops
+  // the seek.
+  const tourSeekPendingRef = useRef(false);
+  // The time the solver landed a step's seek at, until the scene shows it.
+  const tourSeekLandedTimeRef = useRef<number | undefined>(undefined);
   const [bodyVisibilityPercent, setBodyVisibilityPercent] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>("reality");
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [sizeLineupOpen, setSizeLineupOpen] = useState(false);
   const [displayPanelTab, setDisplayPanelTab] =
     useState<DisplayPanelTab>("view");
   const [focusBodyId, setFocusBodyId] = useState("");
   const [selectedBodyId, setSelectedBodyId] = useState("");
+  const [foundEasterEggIds, setFoundEasterEggIds] =
+    useState<ReadonlySet<EasterEggId>>(loadFoundEasterEggs);
+  const [discoveredEasterEggId, setDiscoveredEasterEggId] =
+    useState<EasterEggId | null>(null);
   const [showMoonTrail, setShowMoonTrail] = useState(false);
   const [showPlanetTrails, setShowPlanetTrails] = useState(false);
   const [showMinorBodyTrails, setShowMinorBodyTrails] = useState(false);
@@ -778,6 +1271,12 @@ export function App() {
   const [apolloInspectionSiteId, setApolloInspectionSiteId] = useState<
     string | null
   >(null);
+  // The body a press on a label, the scene or the map selected; only that
+  // selection invites a second press to fly there.
+  const [announcedPickId, setAnnouncedPickId] = useState<string | null>(null);
+  const [navigationMapBottomPx, setNavigationMapBottomPx] = useState<
+    number | null
+  >(null);
   const [showTacticalOverlay, setShowTacticalOverlay] = useState(false);
   const [showOrbitGuides, setShowOrbitGuides] = useState(false);
   const [wayfinderMode, setWayfinderMode] = useState<WayfinderMode>("sun");
@@ -789,8 +1288,10 @@ export function App() {
     useState<SemanticZoomLevel>("solar-system");
   const [resetViewToken, setResetViewToken] = useState(0);
   const [cameraZoom, setCameraZoom] = useState(DEFAULT_CAMERA_ZOOM);
-  const [viewMagnification, setViewMagnification] =
-    useState(DEFAULT_CAMERA_ZOOM);
+  const [zoomLimits, setZoomLimits] = useState<ZoomLimits>({
+    atNearest: false,
+    atFarthest: false,
+  });
   const [cameraNavigationCommand, setCameraNavigationCommand] =
     useState<CameraNavigationCommand>({
       sequence: 0,
@@ -808,13 +1309,46 @@ export function App() {
   const [tourKind, setTourKind] = useState<GuidedTourKind | null>(null);
   const [tourStepIndex, setTourStepIndex] = useState<number | null>(null);
   const [tourPlaying, setTourPlaying] = useState(false);
+  // The last step's timer fired: the panel shows the ending, not the step.
+  const [tourEnded, setTourEnded] = useState(false);
   const [tourMinimised, setTourMinimised] = useState(false);
   const [tourPresentationToken, setTourPresentationToken] = useState(0);
   const [tourTransitionSequence, setTourTransitionSequence] = useState(0);
   const [tourTransitionDurationMs, setTourTransitionDurationMs] = useState(0);
+  const [settledCameraTransitionSequence, setSettledCameraTransitionSequence] =
+    useState(0);
+  const displaySettingsBeforeTourRef = useRef<DisplaySettingsBeforeTour>(null);
+  // The simulated time when the first of a chain of tours began, so a Scale
+  // tour started from an ending replays from there, not from where the last
+  // story stopped the clock. Undefined when no physics state existed yet, so
+  // the clock was still at the epoch.
+  const tourChainStartTimeSecondsRef = useRef<number | undefined>(undefined);
+  const tourPanelRef = useRef<HTMLElement>(null);
+  const tourFlyHomeRef = useRef<HTMLButtonElement>(null);
+  // The ending replaces the buttons a child may have focused; it takes focus
+  // only from inside the tour panel.
+  const tourEndingTakesFocusRef = useRef(false);
+  // True once the child moves the camera away from the presented step pose.
+  const tourCameraMovedRef = useRef(false);
   const [activeCinematicShotId, setActiveCinematicShotId] = useState<
     string | null
   >(null);
+  // The playback rate and direction from before the active cool shot, or null
+  // when no shot runs or the child chose a rate during the shot.
+  const playbackBeforeShotRef = useRef<{
+    direction: -1 | 1;
+    timeRateIndex: number;
+  } | null>(null);
+  // The view settings from before the active cool shot, or null when no shot
+  // runs.
+  const viewBeforeShotRef = useRef<ViewSettingsBeforeShot | null>(null);
+  // The focus, selection and Back history from before the active cool shot,
+  // which Stop brings back, or null when no shot runs.
+  const focusBeforeShotRef = useRef<{
+    focusBodyId: string;
+    selectedBodyId: string;
+    historyLength: number;
+  } | null>(null);
   const [surfaceObserverEnabled, setSurfaceObserverEnabled] = useState(false);
   const [surfaceObserverBodyId, setSurfaceObserverBodyId] = useState("earth");
   const [surfaceObserverTargetBodyId, setSurfaceObserverTargetBodyId] =
@@ -829,14 +1363,64 @@ export function App() {
     useState<VisualQuality>("photographic");
   const [exposureMode, setExposureMode] = useState<ExposureMode>("auto");
   const [manualExposureEv, setManualExposureEv] = useState(0);
-  const [exposureStatus, setExposureStatus] = useState({
-    ev: 0,
-    multiplier: VISUAL_QUALITY_PROFILES.photographic.baseExposure,
-    mode: "auto" as ExposureMode,
-  });
   const [immersiveMode, setImmersiveMode] = useState(false);
+  const phoneLayout = usePhoneLayout();
+  // On a phone the card opens short (name, size, Expand) so the sky stays in
+  // view; the facts are one tap away.
+  // A teacher's clicker "blank screen" key (b or .) covers the window and
+  // pauses what plays behind it: the tour (with its narration and clock), or
+  // the clock outside a tour. The cover keeps what it paused to restore it.
+  const [blackout, setBlackout] = useState<{
+    readonly paused: "tour" | "clock";
+    readonly wasPlaying: boolean;
+  } | null>(null);
   const [selectedBodyPanelCollapsed, setSelectedBodyPanelCollapsed] =
-    useState(false);
+    useState(matchesPhoneLayout);
+  // The card scrolls inside itself when it is taller than the room under the
+  // map. A cue at its foot shows while more is below.
+  const [cardMoreBelow, setCardMoreBelow] = useState(false);
+  const cardWatchStopRef = useRef<(() => void) | null>(null);
+  const selectedBodyCardRef = useCallback((card: HTMLElement | null): void => {
+    cardWatchStopRef.current?.();
+    cardWatchStopRef.current = null;
+    if (card === null) {
+      return;
+    }
+    const update = (): void => {
+      setCardMoreBelow(
+        card.scrollTop + card.clientHeight < card.scrollHeight - 1,
+      );
+    };
+    // The card's own height and the height of each part it holds (More
+    // detail opening, a collapse) change how much is below.
+    const resize = new ResizeObserver(update);
+    const watchParts = (): void => {
+      resize.disconnect();
+      resize.observe(card);
+      for (const part of card.children) {
+        resize.observe(part);
+      }
+      update();
+    };
+    const parts = new MutationObserver(watchParts);
+    parts.observe(card, { childList: true });
+    card.addEventListener("scroll", update, { passive: true });
+    watchParts();
+    cardWatchStopRef.current = () => {
+      resize.disconnect();
+      parts.disconnect();
+      card.removeEventListener("scroll", update);
+    };
+  }, []);
+  // A screen that becomes a phone (a resize or a turn) also makes the card
+  // short.
+  const [cardPhoneLayout, setCardPhoneLayout] = useState(phoneLayout);
+  if (cardPhoneLayout !== phoneLayout) {
+    setCardPhoneLayout(phoneLayout);
+    if (phoneLayout) {
+      setSelectedBodyPanelCollapsed(true);
+    }
+  }
   const [fullscreenError, setFullscreenError] = useState<string>();
   const [objectVisibility, setObjectVisibility] = useState<ObjectVisibility>(
     DEFAULT_OBJECT_VISIBILITY,
@@ -846,10 +1430,23 @@ export function App() {
   const [simulationRunToken, setSimulationRunToken] = useState(0);
   const orbitViewEnabledRef = useRef(orbitViewEnabled);
   const playingRef = useRef(playing);
+  const errorRef = useRef(error);
+  // A craft with tracked dates moves the clock to them; this keeps the
+  // child's own clock, so leaving that craft brings it back.
+  const clockBeforeCraftRef = useRef<Readonly<{
+    bodyId: string;
+    timeSeconds: number;
+    playing: boolean;
+  }> | null>(null);
+  const [clockMoveNotice, setClockMoveNotice] = useState<string | null>(null);
   const directionRef = useRef(direction);
   const timeRateIndexRef = useRef(timeRateIndex);
   const manualDeltaSecondsRef = useRef(0);
   const directSeekTimeSecondsRef = useRef<number | undefined>(undefined);
+  // A looping cool shot's end time: continuous forward playback never
+  // integrates past it, so the race cannot leave its validated window when
+  // rendering falls behind.
+  const forwardPlaybackLimitSecondsRef = useRef<number | undefined>(undefined);
   const focusBodyIdRef = useRef(focusBodyId);
   const focusHistoryRef = useRef<string[]>([]);
   const displayButtonRef = useRef<HTMLButtonElement>(null);
@@ -857,8 +1454,11 @@ export function App() {
   const displayPanelWasOpenRef = useRef(false);
   const appShellRef = useRef<HTMLElement>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  // A tour hides the command bar, so its card has its own Full screen button.
+  const tourFullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const immersiveExitButtonRef = useRef<HTMLButtonElement>(null);
   playingRef.current = playing;
+  errorRef.current = error;
   orbitViewEnabledRef.current = orbitViewEnabled;
   directionRef.current = direction;
   timeRateIndexRef.current = timeRateIndex;
@@ -917,7 +1517,11 @@ export function App() {
         return;
       }
       if (document.fullscreenElement === null) {
-        requestAnimationFrame(() => fullscreenButtonRef.current?.focus());
+        requestAnimationFrame(() =>
+          (
+            tourFullscreenButtonRef.current ?? fullscreenButtonRef.current
+          )?.focus(),
+        );
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -925,7 +1529,7 @@ export function App() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const enterImmersiveMode = (): void => {
+  const enterImmersiveMode = useCallback((): void => {
     const appShell = appShellRef.current;
     if (appShell === null) {
       throw new Error("Application shell is unavailable for fullscreen mode");
@@ -940,9 +1544,9 @@ export function App() {
             : "Fullscreen failed for an unknown browser reason",
         );
       });
-  };
+  }, []);
 
-  const exitImmersiveMode = (): void => {
+  const exitImmersiveMode = useCallback((): void => {
     setFullscreenError(undefined);
     if (document.fullscreenElement !== appShellRef.current) {
       throw new Error("The Solar System Explorer is not fullscreen");
@@ -954,13 +1558,15 @@ export function App() {
           : "Leaving fullscreen failed for an unknown browser reason",
       );
     });
-  };
+  }, []);
 
   useEffect(() => {
     const client = createPhysicsClient();
     const controller = new AbortController();
     const isActive = (): boolean => !controller.signal.aborted;
     let solverTime = 0;
+    // The last state handed to the screen; the solver's first answer sets it.
+    let previousState: SimulationState;
     let rateSampleTime = performance.now();
     let rateSampleSimulationTime = 0;
 
@@ -968,7 +1574,7 @@ export function App() {
       rateSampleTime = performance.now();
       rateSampleSimulationTime = simulationTime;
       if (isActive()) {
-        setEffectiveRate(0);
+        reportEffectiveRate(0);
       }
     };
 
@@ -979,7 +1585,7 @@ export function App() {
         return;
       }
       if (isActive()) {
-        setEffectiveRate(
+        reportEffectiveRate(
           ((simulationTime - rateSampleSimulationTime) * 1_000) / elapsedMs,
         );
       }
@@ -997,14 +1603,53 @@ export function App() {
         (_, index) => startTime + signedKeyframeSeconds * (index + 1),
       );
 
+    // A function, so each read sees writes made while the loop awaited.
+    const seekPending = (): boolean =>
+      directSeekTimeSecondsRef.current !== undefined;
+
+    // The frames handed to the screen run ahead of it: by one keyframe, or
+    // on a loaded machine by a whole batch that late frames skipped over. A
+    // changed request (Pause, a new direction or rate) stops the clock at
+    // the state on screen, so the planets do not carry on after the child
+    // pressed Pause or Run backward. The hold stays between the start of
+    // this run and its last frame: a screen that has not yet shown the
+    // run's first state holds there.
+    const holdDisplayedState = async (
+      runStartSeconds: number,
+    ): Promise<void> => {
+      const lastHandedSeconds = previousState.timeSeconds;
+      // Nothing on screen yet: the last frame handed over is all there is.
+      const shownSeconds =
+        displayedStateRef.current?.timeSeconds ?? lastHandedSeconds;
+      const heldSeconds = Math.min(
+        Math.max(runStartSeconds, lastHandedSeconds),
+        Math.max(Math.min(runStartSeconds, lastHandedSeconds), shownSeconds),
+      );
+      const heldState = withKnownSatellites(
+        await client.api.integrateTo(heldSeconds),
+      );
+      solverTime = heldState.timeSeconds;
+      previousState = heldState;
+      resetMeasuredRate(heldState.timeSeconds);
+      if (isActive()) {
+        publishFrame({
+          start: heldState,
+          end: heldState,
+          transitionDurationMs: 0,
+        });
+        setPlaybackBuffered(false);
+      }
+    };
+
     const run = async (): Promise<void> => {
       try {
         const rawInitialState = await client.api.initialize(majorBodySystem);
-        let previousState = withKnownSatellites(rawInitialState);
+        const epochTimeSeconds = rawInitialState.timeSeconds;
+        previousState = withKnownSatellites(rawInitialState);
         solverTime = previousState.timeSeconds;
         resetMeasuredRate(previousState.timeSeconds);
         if (isActive()) {
-          setFrame({
+          publishFrame({
             start: previousState,
             end: previousState,
             transitionDurationMs: 0,
@@ -1014,19 +1659,37 @@ export function App() {
           const directSeekTimeSeconds = directSeekTimeSecondsRef.current;
           if (directSeekTimeSeconds !== undefined) {
             directSeekTimeSecondsRef.current = undefined;
+            // A seek no farther from the epoch than the clock starts again
+            // from the epoch state, the same state a fresh run starts from,
+            // instead of integrating across years.
+            if (
+              Math.abs(directSeekTimeSeconds - epochTimeSeconds) <=
+              Math.abs(directSeekTimeSeconds - solverTime)
+            ) {
+              await client.api.initialize(majorBodySystem);
+            }
             const rawNextState = await client.api.integrateTo(
               directSeekTimeSeconds,
             );
             solverTime = rawNextState.timeSeconds;
+            // A seek asked for while this one ran replaces it unseen, so an
+            // ended tour's time never flashes on screen.
+            if (seekPending()) {
+              continue;
+            }
             const nextState = withKnownSatellites(rawNextState);
             previousState = nextState;
             resetMeasuredRate(nextState.timeSeconds);
             if (isActive()) {
-              setFrame({
+              publishFrame({
                 start: nextState,
                 end: nextState,
                 transitionDurationMs: 0,
               });
+              if (tourSeekPendingRef.current) {
+                tourSeekPendingRef.current = false;
+                tourSeekLandedTimeRef.current = nextState.timeSeconds;
+              }
               setSeeking(false);
               setPlaybackBuffered(false);
             }
@@ -1039,6 +1702,9 @@ export function App() {
           }
           if (manualRemaining === 0 && !playingRef.current) {
             if (isActive()) {
+              // Steps that cancel out (forward then backward) leave nothing
+              // to do, and the clock is no longer seeking.
+              setSeeking(false);
               setPlaybackBuffered(false);
             }
             await sleep(50);
@@ -1063,6 +1729,7 @@ export function App() {
                 ),
               );
           const signedKeyframeSeconds = requestedDirection * keyframeSeconds;
+          const runStartSeconds = previousState.timeSeconds;
           const requestedRateIndex = timeRateIndexRef.current;
           const batchSize = isManual ? 1 : PLAYBACK_BATCH_SIZE;
           const transitionDurationMs = isManual
@@ -1074,20 +1741,45 @@ export function App() {
           const keyframeIntervalMs = isManual
             ? transitionDurationMs
             : (keyframeSeconds / selectedRate.secondsPerSecond) * 1_000;
-          const targetTimes = buildTargetTimes(
+          // Continuous forward playback stops at a looping shot's end, for
+          // this batch and every prefetched one.
+          const limitForwardTargets = (
+            times: readonly number[],
+            fromSeconds: number,
+          ): number[] => {
+            const forwardLimitSeconds = forwardPlaybackLimitSecondsRef.current;
+            return isManual ||
+              requestedDirection < 0 ||
+              forwardLimitSeconds === undefined
+              ? [...times]
+              : times
+                  .map((time) => Math.min(time, forwardLimitSeconds))
+                  .filter(
+                    (time, index, limited) =>
+                      time > fromSeconds && time !== limited[index - 1],
+                  );
+          };
+          const targetTimes = limitForwardTargets(
+            buildTargetTimes(solverTime, signedKeyframeSeconds, batchSize),
             solverTime,
-            signedKeyframeSeconds,
-            batchSize,
           );
+          if (targetTimes.length === 0) {
+            // The solver holds at the loop end until the shot restarts it.
+            await sleep(50);
+            continue;
+          }
           let nextStates = await client.api.integrateSeries(targetTimes);
           solverTime = targetTimes.at(-1) ?? solverTime;
 
-          const initialRequestChanged =
-            !isManual &&
-            (!playingRef.current ||
-              directionRef.current !== requestedDirection ||
-              timeRateIndexRef.current !== requestedRateIndex);
-          if (initialRequestChanged) {
+          // A pending seek (a tour step's, or an ISS or spacecraft focus's)
+          // ends the current batch, so it applies whatever the playback rate.
+          const playbackRequestChanged = (): boolean =>
+            seekPending() ||
+            (!isManual &&
+              (!playingRef.current ||
+                directionRef.current !== requestedDirection ||
+                timeRateIndexRef.current !== requestedRateIndex));
+          if (playbackRequestChanged()) {
             await client.api.integrateTo(previousState.timeSeconds);
             solverTime = previousState.timeSeconds;
             resetMeasuredRate(previousState.timeSeconds);
@@ -1098,13 +1790,18 @@ export function App() {
           }
 
           while (isActive()) {
-            const nextBatchTargets = isManual
-              ? undefined
-              : buildTargetTimes(
+            const limitedNextTargets = isManual
+              ? []
+              : limitForwardTargets(
+                  buildTargetTimes(
+                    solverTime,
+                    signedKeyframeSeconds,
+                    PLAYBACK_BATCH_SIZE,
+                  ),
                   solverTime,
-                  signedKeyframeSeconds,
-                  PLAYBACK_BATCH_SIZE,
                 );
+            const nextBatchTargets =
+              limitedNextTargets.length === 0 ? undefined : limitedNextTargets;
             const prefetchedStates =
               nextBatchTargets === undefined
                 ? undefined
@@ -1117,11 +1814,7 @@ export function App() {
             const pendingTrailStates: SimulationState[] = [];
 
             for (const [stateIndex, rawNextState] of nextStates.entries()) {
-              requestChanged =
-                !isManual &&
-                (!playingRef.current ||
-                  directionRef.current !== requestedDirection ||
-                  timeRateIndexRef.current !== requestedRateIndex);
+              requestChanged = playbackRequestChanged();
               if (requestChanged) {
                 break;
               }
@@ -1140,11 +1833,11 @@ export function App() {
                 pendingTrailStates.push(rawNextState);
                 continue;
               }
-              const frameStartState = withKnownSatellites(previousState);
               const nextState = withKnownSatellites(rawNextState);
               if (isActive()) {
-                setFrame({
-                  start: frameStartState,
+                publishFrame({
+                  // previousState already carries the propagated satellites.
+                  start: previousState,
                   end: nextState,
                   transitionDurationMs,
                   trailStates: [...pendingTrailStates, nextState],
@@ -1161,21 +1854,25 @@ export function App() {
             if (prefetchedStates !== undefined) {
               const resolvedPrefetch = await prefetchedStates;
               solverTime = nextBatchTargets?.at(-1) ?? solverTime;
-              if (requestChanged) {
-                await client.api.integrateTo(previousState.timeSeconds);
-                solverTime = previousState.timeSeconds;
-                resetMeasuredRate(previousState.timeSeconds);
-                if (isActive()) {
-                  setPlaybackBuffered(false);
-                }
-                break;
+              if (!requestChanged) {
+                nextStates = resolvedPrefetch;
+                continue;
               }
-              nextStates = resolvedPrefetch;
-              continue;
+            }
+            // A manual step's request changes only for a seek, which moves
+            // the solver itself.
+            if (requestChanged && !isManual) {
+              await holdDisplayedState(runStartSeconds);
             }
             break;
           }
-          if (isManual && manualDeltaSecondsRef.current === 0 && isActive()) {
+          // A tour seek asked for during the step still has to land.
+          if (
+            isManual &&
+            manualDeltaSecondsRef.current === 0 &&
+            !seekPending() &&
+            isActive()
+          ) {
             setSeeking(false);
             setPlaybackBuffered(false);
             resetMeasuredRate(previousState.timeSeconds);
@@ -1195,6 +1892,24 @@ export function App() {
     };
   }, [simulationRunToken]);
 
+  // Pause or a new direction stops the planets at once, where they are on
+  // screen, before the next paint; the loop then holds the solver there. A
+  // frame still in flight, or the batch a loaded machine draws late, would
+  // otherwise carry them on. A seek's frame has no flight to cut short.
+  useLayoutEffect(() => {
+    const shown = displayedStateRef.current;
+    if (shown === undefined) return;
+    const current = frameRef.current;
+    if (
+      current === undefined ||
+      current.transitionDurationMs <= 0 ||
+      current.end.timeSeconds === shown.timeSeconds
+    ) {
+      return;
+    }
+    publishFrame({ start: shown, end: shown, transitionDurationMs: 0 });
+  }, [playing, direction, displayedStateRef, frameRef, publishFrame]);
+
   const issueCameraNavigation = useCallback(
     (action: CameraNavigationAction): void => {
       setCameraNavigationCommand((current) => ({
@@ -1205,7 +1920,97 @@ export function App() {
     [],
   );
 
+  // A fresh worker initialised with the epoch state, so the clock returns to
+  // the snapshot epoch at once instead of integrating back to it.
+  const restartSimulation = useCallback((): void => {
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = undefined;
+    tourSeekPendingRef.current = false;
+    tourSeekLandedTimeRef.current = undefined;
+    setTourSeekPending(false);
+    setSeeking(false);
+    setPlaybackBuffered(false);
+    setError(undefined);
+    setClearTrailsToken((current) => current + 1);
+    setSimulationRunToken((current) => current + 1);
+  }, []);
+
+  // Takes the clock back to the epoch (time 0) in the running worker: the
+  // seek starts the solver again from the epoch state without a new worker,
+  // which would download and compile REBOUND again. A stopped simulation
+  // has no running worker, so it restarts.
+  const returnToEpoch = useCallback((): void => {
+    if (errorRef.current !== undefined) {
+      restartSimulation();
+      return;
+    }
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = 0;
+    setClearTrailsToken((current) => current + 1);
+  }, [restartSimulation]);
+
+  // Ends the active cool shot. The view settings from before it come back. A
+  // shot sets its own playback rate, so the rate and direction from before it
+  // come back too, unless the child chose a rate during the shot. Returns the
+  // restored rate index, or null when the rate stays.
+  const endCinematicShot = useCallback((): number | null => {
+    const view = viewBeforeShotRef.current;
+    viewBeforeShotRef.current = null;
+    focusBeforeShotRef.current = null;
+    if (view !== null) {
+      setViewMode(view.viewMode);
+      setBodyVisibilityPercent(view.bodyVisibilityPercent);
+      setShowLabels(view.showLabels);
+      setShowOrbitGuides(view.showOrbitGuides);
+      setShowTacticalOverlay(view.showTacticalOverlay);
+      setShowEclipticPlane(view.showEclipticPlane);
+      setShowPlanetTrails(view.showPlanetTrails);
+    }
+    const before = playbackBeforeShotRef.current;
+    playbackBeforeShotRef.current = null;
+    setActiveCinematicShotId(null);
+    if (before === null) {
+      return null;
+    }
+    setDirection(before.direction);
+    setTimeRateIndex(before.timeRateIndex);
+    return before.timeRateIndex;
+  }, []);
+
+  // The child's own view choice during a cool shot outlasts it, as the
+  // child's playback rate does: the view saved from before the shot takes it.
+  const keepViewChoiceAfterShot = (
+    choice: Partial<ViewSettingsBeforeShot>,
+  ): void => {
+    if (viewBeforeShotRef.current !== null) {
+      viewBeforeShotRef.current = { ...viewBeforeShotRef.current, ...choice };
+    }
+  };
+
+  // The scene reads the displayed state, which follows a new frame one render
+  // later, so a landed step's seek counts once that state is on screen.
+  useEffect(() => {
+    if (
+      tourSeekLandedTimeRef.current !== undefined &&
+      state?.timeSeconds === tourSeekLandedTimeRef.current
+    ) {
+      tourSeekLandedTimeRef.current = undefined;
+      setTourSeekPending(false);
+    }
+  }, [state]);
+
+  // Moves the clock to a tour step's own time.
+  const queueTourSeek = useCallback((timeSeconds: number): void => {
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = timeSeconds;
+    tourSeekPendingRef.current = true;
+    tourSeekLandedTimeRef.current = undefined;
+    setTourSeekPending(true);
+    setSeeking(true);
+  }, []);
+
   const requestResetView = useCallback((): void => {
+    tourCameraMovedRef.current = true;
     setSurfaceObserverEnabled(false);
     setTourPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
@@ -1221,36 +2026,69 @@ export function App() {
     setResetViewToken((current) => current + 1);
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" && tourStepIndex !== null) {
-        event.preventDefault();
-        setTourPlaying(false);
-        setTourKind(null);
-        setTourStepIndex(null);
-        setPlaying(false);
-        return;
-      }
-      if (event.key.toLowerCase() !== "r") {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-      requestResetView();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [requestResetView, tourStepIndex]);
+  // Ends a running tour: restores the settings saved when it started and
+  // returns them, or returns null when no tour runs. A caller that ends a tour
+  // for its own action applies that action's settings after this call.
+  const endTour = useCallback((): DisplaySettingsBeforeTour | null => {
+    const before = displaySettingsBeforeTourRef.current;
+    if (before === null) {
+      return null;
+    }
+    displaySettingsBeforeTourRef.current = null;
+    // A step's seek that has not landed must not move the clock after the
+    // tour: the clock seeks back to the time still on screen, which also
+    // replaces a seek already running.
+    if (tourSeekPendingRef.current) {
+      directSeekTimeSecondsRef.current = displayedStateRef.current?.timeSeconds;
+    }
+    tourSeekPendingRef.current = false;
+    tourSeekLandedTimeRef.current = undefined;
+    setTourSeekPending(false);
+    setTourPlaying(false);
+    setTourEnded(false);
+    setTourKind(null);
+    setTourStepIndex(null);
+    setTourMinimised(false);
+    setViewMode(before.viewMode);
+    setBodyVisibilityPercent(before.bodyVisibilityPercent);
+    setShowLabels(before.showLabels);
+    setShowOrbitGuides(before.showOrbitGuides);
+    setShowTacticalOverlay(before.showTacticalOverlay);
+    setShowEclipticPlane(before.showEclipticPlane);
+    setShowPlanetTrails(before.showPlanetTrails);
+    setShowMoonTrail(before.showMoonTrail);
+    setShowMinorBodyTrails(before.showMinorBodyTrails);
+    setGravityWellMode(before.gravityWellMode);
+    setReferenceFrame(before.referenceFrame);
+    setSurfaceObserverBodyId(before.surfaceObserverBodyId);
+    setSurfaceObserverTargetBodyId(before.surfaceObserverTargetBodyId);
+    setSurfaceObserverLatitudeDeg(before.surfaceObserverLatitudeDeg);
+    setSurfaceObserverLongitudeDeg(before.surfaceObserverLongitudeDeg);
+    setDirection(before.direction);
+    setTimeRateIndex(before.timeRateIndex);
+    // The clock runs after a tour even when it was paused before the tour:
+    // a frozen screen after the tour would look broken to a child.
+    setPlaying(true);
+    return before;
+  }, []);
+
+  const exitTour = useCallback((): void => {
+    if (endTour() === null) {
+      throw new Error("The display settings from before the tour are missing");
+    }
+    // A step on the Sun shows the Solar System around it, so leaving there
+    // lands on the overview; a focused Sun would fill the view.
+    if (focusBodyIdRef.current === "sun") {
+      focusBodyIdRef.current = "";
+      setFocusBodyId("");
+    }
+    requestResetView();
+  }, [endTour, requestResetView]);
 
   const applyOrientationPreset = (
     preset: Exclude<CameraOrientationPreset, "custom">,
   ): void => {
+    tourCameraMovedRef.current = true;
     setCameraOrientation(preset);
     setOrientationPresetToken((current) => current + 1);
   };
@@ -1258,9 +2096,11 @@ export function App() {
   const handleSceneOrientationChange = useCallback(
     (preset: CameraOrientationPreset): void => {
       setCameraOrientation(preset);
+      // A camera drag, wheel or pinch pauses a tour, but a cool shot runs
+      // on: the race's loop end keeps its clock inside the validated window.
       if (preset === "custom") {
+        tourCameraMovedRef.current = true;
         setTourPlaying(false);
-        setActiveCinematicShotId(null);
       }
     },
     [],
@@ -1270,23 +2110,93 @@ export function App() {
     setOrbitViewEnabled(enabled);
   }, []);
 
+  // Every selection path (label, scene click, focus list, next object) ends
+  // here, so the first selection of an easter egg counts as finding it.
+  useEffect(() => {
+    if (
+      !isEasterEggId(selectedBodyId) ||
+      foundEasterEggIds.has(selectedBodyId)
+    ) {
+      return;
+    }
+    const found = new Set(foundEasterEggIds).add(selectedBodyId);
+    setFoundEasterEggIds(found);
+    saveFoundEasterEggs(found);
+    setDiscoveredEasterEggId(selectedBodyId);
+    audio.interact("discovery");
+  }, [selectedBodyId, foundEasterEggIds, audio.interact]);
+
+  const startFresh = (): void => {
+    const count = foundEasterEggIds.size;
+    const surprises =
+      count === 0
+        ? ""
+        : `the ${String(count)} ${count === 1 ? "surprise" : "surprises"} found and `;
+    if (
+      !window.confirm(`Forget ${surprises}the sound settings on this computer?`)
+    ) {
+      return;
+    }
+    forgetFoundEasterEggs();
+    try {
+      window.localStorage.removeItem(AUDIO_SETTINGS_STORAGE_KEY);
+    } catch {
+      // Storage is unavailable: no sound settings were kept on this computer.
+    }
+    window.location.reload();
+  };
+
+  useEffect(() => {
+    if (discoveredEasterEggId === null) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setDiscoveredEasterEggId(null),
+      DISCOVERY_TOAST_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [discoveredEasterEggId]);
+
   const handleSceneBodySelection = useCallback((bodyId: string): void => {
     setApolloInspectionSiteId(null);
     setSelectedBodyId(bodyId);
   }, []);
 
+  const handleSceneBodyPick = useCallback(
+    (bodyId: string): void => {
+      handleSceneBodySelection(bodyId);
+      setAnnouncedPickId(bodyId);
+    },
+    [handleSceneBodySelection],
+  );
+
+  // Any other control that changes the selection ends the invitation.
+  useEffect(() => {
+    setAnnouncedPickId((current) =>
+      current === selectedBodyId ? current : null,
+    );
+  }, [selectedBodyId]);
+
+  // Moves the clock straight to a time, stopped or running.
+  const seekClock = useCallback((timeSeconds: number, play: boolean): void => {
+    playingRef.current = play;
+    setPlaying(play);
+    manualDeltaSecondsRef.current = 0;
+    directSeekTimeSecondsRef.current = timeSeconds;
+    setSeeking(true);
+  }, []);
+
   const navigateToFocus = useCallback(
     (bodyId: string): void => {
-      setActiveCinematicShotId(null);
+      endCinematicShot();
       setApolloInspectionSiteId(null);
-      setTourPlaying(false);
-      setTourKind(null);
-      setTourStepIndex(null);
-      if (tourStepIndex !== null) {
-        setPlaying(false);
-      }
+      // Ending a tour runs the clock, as Exit does.
+      endTour();
       const currentBodyId = focusBodyIdRef.current;
       setSelectedBodyId(bodyId);
+      if (matchesPhoneLayout()) {
+        setSelectedBodyPanelCollapsed(true);
+      }
       if (bodyId === currentBodyId) {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
         setCameraOrientation(
@@ -1309,38 +2219,28 @@ export function App() {
       );
       setResetViewToken((current) => current + 1);
       setTourTransitionSequence((current) => current + 1);
-      if (bodyId === ISS_BODY_ID) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isIssEphemerisWithinValidity(currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current = ISS_EPOCH_SIMULATION_SECONDS;
-          setSeeking(true);
-          setSimulationRunToken((current) => current + 1);
-        }
+      // The ISS and the Horizons craft have positions only for their tracked
+      // dates, so the clock moves there and stops, and says why. Leaving
+      // such a craft brings the child's own date back.
+      const clockBefore = clockBeforeCraftRef.current;
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+      const clockTime =
+        clockBefore?.timeSeconds ?? displayedStateRef.current?.timeSeconds ?? 0;
+      const craftTime = trackedCraftClockTime(bodyId, clockTime);
+      if (craftTime !== undefined) {
+        clockBeforeCraftRef.current = {
+          bodyId,
+          timeSeconds: clockTime,
+          playing: clockBefore?.playing ?? playingRef.current,
+        };
+        setClockMoveNotice(
+          `We only know where ${craftTime.name} is near ${formatPlainSimulationDate(craftTime.timeSeconds)}, so the clock jumped there. Pick something else to go back to ${formatPlainSimulationDate(clockTime)}.`,
+        );
+        seekClock(craftTime.timeSeconds, false);
+      } else if (clockBefore !== null) {
+        seekClock(clockBefore.timeSeconds, clockBefore.playing);
       }
-      if (isOperationalSpacecraftBodyId(bodyId)) {
-        const currentTime = displayedStateRef.current?.timeSeconds ?? 0;
-        if (!isOperationalSpacecraftWithinValidity(bodyId, currentTime)) {
-          playingRef.current = false;
-          setPlaying(false);
-          manualDeltaSecondsRef.current = 0;
-          directSeekTimeSecondsRef.current =
-            operationalSpacecraftRecommendedTimeSeconds(bodyId);
-          setSeeking(true);
-          setSimulationRunToken((current) => current + 1);
-        }
-      }
-      setFrame((currentFrame) =>
-        currentFrame === undefined
-          ? currentFrame
-          : {
-              ...currentFrame,
-              start: withKnownSatellites(currentFrame.start),
-              end: withKnownSatellites(currentFrame.end),
-            },
-      );
       if (bodyId !== "" && bodyId !== "sun") {
         setCameraZoom(DEFAULT_CAMERA_ZOOM);
         setCameraOrientation(
@@ -1348,15 +2248,22 @@ export function App() {
         );
       }
     },
-    [issueCameraNavigation, tourStepIndex],
+    [endCinematicShot, endTour, issueCameraNavigation, seekClock],
   );
+
+  // Any other change of focus (a tour, a shot, Home, Back) ends the notice
+  // and leaves the clock where it is.
+  useEffect(() => {
+    if (clockBeforeCraftRef.current?.bodyId !== focusBodyId) {
+      clockBeforeCraftRef.current = null;
+      setClockMoveNotice(null);
+    }
+  }, [focusBodyId]);
 
   const navigateBack = (): void => {
     setSurfaceObserverEnabled(false);
-    setActiveCinematicShotId(null);
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
+    endCinematicShot();
+    endTour();
     setPlaying(false);
     const previousBodyId = focusHistoryRef.current.pop();
     if (previousBodyId === undefined) {
@@ -1365,6 +2272,9 @@ export function App() {
     focusBodyIdRef.current = previousBodyId;
     setFocusBodyId(previousBodyId);
     setSelectedBodyId(previousBodyId);
+    if (matchesPhoneLayout()) {
+      setSelectedBodyPanelCollapsed(true);
+    }
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation(
       previousBodyId === ""
@@ -1380,15 +2290,6 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-    setFrame((currentFrame) =>
-      currentFrame === undefined
-        ? currentFrame
-        : {
-            ...currentFrame,
-            start: withKnownSatellites(currentFrame.start),
-            end: withKnownSatellites(currentFrame.end),
-          },
-    );
   };
 
   const navigateToParent = (): void => {
@@ -1405,7 +2306,9 @@ export function App() {
       (selectedBodyId === "jwst" || isVoyagerBodyId(selectedBodyId)
         ? "sun"
         : undefined) ??
-      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+      (selectedBodyId === JOVIAN_MONOLITH_BODY_ID
+        ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+        : undefined) ??
       (selectedBodyId === DISCOVERY_ONE_BODY_ID
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : undefined) ??
@@ -1425,15 +2328,30 @@ export function App() {
     const currentIndex = NAVIGABLE_FOCUS_OPTIONS.findIndex(
       (option) => option.id === selectedBodyId,
     );
-    const nextIndex = (currentIndex + 1) % NAVIGABLE_FOCUS_OPTIONS.length;
-    setSelectedBodyId(NAVIGABLE_FOCUS_OPTIONS[nextIndex]?.id ?? "sun");
+    // Walk on from the current object, skipping eggs the child has not found.
+    for (let step = 1; step <= NAVIGABLE_FOCUS_OPTIONS.length; step += 1) {
+      const option =
+        NAVIGABLE_FOCUS_OPTIONS[
+          (currentIndex + step) % NAVIGABLE_FOCUS_OPTIONS.length
+        ];
+      if (
+        option !== undefined &&
+        !isHiddenUntilFound(option, foundEasterEggIds)
+      ) {
+        setSelectedBodyId(option.id);
+        return;
+      }
+    }
   };
 
+  // Home, the breadcrumb's Solar System and a tour's Fly home all end at the
+  // Solar System overview.
   const navigateHome = (): void => {
+    endCinematicShot();
+    endTour();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourPlaying(false);
-    setPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     setCameraOrientation("perspective");
     if (focusBodyIdRef.current === "") {
@@ -1449,19 +2367,80 @@ export function App() {
   };
 
   const handleCameraNavigation = (action: CameraNavigationAction): void => {
+    tourCameraMovedRef.current = true;
     setTourPlaying(false);
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
     issueCameraNavigation(action);
   };
 
+  // A tour started from another tour's ending keeps the settings and the clock
+  // time from before the first tour, so "Fly home" returns to those settings.
+  const rememberDisplaySettingsBeforeTour = (): void => {
+    if (tourStepIndex !== null) {
+      return;
+    }
+    tourChainStartTimeSecondsRef.current =
+      displayedStateRef.current?.timeSeconds;
+    displaySettingsBeforeTourRef.current = {
+      viewMode,
+      bodyVisibilityPercent,
+      showLabels,
+      showOrbitGuides,
+      showTacticalOverlay,
+      showEclipticPlane,
+      showPlanetTrails,
+      showMoonTrail,
+      showMinorBodyTrails,
+      gravityWellMode,
+      referenceFrame,
+      surfaceObserverBodyId,
+      surfaceObserverTargetBodyId,
+      surfaceObserverLatitudeDeg,
+      surfaceObserverLongitudeDeg,
+      // A cool shot's own view and rate are not the child's: the tour
+      // returns to those from before the shot.
+      ...viewBeforeShotRef.current,
+      ...(playbackBeforeShotRef.current ?? { direction, timeRateIndex }),
+    };
+  };
+
   const startScaleTour = (): void => {
+    tourFocusReturnRef.current = document.activeElement;
+    // From an ending the clock may stand years past the chain's start (the
+    // last Scale steps run at 30 days per second). Replay from that start, or
+    // from the epoch when the start lies outside the validated window.
+    if (tourStepIndex !== null) {
+      const startTimeSeconds = tourChainStartTimeSecondsRef.current;
+      restartSimulation();
+      if (
+        startTimeSeconds !== undefined &&
+        Math.abs(startTimeSeconds) <= VALIDATED_WINDOW_SECONDS
+      ) {
+        directSeekTimeSecondsRef.current = startTimeSeconds;
+        setSeeking(true);
+      }
+    }
+    rememberDisplaySettingsBeforeTour();
+    // Most Scale steps set no time: they run on from the clock, so a clock
+    // outside the validated window starts again from the epoch first.
+    const currentTimeSeconds = displayedStateRef.current?.timeSeconds;
+    if (
+      currentTimeSeconds !== undefined &&
+      Math.abs(currentTimeSeconds) > VALIDATED_WINDOW_SECONDS
+    ) {
+      restartSimulation();
+    }
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    // A tour shows only the clock and its card.
+    setSizeLineupOpen(false);
+    endCinematicShot();
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setTourMinimised(false);
+    setTourEnded(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : SCALE_TOUR_TRANSITION_DURATION_MS,
@@ -1472,12 +2451,18 @@ export function App() {
   };
 
   const startEclipseStory = (): void => {
+    tourFocusReturnRef.current = document.activeElement;
+    rememberDisplaySettingsBeforeTour();
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setControlPanelOpen(false);
+    // A tour shows only the clock and its card.
+    setSizeLineupOpen(false);
+    endCinematicShot();
     setOrbitViewEnabled(false);
     setTourMinimised(false);
+    setTourEnded(false);
     setTourPlaying(!reducedMotion);
     setTourTransitionDurationMs(
       reducedMotion ? 0 : ECLIPSE_STORY_TRANSITION_DURATION_MS,
@@ -1487,19 +2472,16 @@ export function App() {
     setTourPresentationToken((current) => current + 1);
   };
 
-  const exitScaleTour = (): void => {
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
-    setTourMinimised(false);
-    setSurfaceObserverEnabled(false);
-    setPlaying(false);
-  };
-
   const enterSurfaceObserver = (): void => {
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
+    endTour();
+    // A shot's end restores the view from before it, so it ends before this
+    // sets Reality.
+    endCinematicShot();
+    // The child enters the observer place the panel shows, even a tour's.
+    setSurfaceObserverBodyId(surfaceObserverBodyId);
+    setSurfaceObserverTargetBodyId(surfaceObserverTargetBodyId);
+    setSurfaceObserverLatitudeDeg(surfaceObserverLatitudeDeg);
+    setSurfaceObserverLongitudeDeg(surfaceObserverLongitudeDeg);
     setOrbitViewEnabled(false);
     setViewMode("reality");
     setCameraZoom(DEFAULT_CAMERA_ZOOM);
@@ -1509,7 +2491,7 @@ export function App() {
     setControlPanelOpen(false);
   };
 
-  const focusApolloLandingSite = (siteId: string): void => {
+  const focusApolloLandingSite = useCallback((siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
       throw new Error(`Apollo landing site ${siteId} is unavailable`);
     }
@@ -1531,7 +2513,21 @@ export function App() {
     );
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-  };
+  }, []);
+
+  // A second press on a selected label flies there; for an Apollo site that
+  // is the card's "Show on Moon".
+  const handleSceneFocusBody = useCallback(
+    (bodyId: string): void => {
+      if (isApolloLandingSiteId(bodyId)) {
+        focusApolloLandingSite(bodyId);
+        return;
+      }
+      setSurfaceObserverEnabled(false);
+      navigateToFocus(bodyId);
+    },
+    [focusApolloLandingSite, navigateToFocus],
+  );
 
   const enterApolloLandingSiteObserver = (siteId: string): void => {
     if (!isApolloLandingSiteId(siteId)) {
@@ -1541,9 +2537,8 @@ export function App() {
     if (site === undefined) {
       throw new Error(`Apollo landing site ${siteId} has no installed data`);
     }
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
+    endTour();
+    endCinematicShot();
     setOrbitViewEnabled(false);
     setShowApolloSites(true);
     setApolloInspectionSiteId(null);
@@ -1574,23 +2569,215 @@ export function App() {
       ? ECLIPSE_STORY_STEP_DURATION_MS
       : SCALE_TOUR_STEP_DURATION_MS;
 
-  const advanceScaleTour = (direction: -1 | 1): void => {
-    if (tourStepIndex === null) {
-      return;
-    }
-    const next = tourStepIndex + direction;
-    if (next < 0) {
-      setTourStepIndex(0);
-      return;
-    }
-    if (next >= activeTourSteps.length) {
-      exitScaleTour();
-      return;
-    }
-    setTourStepIndex(next);
-  };
+  const showTourEnding = useCallback((): void => {
+    tourEndingTakesFocusRef.current =
+      tourPanelRef.current?.contains(document.activeElement) ?? false;
+    setTourPlaying(false);
+    setTourEnded(true);
+  }, []);
 
   useEffect(() => {
+    if (tourEnded && tourEndingTakesFocusRef.current) {
+      tourEndingTakesFocusRef.current = false;
+      tourFlyHomeRef.current?.focus();
+    }
+  }, [tourEnded]);
+
+  // A tour hides the camera dock that holds its start button, so focus moves
+  // into the tour card, and goes back to that button when the tour ends.
+  const tourFocusReturnRef = useRef<Element | null>(null);
+  useEffect(() => {
+    const returnTo = tourFocusReturnRef.current;
+    if (tourKind !== null) {
+      // Only focus the hidden button lost: a key pressed before this frame
+      // may already have moved focus on, and taking it back would send the
+      // next key to the card.
+      requestAnimationFrame(() => {
+        if (
+          returnTo instanceof HTMLElement &&
+          !returnTo.checkVisibility() &&
+          (document.activeElement === returnTo ||
+            document.activeElement === document.body)
+        ) {
+          tourPanelRef.current?.focus();
+        }
+      });
+      return;
+    }
+    tourFocusReturnRef.current = null;
+    requestAnimationFrame(() => {
+      if (
+        document.activeElement === document.body &&
+        returnTo instanceof HTMLElement &&
+        returnTo.checkVisibility()
+      ) {
+        returnTo.focus();
+      }
+    });
+  }, [tourKind]);
+
+  // Stop removes the shot caption that holds it, so focus goes back to the
+  // button that started the shot. The camera goes back to the body the child
+  // had before the shot, or to the overview.
+  const shotFocusReturnRef = useRef<Element | null>(null);
+  const stopCinematicShot = (): void => {
+    const returnTo = shotFocusReturnRef.current;
+    shotFocusReturnRef.current = null;
+    const focusBefore = focusBeforeShotRef.current;
+    endCinematicShot();
+    if (focusBefore !== null) {
+      focusHistoryRef.current.length = focusBefore.historyLength;
+      focusBodyIdRef.current = focusBefore.focusBodyId;
+      setFocusBodyId(focusBefore.focusBodyId);
+      setSelectedBodyId(focusBefore.selectedBodyId);
+    }
+    requestResetView();
+    requestAnimationFrame(() => {
+      if (returnTo instanceof HTMLElement && returnTo.checkVisibility()) {
+        returnTo.focus();
+      }
+    });
+  };
+
+  const advanceScaleTour = useCallback(
+    (direction: -1 | 1): void => {
+      if (tourStepIndex === null) {
+        return;
+      }
+      const next = tourStepIndex + direction;
+      if (next < 0) {
+        setTourStepIndex(0);
+        return;
+      }
+      if (next >= activeTourSteps.length) {
+        showTourEnding();
+        return;
+      }
+      setTourStepIndex(next);
+    },
+    [activeTourSteps, showTourEnding, tourStepIndex],
+  );
+
+  const blankScreen = useCallback((): void => {
+    if (tourStepIndex === null) {
+      setBlackout({ paused: "clock", wasPlaying: playing });
+      setPlaying(false);
+      return;
+    }
+    setBlackout({ paused: "tour", wasPlaying: tourPlaying });
+    setTourPlaying(false);
+  }, [playing, tourPlaying, tourStepIndex]);
+
+  const showScreen = useCallback((): void => {
+    if (blackout === null) {
+      throw new Error("The screen is not blanked");
+    }
+    if (blackout.paused === "tour") {
+      setTourPlaying(blackout.wasPlaying);
+    } else {
+      setPlaying(blackout.wasPlaying);
+    }
+    setBlackout(null);
+  }, [blackout]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (blackout !== null) {
+        // A held key, a modifier alone (Cmd of Cmd+Tab), a browser shortcut
+        // or a media key does not bring the picture back.
+        if (event.repeat || MODIFIER_KEYS.has(event.key)) {
+          event.preventDefault();
+          return;
+        }
+        if (
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          /^(Media|Audio)/u.test(event.key)
+        ) {
+          return;
+        }
+        // Also stops a Space or Enter from pressing the focused button.
+        event.preventDefault();
+        showScreen();
+        return;
+      }
+      // The controls that take Escape (the Display panel, Compare sizes)
+      // close or hide when a tour starts, so a tour's Escape is its own.
+      if (event.key === "Escape" && tourStepIndex !== null) {
+        event.preventDefault();
+        exitTour();
+        return;
+      }
+      const target = event.target;
+      // A clicker sends Page Down and Page Up. They step the tour from any
+      // control: a tour hides every text box, list and slider (.is-tour-story),
+      // so no control on screen takes them.
+      // Ctrl+Page Down and Ctrl+Page Up stay with the browser to switch tabs.
+      if (
+        (event.key === "PageDown" || event.key === "PageUp") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        tourStepIndex !== null &&
+        !tourEnded
+      ) {
+        event.preventDefault();
+        // A held key would race through the steps to the ending.
+        if (!event.repeat) {
+          advanceScaleTour(event.key === "PageDown" ? 1 : -1);
+        }
+        return;
+      }
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "r") {
+        requestResetView();
+        return;
+      }
+      if (key === "f" && !event.repeat) {
+        event.preventDefault();
+        if (document.fullscreenElement === appShellRef.current) {
+          exitImmersiveMode();
+        } else {
+          enterImmersiveMode();
+        }
+        return;
+      }
+      if ((key === "b" || key === ".") && !event.repeat) {
+        event.preventDefault();
+        blankScreen();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    advanceScaleTour,
+    blackout,
+    blankScreen,
+    enterImmersiveMode,
+    exitImmersiveMode,
+    exitTour,
+    requestResetView,
+    showScreen,
+    tourEnded,
+    tourStepIndex,
+  ]);
+
+  // A layout effect, so a new step's settings and its seek land in the same
+  // paint as its card. As a passive effect it ran after a frame could draw
+  // the new step with the last step's landed seek: the card hid "Moving the
+  // clock", and the shadow step drew its shadow at the last step's time.
+  useLayoutEffect(() => {
     if (tourStepIndex === null) {
       return;
     }
@@ -1621,6 +2808,7 @@ export function App() {
     setShowMinorBodyTrails(false);
     setGravityWellMode("off");
     setReferenceFrame("heliocentric");
+    tourCameraMovedRef.current = false;
     setCameraZoom(step.cameraZoom);
     setCameraOrientation(step.orientation);
     setOrientationPresetToken((current) => current + 1);
@@ -1642,9 +2830,7 @@ export function App() {
       setSurfaceObserverEnabled(false);
     }
     if (step.timeSeconds !== undefined) {
-      manualDeltaSecondsRef.current = 0;
-      directSeekTimeSecondsRef.current = step.timeSeconds;
-      setSeeking(true);
+      queueTourSeek(step.timeSeconds);
     }
     focusHistoryRef.current = [];
     focusBodyIdRef.current = step.focusBodyId;
@@ -1652,21 +2838,33 @@ export function App() {
     setSelectedBodyId(step.focusBodyId);
     setResetViewToken((current) => current + 1);
     setTourTransitionSequence((current) => current + 1);
-  }, [tourKind, tourPresentationToken, tourStepIndex]);
+  }, [queueTourSeek, tourKind, tourPresentationToken, tourStepIndex]);
 
+  // A step's clock holds while the camera flies there (at the step's own time,
+  // or for a Scale step that sets none, at the time it began), so the event
+  // the step names happens in front of the settled camera.
+  // The scene defers a reset flight until the focus body has a state, so a
+  // step on a body with an ephemeris window (the ISS, JWST) at a time outside
+  // that window would hold the clock forever. No tour step focuses one.
+  const tourCameraSettled =
+    tourTransitionDurationMs <= 0 ||
+    settledCameraTransitionSequence >= tourTransitionSequence;
   useEffect(() => {
     if (tourStepIndex !== null) {
-      setPlaying(tourPlaying);
+      setPlaying(tourPlaying && tourCameraSettled);
     }
-  }, [tourPlaying, tourStepIndex]);
+  }, [tourCameraSettled, tourPlaying, tourStepIndex]);
 
+  // A step's time on screen starts once its clock has landed and its camera
+  // has arrived, so a long seek or flight never eats the step.
+  const tourStepTimerRunning = tourPlaying && !seeking && tourCameraSettled;
   useEffect(() => {
-    if (tourStepIndex === null || !tourPlaying) {
+    if (tourStepIndex === null || !tourStepTimerRunning) {
       return;
     }
     const timer = window.setTimeout(() => {
       if (tourStepIndex === activeTourSteps.length - 1) {
-        setTourPlaying(false);
+        showTourEnding();
         return;
       }
       setTourStepIndex(tourStepIndex + 1);
@@ -1675,12 +2873,15 @@ export function App() {
   }, [
     activeTourStepDurationMs,
     activeTourSteps.length,
-    tourPlaying,
+    showTourEnding,
     tourStepIndex,
+    tourStepTimerRunning,
   ]);
 
   const activeTourStep =
     tourStepIndex === null ? undefined : activeTourSteps[tourStepIndex];
+  const tourEnding =
+    tourKind === "eclipse" ? ECLIPSE_STORY_ENDING : SCALE_TOUR_ENDING;
   const activeEclipseSurfaceObserver =
     tourKind === "eclipse" && activeTourStep?.surfaceObserver !== undefined;
   const activeCinematicShot =
@@ -1693,6 +2894,11 @@ export function App() {
       : activeCinematicShot?.focusBodyId === focusBodyId
         ? activeCinematicShot.cameraTargetBodyId
         : undefined;
+  const activeShotSubjectFillsFrame =
+    activeTourStep?.focusBodyId === focusBodyId
+      ? (activeTourStep.subjectFillsFrame ?? false)
+      : activeCinematicShot?.focusBodyId === focusBodyId &&
+        (activeCinematicShot.subjectFillsFrame ?? false);
 
   const presentCinematicShot = (shot: CinematicShot): void => {
     const requestedRateIndex = TIME_RATES.findIndex(
@@ -1701,9 +2907,33 @@ export function App() {
     if (requestedRateIndex < 0) {
       throw new Error(`${shot.name} requests an unavailable playback rate`);
     }
-    setTourPlaying(false);
-    setTourKind(null);
-    setTourStepIndex(null);
+    // A tour hides every shot button (.is-tour-story), and its settings
+    // restore would fight the shot's.
+    if (tourStepIndex !== null) {
+      throw new Error(`${shot.name} cannot start during a tour`);
+    }
+    // A shot after a shot keeps the view and rate from before the first one.
+    if (viewBeforeShotRef.current === null) {
+      shotFocusReturnRef.current = document.activeElement;
+    }
+    viewBeforeShotRef.current ??= {
+      viewMode,
+      bodyVisibilityPercent,
+      showLabels,
+      showOrbitGuides,
+      showTacticalOverlay,
+      showEclipticPlane,
+      showPlanetTrails,
+    };
+    playbackBeforeShotRef.current ??= { direction, timeRateIndex };
+    focusBeforeShotRef.current ??= {
+      focusBodyId: focusBodyIdRef.current,
+      selectedBodyId,
+      historyLength: focusHistoryRef.current.length,
+    };
+    if (shot.loopEndTimeSeconds !== null) {
+      returnToEpoch();
+    }
     setSurfaceObserverEnabled(false);
     setOrbitViewEnabled(false);
     setActiveCinematicShotId(shot.id);
@@ -1714,6 +2944,7 @@ export function App() {
     setBodyVisibilityPercent(shot.bodyVisibilityPercent);
     setShowLabels(shot.labels);
     setShowOrbitGuides(shot.orbitGuides);
+    setShowPlanetTrails(shot.planetTrails);
     setShowTacticalOverlay(false);
     setShowEclipticPlane(false);
     setSelectedBodyPanelCollapsed(true);
@@ -1733,6 +2964,32 @@ export function App() {
     setTourTransitionSequence((current) => current + 1);
     setControlPanelOpen(false);
   };
+
+  // The time on screen, not the solver frame: the frame reaches the loop end
+  // a keyframe before the screen does, and a restart then would cut the last
+  // day of the race from the clock and the planets. The seek's frame jumps
+  // to the epoch, so the shown time changes in the same render that it lands
+  // and a restart is never repeated on a stale time.
+  const activeShotTimeSeconds = state?.timeSeconds;
+  const activeShotLoopEndTimeSeconds =
+    activeCinematicShot?.loopEndTimeSeconds ?? null;
+  useEffect(() => {
+    forwardPlaybackLimitSecondsRef.current =
+      activeShotLoopEndTimeSeconds ?? undefined;
+  }, [activeShotLoopEndTimeSeconds]);
+  useEffect(() => {
+    if (
+      activeShotLoopEndTimeSeconds === null ||
+      activeShotTimeSeconds === undefined ||
+      // REBOUND finishes on the requested time with a last step of
+      // (end - t), which can land a rounding error short of the loop end
+      // where playback holds, so the restart allows one simulated second.
+      activeShotTimeSeconds < activeShotLoopEndTimeSeconds - 1
+    ) {
+      return;
+    }
+    returnToEpoch();
+  }, [activeShotLoopEndTimeSeconds, activeShotTimeSeconds, returnToEpoch]);
 
   useEffect(() => {
     if (activeTourStep === undefined || !audio.settings.narrationEnabled) {
@@ -1764,17 +3021,29 @@ export function App() {
     ) {
       throw new Error("View magnification must be between 2^-32x and 128x");
     }
+    tourCameraMovedRef.current = true;
     setCameraZoom(requested);
-    setViewMagnification(requested);
+    reportViewMagnification(requested, true);
   };
 
   const selectedTimeRate = TIME_RATES[timeRateIndex];
-  const playbackRateSliderIndex = USER_TIME_RATE_INDEXES.indexOf(
-    timeRateIndex as (typeof USER_TIME_RATE_INDEXES)[number],
-  );
   if (selectedTimeRate === undefined) {
     throw new Error("Selected simulation time rate is unavailable");
   }
+  // A shot's or tour step's own rate, such as 2 or 10 minutes per second, has
+  // no slider stop: the thumb sits at the nearest stop and the label beside
+  // it names the real rate.
+  const sliderRateDistances = USER_TIME_RATE_INDEXES.map((rateIndex) =>
+    Math.abs(
+      Math.log(
+        TIME_RATES[rateIndex].secondsPerSecond /
+          selectedTimeRate.secondsPerSecond,
+      ),
+    ),
+  );
+  const playbackRateSliderIndex = sliderRateDistances.indexOf(
+    Math.min(...sliderRateDistances),
+  );
 
   const focusedOrbitParameters = useMemo(
     () => orbitParametersForBody(state, focusBodyId),
@@ -1817,6 +3086,7 @@ export function App() {
       epochTimeSeconds: state?.timeSeconds ?? 0,
     });
     setOrbitViewEnabled(true);
+    endCinematicShot();
     setTourPlaying(false);
     setSurfaceObserverEnabled(false);
     setViewMode("reality");
@@ -1860,8 +3130,7 @@ export function App() {
         name: `${apolloSite.mission} · ${apolloSite.siteName}`,
         surface: `${apolloSite.lunarModule} descent stage and deployed equipment remain at the landing site`,
         parentName: "Moon",
-        distanceLabel: "LRO landing coordinates",
-        distance: `${Math.abs(apolloSite.latitudeDeg).toFixed(5)}° ${apolloSite.latitudeDeg < 0 ? "S" : "N"} · ${Math.abs(apolloSite.longitudeDeg).toFixed(5)}° ${apolloSite.longitudeDeg < 0 ? "W" : "E"}`,
+        landingCoordinates: `${Math.abs(apolloSite.latitudeDeg).toFixed(5)}° ${apolloSite.latitudeDeg < 0 ? "S" : "N"} · ${Math.abs(apolloSite.longitudeDeg).toFixed(5)}° ${apolloSite.longitudeDeg < 0 ? "W" : "E"}`,
         mass: "Not represented as a gravitational source",
         composition: {
           summary:
@@ -1917,7 +3186,7 @@ export function App() {
       return undefined;
     }
     const parentId = isJovianMonolith
-      ? "jupiter"
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
       : isDiscoveryOne
         ? DISCOVERY_ONE_PARENT_BODY_ID
         : isFictionalOrbiter
@@ -1939,27 +3208,27 @@ export function App() {
     const speedLabel =
       parentDefinition === undefined
         ? undefined
-        : `Speed relative to ${parentDefinition.name}`;
+        : `Speed relative to ${parentPhrase(parentDefinition)}`;
     if (isJovianMonolith) {
       return {
         name: JOVIAN_MONOLITH_NAME,
         surface:
           "Fictional black rectangular object from 2001 / 2010 · physical scale",
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                "Distance from Jupiter",
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: "Distance from Jupiter",
         speed:
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: "Unknown · fictional",
+        mass: "Nobody knows: it is from a story",
+        exactMass: "Unknown · fictional",
         composition: {
           summary:
             "Unknown fictional material; the story does not provide a physical composition",
@@ -1967,9 +3236,15 @@ export function App() {
           sourceUrl:
             "https://www.nasa.gov/history/50-years-ago-1968-welcomed-2001/",
         },
-        dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString()} m · 1:4:9`,
-        ephemerisStatus:
-          "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+        dimensionsM: `${JOVIAN_MONOLITH_DIMENSIONS_M.thickness.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.width.toFixed(1)} × ${JOVIAN_MONOLITH_DIMENSIONS_M.length.toLocaleString("en-GB")} m · 1:4:9`,
+        path: "From a story: it floats between Jupiter and Io",
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Display-only at the approximate live Jupiter-Io L1 point · excluded from gravity",
+          },
+        ],
       };
     }
     if (isDiscoveryOne) {
@@ -1981,20 +3256,20 @@ export function App() {
         name: DISCOVERY_ONE_NAME,
         surface: `${asset.credit} · physical scale`,
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                "Distance from Io",
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: "Distance from Io",
         speed:
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel: "Speed relative to Io",
-        mass: "Fictional · excluded from gravity",
+        mass: "Made up, so here it does not pull on anything",
+        exactMass: "Fictional · excluded from gravity",
         composition: {
           summary:
             "Fictional crewed spacecraft with command sphere, long truss spine and nuclear propulsion module",
@@ -2002,7 +3277,13 @@ export function App() {
           sourceUrl: asset.pageUrl,
         },
         dimensionsM: `${DISCOVERY_ONE_LENGTH_M.toFixed(1)} m long · ${DISCOVERY_ONE_MAXIMUM_DIAMETER_M.toFixed(1)} m maximum diameter`,
-        ephemerisStatus: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+        path: `From a story: a simple circle around Io, ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km up`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: `Canonical location is orbit around Io; no precise elements were published, so this is an explicit ${String(DISCOVERY_ONE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit`,
+          },
+        ],
       };
     }
     if (isFictionalOrbiter) {
@@ -2020,23 +3301,20 @@ export function App() {
               ? "Original high-detail complete battle-station visualization · physical scale"
               : "Original high-detail incomplete battle-station visualization with layered exposed construction · physical scale",
         parentName: parentDefinition?.name,
-        distance:
+        distanceRows:
           parentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                `Distance from ${parentDefinition?.name ?? orbiter.parentBodyId}`,
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
-        distanceLabel: `Distance from ${parentDefinition?.name ?? orbiter.parentBodyId}`,
         speed:
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-        speedLabel:
-          parentDefinition === undefined
-            ? undefined
-            : `Speed relative to ${parentDefinition.name}`,
-        mass: "Fictional · treated as a massless visualization",
+        speedLabel,
+        mass: "Made up, so here it does not pull on anything",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary:
             "Fictional armoured space station; no real mass or material properties are assigned",
@@ -2046,9 +3324,15 @@ export function App() {
               : "Star Wars Databank and CC model attribution",
           sourceUrl: licensedAsset?.pageUrl ?? orbiter.sourceUrl,
         },
-        dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString()} km diameter`,
-        ephemerisStatus:
-          "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+        dimensionsM: `${(orbiter.diameterM / 1_000).toLocaleString("en-GB")} km diameter`,
+        path: `From a story: a simple circle around ${parentDefinition?.name ?? orbiter.parentBodyId}`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value:
+              "Hypothetical live circular two-body orbit using the moon's gravity · excluded from Solar System gravity",
+          },
+        ],
       };
     }
     if (isDeepSpaceNineObject) {
@@ -2064,16 +3348,15 @@ export function App() {
         name: isStation ? DEEP_SPACE_NINE_NAME : USS_DEFIANT_NAME,
         surface: `${asset.credit} · physical scale`,
         parentName: isStation ? parentDefinition?.name : DEEP_SPACE_NINE_NAME,
-        distance:
+        distanceRows:
           displayParentState === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                isStation
+                  ? "Distance from Callisto"
+                  : "Distance from Deep Space Nine",
                 bodyDistanceM(bodyState, displayParentState),
-                semanticZoom,
               ),
-        distanceLabel: isStation
-          ? "Distance from Callisto"
-          : "Distance from Deep Space Nine",
         speed:
           displayParentState === undefined
             ? undefined
@@ -2081,7 +3364,8 @@ export function App() {
         speedLabel: isStation
           ? "Speed relative to Callisto"
           : "Patrol speed relative to Deep Space Nine",
-        mass: "Fictional · treated as a massless visualization",
+        mass: "Made up, so here it does not pull on anything",
+        exactMass: "Fictional · treated as a massless visualization",
         composition: {
           summary: isStation
             ? "Fictional Cardassian-built orbital station with docking rings and pylons"
@@ -2094,11 +3378,19 @@ export function App() {
             : USS_DEFIANT_SOURCE_URL,
         },
         dimensionsM: isStation
-          ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString()} m diameter`
+          ? `${DEEP_SPACE_NINE_DIAMETER_M.toLocaleString("en-GB")} m diameter`
           : `${USS_DEFIANT_LENGTH_M.toFixed(2)} m long`,
-        ephemerisStatus: isStation
-          ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
-          : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+        path: isStation
+          ? `From a story: a simple circle ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km above Callisto`
+          : `From a story: it flies round Deep Space Nine every ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minutes`,
+        technicalRows: [
+          {
+            label: "Orbit data",
+            value: isStation
+              ? `Hypothetical ${String(DEEP_SPACE_NINE_ORBITAL_ALTITUDE_M / 1_000)} km circular two-body orbit around Callisto · excluded from Solar System gravity`
+              : `Explicit fictional ${String(USS_DEFIANT_PATROL_RADIUS_M / 1_000)} km defensive patrol with a ${String(USS_DEFIANT_PATROL_PERIOD_SECONDS / 60)} minute period · no invented station gravity`,
+          },
+        ],
       };
     }
     if (definition === undefined) {
@@ -2113,35 +3405,46 @@ export function App() {
               ? "Detailed MIT-licensed Roadster and Starman model · Horizons tracks the complete attached payload stack"
               : "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
-          distance:
-            parentState === undefined
+          distanceRows:
+            parentState === undefined || parentDefinition === undefined
               ? undefined
-              : formatDistance(
+              : spacecraftDistanceRows(
+                  bodyId,
+                  parentDefinition,
                   bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
                 ),
-          distanceLabel:
-            bodyId === "hubble"
-              ? "Distance from Earth"
-              : "Distance from the Sun",
           speed:
             parentState === undefined
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
-          speedLabel:
-            parentDefinition === undefined
-              ? undefined
-              : `Speed relative to ${parentDefinition.name}`,
+          speedLabel,
           mass:
+            bodyId === "roadster"
+              ? `${formatPlainCraftMass(operationalSpacecraft.massKg)}: the car alone`
+              : formatPlainCraftMass(operationalSpacecraft.massKg),
+          exactMass:
             bodyId === "roadster"
               ? `${formatMassKg(operationalSpacecraft.massKg)} Roadster only · complete attached stack mass is not installed`
               : formatMassKg(operationalSpacecraft.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(operationalSpacecraft.maximumDimensionM)} m maximum dimension`,
-          ephemerisStatus:
+          path:
             bodyId === "roadster"
-              ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
-              : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+              ? "Real: worked out from 374 telescope sightings, up to 2090"
+              : operationalSpacecraft.center === "500@399"
+                ? "Real: NASA's tracking of its path round Earth"
+                : "Real: NASA's tracking of its path",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                bodyId === "roadster"
+                  ? "NASA/JPL Horizons solution 11 · 374 optical observations · includes measured solar-radiation-pressure acceleration · cubic Hermite interpolation through 2090"
+                  : operationalSpacecraft.center === "500@399"
+                    ? "NASA/JPL Horizons trajectory about Earth's centre · two-body orbit around the simulated Earth from the nearest published sample within coverage"
+                    : "NASA/JPL Horizons trajectory · cubic Hermite interpolation within published coverage",
+            },
+          ],
         };
       }
       if (isVoyager) {
@@ -2152,39 +3455,41 @@ export function App() {
           name: voyager.name,
           surface: "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
-          distance:
+          distanceRows:
             parentState === undefined
               ? undefined
-              : formatDistance(
-                  bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
-                ),
-          distanceLabel: "Distance from the Sun",
+              : sunDistanceRows(bodyId, bodyDistanceM(bodyState, parentState)),
           speed:
             parentState === undefined
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel: "Speed relative to the Sun",
-          mass: formatMassKg(voyager.massKg),
+          mass: formatPlainCraftMass(voyager.massKg),
+          exactMass: formatMassKg(voyager.massKg),
           composition: BODY_COMPOSITION_BY_ID[bodyId],
           dimensionsM: `${String(voyager.maximumDimensionM)} m span · ${String(voyager.highGainAntennaDiameterM)} m antenna`,
-          ephemerisStatus:
-            "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+          path: "Real: starts from NASA's 2026 tracking, then the simulation moves it",
+          technicalRows: [
+            {
+              label: "Orbit data",
+              value:
+                "JPL Horizons 2026 barycentric state · REBOUND massless test-particle propagation",
+            },
+          ],
         };
       }
       if (isIss) {
         return {
           name: "International Space Station",
-          surface: "Official NASA 3D model · physical scale · SGP4 trajectory",
+          surface: "Official NASA 3D model · physical scale",
           parentName: parentDefinition?.name,
-          distance:
+          distanceRows:
             parentState === undefined
               ? undefined
-              : formatDistance(
+              : plainDistanceRows(
+                  "From the centre of Earth",
                   bodyDistanceM(bodyState, parentState),
-                  semanticZoom,
                 ),
-          distanceLabel: "Geocentric distance",
           altitudeKm:
             parentState === undefined || parentDefinition === undefined
               ? undefined
@@ -2196,52 +3501,110 @@ export function App() {
               ? undefined
               : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
           speedLabel,
-          mass: formatMassKg(issSnapshot.physicalDimensions.massKg),
+          mass: formatPlainCraftMass(issSnapshot.physicalDimensions.massKg),
+          exactMass: formatMassKg(issSnapshot.physicalDimensions.massKg),
           composition,
           dimensionsM: `${String(issSnapshot.physicalDimensions.overallEndToEndM)} × ${String(issSnapshot.physicalDimensions.solarArrayLengthM)} m`,
-          ephemerisStatus: isIssEphemerisWithinValidity(state.timeSeconds)
-            ? "Within ±7 day OMM window"
-            : "Hidden outside ±7 day OMM window",
+          path: isIssEphemerisWithinValidity(state.timeSeconds)
+            ? "Up to date for this day"
+            : `Not shown: we only know where it is near ${formatPlainSimulationDate(ISS_EPOCH_SIMULATION_SECONDS)}`,
+          technicalRows: [
+            {
+              label: "Orbit model",
+              value: "SGP4 from the CelesTrak OMM orbital elements",
+            },
+            {
+              label: "Orbit data window",
+              value: isIssEphemerisWithinValidity(state.timeSeconds)
+                ? "Within ±7 day OMM window"
+                : "Hidden outside ±7 day OMM window",
+            },
+          ],
         };
       }
+      // A catalogue moon has no surface map, mass or composition installed,
+      // so the card leaves those rows out.
       return {
-        name: knownSatellite?.name ?? bodyId,
-        surface: "Neutral point - no installed surface asset",
+        name: bodyDisplayName(bodyId),
         parentName: parentDefinition?.name,
-        distance:
-          parentState === undefined
+        distanceRows:
+          parentState === undefined || parentDefinition === undefined
             ? undefined
-            : formatDistance(
+            : plainDistanceRows(
+                `Distance from ${parentPhrase(parentDefinition)}`,
                 bodyDistanceM(bodyState, parentState),
-                semanticZoom,
               ),
         speed:
           parentState === undefined
             ? undefined
             : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
         speedLabel,
-        mass: formatMassKg(undefined),
         composition,
       };
     }
+    const surfaceClassification =
+      nasaTextureByBodyId.get(definition.id)?.classification ??
+      nasaMaterialPresentationByBodyId.get(definition.id)?.classification;
+    const diameterKm = (definition.meanRadiusM * 2) / 1_000;
+    const liveOrbitalPeriodSeconds =
+      parentState === undefined
+        ? undefined
+        : osculatingOrbitalPeriodSeconds(bodyState, parentState);
+    const sourcedOrbitalPeriod = SIDEREAL_ORBITAL_PERIOD_BY_ID[definition.id];
+    const distanceRows =
+      parentState === undefined || parentDefinition === undefined
+        ? undefined
+        : majorBodyDistanceRows(
+            definition,
+            parentDefinition,
+            bodyDistanceM(bodyState, parentState),
+          );
     return {
       name: definition.name,
-      surface:
-        nasaTextureByBodyId.get(definition.id)?.classification ??
-        nasaMaterialPresentationByBodyId.get(definition.id)?.classification ??
-        "Neutral - no installed authoritative surface asset",
-      diameterKm: (definition.meanRadiusM * 2) / 1_000,
-      parentName: parentDefinition?.name,
-      distance:
-        parentState === undefined
+      size: formatBodySize(
+        definition.id,
+        definition.meanRadiusM,
+        EARTH_MEAN_RADIUS_M,
+      ),
+      orbitLabel:
+        parentDefinition === undefined
           ? undefined
-          : formatDistance(bodyDistanceM(bodyState, parentState), semanticZoom),
+          : `One trip around ${parentPhrase(parentDefinition)}`,
+      orbitalPeriod: formatSourcedOrbitalPeriod(definition.id),
+      orbitalPeriodSource:
+        sourcedOrbitalPeriod === undefined
+          ? undefined
+          : `Sidereal orbital period · ${sourcedOrbitalPeriod.authority}`,
+      liveOrbitalPeriod:
+        liveOrbitalPeriodSeconds === undefined
+          ? undefined
+          : formatLiveOrbitalPeriod(liveOrbitalPeriodSeconds),
+      spinNote: planetSpinNote(definition),
+      surface:
+        definition.type === "star"
+          ? SUN_SURFACE_WORDING
+          : (PLAIN_SURFACE_BY_BODY_ID[definition.id] ?? "Plain colour"),
+      surfaceTechnical:
+        definition.type === "star"
+          ? SUN_SURFACE_TECHNICAL
+          : surfaceClassification === undefined
+            ? "No surface map installed"
+            : PLAIN_SURFACE_MAP_BY_CLASSIFICATION[surfaceClassification],
+      surfaceClassification,
+      diameterKm,
+      parentName: parentDefinition?.name,
+      distanceRows,
       speed:
         parentState === undefined
           ? undefined
           : bodyRelativeSpeedMps(bodyState, parentState) / 1_000,
       speedLabel,
-      mass: formatMassKg(definition.massKg),
+      mass: formatMassComparedWithEarth(
+        definition.id,
+        definition.massKg,
+        EARTH_MASS_KG,
+      ),
+      exactMass: formatMassKg(definition.massKg),
       composition,
       rotationHours: siderealRotationPeriodHours(definition),
       primeMeridianDeg: normalizedDegrees(
@@ -2249,21 +3612,33 @@ export function App() {
           .primeMeridianDeg,
       ),
     };
-  }, [selectedBodyId, semanticZoom, state]);
+  }, [selectedBodyId, state]);
 
   const selectedApolloSite = isApolloLandingSiteId(selectedBodyId)
     ? apolloLandingSiteById.get(selectedBodyId)
     : undefined;
 
+  // A looping shot only runs forward from the epoch: going backward ends it.
   const startPlaying = (nextDirection: -1 | 1): void => {
+    if (nextDirection === -1) {
+      endCinematicShot();
+    }
     setDirection(nextDirection);
     setPlaying(true);
   };
 
   const queueStep = (stepDirection: -1 | 1): void => {
+    // A step backward ends a shot; it steps by the rate that comes back.
+    const restoredRateIndex = stepDirection === -1 ? endCinematicShot() : null;
+    const stepRate =
+      restoredRateIndex === null
+        ? selectedTimeRate
+        : TIME_RATES[restoredRateIndex];
+    if (stepRate === undefined) {
+      throw new Error("The playback rate from before the shot is unavailable");
+    }
     setPlaying(false);
-    manualDeltaSecondsRef.current +=
-      stepDirection * selectedTimeRate.secondsPerSecond;
+    manualDeltaSecondsRef.current += stepDirection * stepRate.secondsPerSecond;
     setSeeking(true);
   };
 
@@ -2274,16 +3649,12 @@ export function App() {
     setObjectVisibility((current) => ({ ...current, [category]: visible }));
   };
 
-  const focusedDefinition = majorBodySnapshot.bodies.find(
-    (body) => body.id === focusBodyId,
-  );
   const focusedKnownSatellite = knownSatelliteById.get(focusBodyId);
-  const focusedVoyager = isVoyagerBodyId(focusBodyId)
-    ? voyagerById.get(focusBodyId)
-    : undefined;
   const focusedParentId =
     (focusBodyId === ISS_BODY_ID ? ISS_PARENT_BODY_ID : undefined) ??
-    (focusBodyId === JOVIAN_MONOLITH_BODY_ID ? "jupiter" : undefined) ??
+    (focusBodyId === JOVIAN_MONOLITH_BODY_ID
+      ? JOVIAN_MONOLITH_PRIMARY_BODY_ID
+      : undefined) ??
     (focusBodyId === DISCOVERY_ONE_BODY_ID
       ? DISCOVERY_ONE_PARENT_BODY_ID
       : undefined) ??
@@ -2296,18 +3667,16 @@ export function App() {
     focusedKnownSatellite?.parentId ??
     PARENT_BODY_ID[focusBodyId];
   const focusedParentName =
-    majorBodySnapshot.bodies.find((body) => body.id === focusedParentId)
-      ?.name ??
-    (focusedParentId === DEEP_SPACE_NINE_BODY_ID
-      ? DEEP_SPACE_NINE_NAME
-      : undefined);
+    focusedParentId === undefined
+      ? undefined
+      : bodyDisplayName(focusedParentId);
   const outsideValidatedWindow =
-    Math.abs(state?.timeSeconds ?? 0) > 365 * DAY_SECONDS;
+    Math.abs(state?.timeSeconds ?? 0) > VALIDATED_WINDOW_SECONDS;
 
   return (
     <main
       ref={appShellRef}
-      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
+      className={`app-shell${immersiveMode ? " is-immersive" : ""}${tourStepIndex === null ? "" : " is-touring"}${tourKind === null ? "" : " is-tour-story"}${tourKind === "eclipse" ? " is-eclipse-story" : ""}`}
       data-immersive-mode={String(immersiveMode)}
       data-display-panel-open={String(controlPanelOpen)}
       data-view-mode={viewMode}
@@ -2316,9 +3685,12 @@ export function App() {
       data-tour-presentation={activeTourStep?.presentation}
       onClickCapture={(event) => {
         const target = event.target;
+        // A hidden-surprise label is an unfound easter egg: its discovery
+        // chime replaces the button sound. A size-duel guess plays its own.
         if (
           target instanceof Element &&
-          target.closest("button:not(:disabled), summary") !== null
+          target.closest("button:not(:disabled), summary") !== null &&
+          target.closest(".is-hidden-surprise, .size-duel-choice") === null
         ) {
           audio.interact("button");
         }
@@ -2367,10 +3739,8 @@ export function App() {
                   aria-pressed={viewMode === mode}
                   aria-describedby={tooltipId}
                   onClick={() => {
-                    setActiveCinematicShotId(null);
-                    setTourPlaying(false);
-                    setTourKind(null);
-                    setTourStepIndex(null);
+                    endCinematicShot();
+                    endTour();
                     setSurfaceObserverEnabled(false);
                     if (mode === "schematic") {
                       setOrbitViewEnabled(false);
@@ -2393,15 +3763,16 @@ export function App() {
         </nav>
         <FocusSelect
           value={focusBodyId}
-          onSelect={(bodyId) => {
+          foundEasterEggIds={foundEasterEggIds}
+          onSelect={(option) => {
             setSurfaceObserverEnabled(false);
-            navigateToFocus(bodyId);
+            navigateToFocus(option.id);
+            if (option.selectBodyId !== undefined) {
+              setSelectedBodyId(option.selectBodyId);
+            }
           }}
         />
         <div className="command-actions">
-          <button type="button" onClick={requestResetView}>
-            Reset
-          </button>
           <button
             ref={fullscreenButtonRef}
             type="button"
@@ -2424,6 +3795,15 @@ export function App() {
         </div>
       </header>
 
+      {blackout === null ? null : (
+        <div
+          className="blackout-cover"
+          // Only the picture is blanked; any key brings it back.
+          aria-hidden="true"
+          onClick={showScreen}
+        />
+      )}
+
       {immersiveMode ? (
         <button
           ref={immersiveExitButtonRef}
@@ -2435,7 +3815,16 @@ export function App() {
         </button>
       ) : null}
 
-      <section className="workspace">
+      <section
+        className="workspace"
+        style={
+          navigationMapBottomPx === null
+            ? undefined
+            : ({
+                "--navigation-map-bottom": `${String(navigationMapBottomPx)}px`,
+              } as CSSProperties)
+        }
+      >
         {fullscreenError === undefined ? null : (
           <p className="fullscreen-error error" role="alert">
             {fullscreenError}
@@ -2451,6 +3840,7 @@ export function App() {
               <span aria-hidden="true">/</span>
               <button
                 type="button"
+                aria-label={`Go to ${focusedParentName}`}
                 onClick={() => navigateToFocus(focusedParentId)}
               >
                 {focusedParentName}
@@ -2460,26 +3850,7 @@ export function App() {
           {focusBodyId === "" ? null : (
             <>
               <span aria-hidden="true">/</span>
-              <strong>
-                {focusedDefinition?.name ??
-                  focusedKnownSatellite?.name ??
-                  focusedVoyager?.name ??
-                  (focusBodyId === JOVIAN_MONOLITH_BODY_ID
-                    ? JOVIAN_MONOLITH_NAME
-                    : undefined) ??
-                  (focusBodyId === DISCOVERY_ONE_BODY_ID
-                    ? DISCOVERY_ONE_NAME
-                    : undefined) ??
-                  (isFictionalOrbiterId(focusBodyId)
-                    ? fictionalOrbiterById.get(focusBodyId)?.name
-                    : undefined) ??
-                  (isDeepSpaceNineObjectId(focusBodyId)
-                    ? focusBodyId === DEEP_SPACE_NINE_BODY_ID
-                      ? DEEP_SPACE_NINE_NAME
-                      : USS_DEFIANT_NAME
-                    : undefined) ??
-                  focusBodyId}
-              </strong>
+              <strong>{bodyDisplayName(focusBodyId)}</strong>
             </>
           )}
         </nav>
@@ -2507,6 +3878,25 @@ export function App() {
           </span>
         </div>
 
+        {/* The discovery toast takes the caption's place while it shows. */}
+        {activeCinematicShot === undefined ||
+        !playing ||
+        discoveredEasterEggId !== null ? null : (
+          <div className="cinematic-shot-caption">
+            <p role="status">
+              <strong>{activeCinematicShot.name}</strong>
+              <span>{activeCinematicShot.description}</span>
+            </p>
+            <button
+              type="button"
+              aria-label={`Stop ${activeCinematicShot.name}`}
+              onClick={stopCinematicShot}
+            >
+              Stop
+            </button>
+          </div>
+        )}
+
         <time
           className="global-simulation-clock"
           dateTime={simulationDateUtc(state?.timeSeconds ?? 0)
@@ -2523,12 +3913,11 @@ export function App() {
             <button
               type="button"
               onClick={() => {
-                manualDeltaSecondsRef.current = 0;
-                directSeekTimeSecondsRef.current = undefined;
-                setSeeking(false);
-                setPlaybackBuffered(false);
-                setError(undefined);
-                setSimulationRunToken((current) => current + 1);
+                restartSimulation();
+                // A tour step's time comes back after the restart.
+                if (activeTourStep?.timeSeconds !== undefined) {
+                  queueTourSeek(activeTourStep.timeSeconds);
+                }
               }}
             >
               Restart simulation
@@ -2544,7 +3933,8 @@ export function App() {
         ) : (
           <Suspense fallback={<p className="loading">Loading view...</p>}>
             <SolarSystemScene
-              frame={frame}
+              frameRef={frameRef}
+              trailQueueRef={trailQueueRef}
               displayedStateRef={displayedStateRef}
               bodyVisibility={
                 viewMode === "reality" ? 0 : bodyVisibilityPercent / 100
@@ -2562,6 +3952,7 @@ export function App() {
               showEclipticPlane={showEclipticPlane}
               showZodiac={showZodiac}
               showLabels={showLabels}
+              announceFlights={activeTourStep === undefined}
               showApolloSites={showApolloSites}
               spacecraftLabelBodyIds={
                 activeTourStep === undefined
@@ -2585,9 +3976,16 @@ export function App() {
                   ? activeTourStep.cameraDistanceAu
                   : activeCinematicShot?.cameraDistanceAu
               }
+              fitCameraDistanceToPortrait={
+                typeof activeTourStep?.cameraDistanceAu !== "number" &&
+                activeCinematicShot !== undefined
+              }
               cameraTargetBodyId={activeCameraTargetBodyId}
+              // The shadow-axis camera aims at the shadow's spot on Earth,
+              // which exists only at the eclipse, so a step's camera style
+              // waits for its clock to land.
               observerCameraStyle={
-                tourKind === "eclipse"
+                tourKind === "eclipse" && !tourSeekPending
                   ? ((activeTourStep as EclipseStoryStep | undefined)
                       ?.observerCameraStyle ?? "surface-facing")
                   : "surface-facing"
@@ -2603,20 +4001,30 @@ export function App() {
               objectVisibility={objectVisibility}
               surfaceObserver={surfaceObserverConfiguration}
               surfaceObserverLookResetToken={surfaceObserverLookResetToken}
+              subjectFillsFrame={activeShotSubjectFillsFrame}
               visualQuality={visualQuality}
               exposureMode={exposureMode}
               manualExposureEv={manualExposureEv}
               deepSpacePresentation={activeTourStep?.presentation}
-              eclipseShadowVisible={activeTourStep?.id === "shadow-from-moon"}
+              // The shadow axis meets Earth only at the eclipse, so the
+              // shadow waits for the step's clock to land there.
+              eclipseShadowVisible={
+                activeTourStep?.id === "shadow-from-moon" && !tourSeekPending
+              }
+              foundEasterEggIds={foundEasterEggIds}
               onSelectBody={handleSceneBodySelection}
-              onFocusBody={navigateToFocus}
+              onPickBody={handleSceneBodyPick}
+              onFocusBody={handleSceneFocusBody}
+              onNavigationMapBottomChange={setNavigationMapBottomPx}
               onOrientationChange={handleSceneOrientationChange}
               onOrbitViewChange={handleOrbitViewChange}
               onSemanticZoomChange={setSemanticZoom}
-              onViewZoomChange={setViewMagnification}
+              onViewZoomChange={reportViewMagnification}
+              onZoomLimitsChange={setZoomLimits}
+              onCameraTransitionSettled={setSettledCameraTransitionSequence}
               onGpuStatus={setGpuStatus}
               onGpuError={setGpuError}
-              onExposureStatusChange={setExposureStatus}
+              onExposureStatusChange={reportExposureStatus}
             />
           </Suspense>
         )}
@@ -2638,7 +4046,11 @@ export function App() {
               type="button"
               aria-label="Zoom out"
               title="Zoom out"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atFarthest
+              }
               onClick={() => handleCameraNavigation("zoom-out")}
             >
               −
@@ -2647,7 +4059,11 @@ export function App() {
               type="button"
               aria-label="Zoom in"
               title="Zoom in"
-              disabled={viewMode === "schematic" || surfaceObserverEnabled}
+              disabled={
+                viewMode === "schematic" ||
+                surfaceObserverEnabled ||
+                zoomLimits.atNearest
+              }
               onClick={() => handleCameraNavigation("zoom-in")}
             >
               +
@@ -2677,8 +4093,38 @@ export function App() {
             >
               Eclipse story
             </button>
+            <button
+              type="button"
+              className="planets-racing-launch-button"
+              aria-pressed={activeCinematicShotId === PLANETS_RACING_SHOT.id}
+              onClick={() => presentCinematicShot(PLANETS_RACING_SHOT)}
+            >
+              Planets racing
+            </button>
           </div>
         </nav>
+
+        <p className="visually-hidden" aria-live="polite">
+          {selectedBodyDetail === undefined ||
+          activeTourStep !== undefined ||
+          surfaceObserverEnabled ||
+          selectedBodyId !== announcedPickId ||
+          selectedBodyId === focusBodyId ||
+          selectedBodyId === apolloInspectionSiteId
+            ? null
+            : `${selectedBodyDetail.name} selected. Select again to fly there.`}
+        </p>
+
+        <p className="discovery-toast" role="status">
+          {discoveredEasterEggId === null ? null : (
+            <>
+              {discoveryMessage(discoveredEasterEggId)}
+              <span className="discovery-toast-progress">
+                {discoveryProgress(foundEasterEggIds)}
+              </span>
+            </>
+          )}
+        </p>
 
         {surfaceObservation === undefined || tourKind === "eclipse" ? null : (
           <aside
@@ -2819,6 +4265,8 @@ export function App() {
 
         {activeTourStep === undefined || tourStepIndex === null ? null : (
           <aside
+            ref={tourPanelRef}
+            tabIndex={-1}
             className={tourMinimised ? "scale-tour is-minimised" : "scale-tour"}
             role="dialog"
             aria-modal="false"
@@ -2830,6 +4278,7 @@ export function App() {
             data-tour-kind={tourKind ?? "scale"}
             data-tour-step={activeTourStep.id}
             data-tour-playing={String(tourPlaying)}
+            data-tour-ended={String(tourEnded)}
             data-tour-minimised={String(tourMinimised)}
             data-tour-narration-state={audio.narrationStatus}
             data-tour-observer={
@@ -2862,123 +4311,228 @@ export function App() {
                 >
                   {tourMinimised ? "Restore" : "Minimise"}
                 </button>
-                <button type="button" onClick={exitScaleTour}>
+                <button
+                  ref={tourFullscreenButtonRef}
+                  type="button"
+                  className="tour-fullscreen-button"
+                  onClick={enterImmersiveMode}
+                >
+                  Full screen
+                </button>
+                <button type="button" onClick={exitTour}>
                   Exit
                 </button>
               </div>
             </div>
             <div className="tour-progress" aria-hidden="true">
               <span
-                key={`${activeTourStep.id}-${String(tourPlaying)}`}
-                className={tourPlaying ? "is-playing" : undefined}
+                key={`${activeTourStep.id}-${String(tourStepTimerRunning)}`}
+                className={
+                  tourEnded
+                    ? "is-complete"
+                    : tourStepTimerRunning
+                      ? "is-playing"
+                      : undefined
+                }
                 style={{
                   animationDuration: `${String(activeTourStepDurationMs)}ms`,
                 }}
               />
             </div>
             <div className="tour-copy" aria-live="polite">
-              <span>{activeTourStep.eyebrow}</span>
-              <h2>{activeTourStep.title}</h2>
-              <strong>{activeTourStep.scale}</strong>
-              <p>{activeTourStep.description}</p>
-              {activeTourStep.timeUtc !== undefined ? (
-                <time dateTime={activeTourStep.timeUtc}>
-                  12 August 2026 · exact model time
-                </time>
-              ) : null}
-              {tourKind === "eclipse" &&
-              surfaceObservation?.solarEclipse !== undefined ? (
-                <div
-                  className="eclipse-live-metrics"
-                  aria-label="Live eclipse geometry"
+              {tourEnded ? (
+                <>
+                  <span>{tourEnding.eyebrow}</span>
+                  <h2>{tourEnding.title}</h2>
+                  <p className="tour-kid-line">{tourEnding.kidLine}</p>
+                  {"safety" in tourEnding ? (
+                    <p className="tour-ending-safety">{tourEnding.safety}</p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <span>{activeTourStep.eyebrow}</span>
+                  <h2>{activeTourStep.title}</h2>
+                  <p className="tour-kid-line">{activeTourStep.kidLine}</p>
+                  <strong>{activeTourStep.scale}</strong>
+                  <p>{activeTourStep.description}</p>
+                  {activeTourStep.timeSeconds !== undefined &&
+                  tourSeekPending ? (
+                    <p className="tour-seeking" role="status">
+                      Moving the clock to{" "}
+                      {simulationDateUtc(
+                        activeTourStep.timeSeconds,
+                      ).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })}
+                      …
+                    </p>
+                  ) : activeTourStep.timeUtc !== undefined ? (
+                    <time dateTime={activeTourStep.timeUtc}>
+                      {new Date(activeTourStep.timeUtc).toLocaleDateString(
+                        "en-GB",
+                        {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        },
+                      )}{" "}
+                      · exact model time
+                    </time>
+                  ) : null}
+                  {tourKind === "eclipse" &&
+                  !tourSeekPending &&
+                  surfaceObservation?.solarEclipse !== undefined ? (
+                    <div
+                      className="eclipse-live-metrics"
+                      aria-label="Live eclipse geometry"
+                    >
+                      <span>
+                        <small>Sun altitude</small>
+                        {surfaceObservation.sunAltitudeDeg.toFixed(2)}°
+                      </span>
+                      <span>
+                        <small>Disc separation</small>
+                        {surfaceObservation.solarEclipse.centerSeparationDeg.toFixed(
+                          3,
+                        )}
+                        °
+                      </span>
+                      <span>
+                        <small>Sun hidden</small>
+                        {(
+                          surfaceObservation.solarEclipse.obscurationFraction *
+                          100
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </div>
+                  ) : null}
+                  <small className="tour-motion">
+                    Motion · {activeTourStep.timeRateLabel}
+                  </small>
+                  <small className="tour-visual-key">
+                    {activeTourStep.visualKey}
+                    {tourKind === "eclipse" ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={
+                            activeTourStep.id === "spain-totality"
+                              ? ECLIPSE_PATH_SOURCE_URL
+                              : ECLIPSE_SOURCE_URL
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          NASA data
+                        </a>
+                      </>
+                    ) : null}
+                  </small>
+                </>
+              )}
+            </div>
+            {tourEnded ? (
+              <div className="tour-actions">
+                <button
+                  ref={tourFlyHomeRef}
+                  type="button"
+                  className="primary-action"
+                  onClick={navigateHome}
                 >
-                  <span>
-                    <small>Sun altitude</small>
-                    {surfaceObservation.sunAltitudeDeg.toFixed(2)}°
-                  </span>
-                  <span>
-                    <small>Disc separation</small>
-                    {surfaceObservation.solarEclipse.centerSeparationDeg.toFixed(
-                      3,
-                    )}
-                    °
-                  </span>
-                  <span>
-                    <small>Sun hidden</small>
-                    {(
-                      surfaceObservation.solarEclipse.obscurationFraction * 100
-                    ).toFixed(1)}
-                    %
-                  </span>
-                </div>
-              ) : null}
-              <small className="tour-motion">
-                Motion · {activeTourStep.timeRateLabel}
-              </small>
-              <small className="tour-visual-key">
-                {activeTourStep.visualKey}
+                  Fly home
+                </button>
                 {tourKind === "eclipse" ? (
                   <>
-                    {" · "}
-                    <a
-                      href={
-                        activeTourStep.id === "spain-totality"
-                          ? ECLIPSE_PATH_SOURCE_URL
-                          : ECLIPSE_SOURCE_URL
-                      }
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      NASA data
-                    </a>
+                    <button type="button" onClick={startScaleTour}>
+                      Take the Scale tour
+                    </button>
+                    <button type="button" onClick={startEclipseStory}>
+                      Watch again
+                    </button>
                   </>
-                ) : null}
-              </small>
-            </div>
-            <div className="tour-actions">
-              <button
-                type="button"
-                disabled={tourStepIndex === 0}
-                onClick={() => advanceScaleTour(-1)}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (tourPlaying) {
-                    setTourPlaying(false);
-                    return;
-                  }
-                  setTourPlaying(true);
-                  setTourPresentationToken((current) => current + 1);
-                }}
-              >
-                {tourPlaying
-                  ? tourKind === "eclipse"
-                    ? "Pause story"
-                    : "Pause tour"
-                  : tourKind === "eclipse"
-                    ? "Resume story"
-                    : "Resume tour"}
-              </button>
-              <button
-                type="button"
-                className="primary-action"
-                onClick={() => advanceScaleTour(1)}
-              >
-                {tourStepIndex === activeTourSteps.length - 1
-                  ? "Finish"
-                  : "Next"}
-              </button>
-            </div>
+                ) : (
+                  <>
+                    <button type="button" onClick={startEclipseStory}>
+                      Watch the eclipse
+                    </button>
+                    <button type="button" onClick={startScaleTour}>
+                      Start again
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="tour-actions">
+                <button
+                  type="button"
+                  disabled={tourStepIndex === 0}
+                  onClick={() => advanceScaleTour(-1)}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tourPlaying) {
+                      setTourPlaying(false);
+                      return;
+                    }
+                    setTourPlaying(true);
+                    // A new flight holds the clock for its whole length, so
+                    // the step is presented again only after the child moved
+                    // the camera away from it.
+                    if (tourCameraMovedRef.current) {
+                      setTourPresentationToken((current) => current + 1);
+                    }
+                  }}
+                >
+                  {tourPlaying
+                    ? tourKind === "eclipse"
+                      ? "Pause story"
+                      : "Pause tour"
+                    : tourKind === "eclipse"
+                      ? "Resume story"
+                      : "Resume tour"}
+                </button>
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => advanceScaleTour(1)}
+                >
+                  {tourStepIndex === activeTourSteps.length - 1
+                    ? "Finish"
+                    : "Next"}
+                </button>
+              </div>
+            )}
           </aside>
         )}
+
+        {sizeLineupOpen ? (
+          <SizeLineup
+            selectedBodyId={selectedBodyId}
+            onSelectBody={(bodyId) => {
+              setSurfaceObserverEnabled(false);
+              navigateToFocus(bodyId);
+            }}
+            onGuess={(correct) =>
+              audio.interact(correct ? "discovery" : "button")
+            }
+            onClose={() => setSizeLineupOpen(false)}
+          />
+        ) : null}
 
         {selectedBodyDetail === undefined ||
         activeTourStep !== undefined ||
         surfaceObserverEnabled ? null : (
           <aside
+            ref={selectedBodyCardRef}
             className={
               selectedBodyPanelCollapsed
                 ? "selected-body-detail is-collapsed"
@@ -2993,6 +4547,26 @@ export function App() {
                     : "Apollo landing site"}
                 </span>
                 <strong>{selectedBodyDetail.name}</strong>
+                {/* On a phone the short card's size line opens Compare sizes. */}
+                {!selectedBodyPanelCollapsed ||
+                !phoneLayout ||
+                selectedBodyDetail.size === undefined ? null : isInSizeLineup(
+                    selectedBodyId,
+                  ) ? (
+                  <button
+                    type="button"
+                    className="selected-body-size-line"
+                    aria-haspopup="dialog"
+                    aria-label={`${selectedBodyDetail.size} · Compare sizes`}
+                    onClick={() => setSizeLineupOpen(true)}
+                  >
+                    {selectedBodyDetail.size} · Compare
+                  </button>
+                ) : (
+                  <p className="selected-body-size-line">
+                    {selectedBodyDetail.size}
+                  </p>
+                )}
               </div>
               <div className="selected-body-actions">
                 {selectedBodyPanelCollapsed ? null : (
@@ -3006,7 +4580,7 @@ export function App() {
                     }
                   >
                     {selectedApolloSite === undefined
-                      ? "Focus"
+                      ? "Fly there"
                       : "Show on Moon"}
                   </button>
                 )}
@@ -3078,40 +4652,91 @@ export function App() {
                 </button>
               </div>
             </div>
+            {(selectedBodyPanelCollapsed && !phoneLayout) ||
+            !showLabels ||
+            !objectVisibility.spacecraft ||
+            !hintsAtUnfoundEasterEgg(
+              selectedBodyId,
+              foundEasterEggIds,
+            ) ? null : (
+              <p className="selected-body-egg-hint">
+                Something hidden is out there. Look closely!
+              </p>
+            )}
             {selectedBodyPanelCollapsed ? null : (
               <div className="selected-body-metrics">
-                {selectedBodyDetail.distance === undefined ? null : (
+                {selectedBodyDetail.size === undefined ? null : (
+                  <span>
+                    <small>Size</small>
+                    {selectedBodyDetail.size}
+                    {isInSizeLineup(selectedBodyId) ? (
+                      <button
+                        type="button"
+                        className="compare-sizes-button"
+                        aria-haspopup="dialog"
+                        onClick={() => setSizeLineupOpen(true)}
+                      >
+                        Compare sizes
+                      </button>
+                    ) : null}
+                  </span>
+                )}
+                {selectedBodyDetail.orbitLabel === undefined ||
+                selectedBodyDetail.orbitalPeriod === undefined ? null : (
+                  <span title={selectedBodyDetail.orbitalPeriodSource}>
+                    <small>{selectedBodyDetail.orbitLabel}</small>
+                    {selectedBodyDetail.orbitalPeriod}
+                  </span>
+                )}
+                {selectedBodyDetail.rotationHours === undefined ? null : (
+                  <span title="Sidereal rotation: one full turn measured against the stars">
+                    <small>One spin</small>
+                    {formatSpinPeriod(selectedBodyDetail.rotationHours)}
+                    {selectedBodyDetail.spinNote === undefined
+                      ? null
+                      : `, ${selectedBodyDetail.spinNote}`}
+                  </span>
+                )}
+                {selectedBodyDetail.landingCoordinates === undefined ? null : (
+                  <span>
+                    <small>LRO landing coordinates</small>
+                    {selectedBodyDetail.landingCoordinates}
+                  </span>
+                )}
+                {selectedBodyDetail.distanceRows === undefined ? null : (
                   <span>
                     <small>
-                      {selectedBodyDetail.distanceLabel ?? "Distance"}
+                      {selectedBodyDetail.distanceRows.distance.label}
                     </small>
-                    {selectedBodyDetail.distance}
+                    {selectedBodyDetail.distanceRows.distance.value}
+                  </span>
+                )}
+                {selectedBodyDetail.distanceRows?.sunlight ===
+                undefined ? null : (
+                  <span>
+                    <small>Sunlight</small>
+                    {selectedBodyDetail.distanceRows.sunlight}
                   </span>
                 )}
                 {selectedBodyDetail.altitudeKm === undefined ? null : (
                   <span>
                     <small>Altitude</small>
-                    {selectedBodyDetail.altitudeKm.toLocaleString(undefined, {
+                    {selectedBodyDetail.altitudeKm.toLocaleString("en-GB", {
                       maximumFractionDigits: 1,
                     })}{" "}
                     km
                   </span>
                 )}
-                {selectedBodyDetail.speed === undefined ? null : (
-                  <span>
-                    <small>
-                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
-                    </small>
-                    {selectedBodyDetail.speed.toLocaleString(undefined, {
-                      maximumFractionDigits: 3,
-                    })}{" "}
-                    km/s
-                  </span>
-                )}
                 {selectedBodyDetail.dimensionsM === undefined ? null : (
                   <span>
-                    <small>Maximum footprint</small>
+                    <small>How big</small>
                     {selectedBodyDetail.dimensionsM}
+                  </span>
+                )}
+                {selectedBodyDetail.path === undefined ? null : (
+                  <span>
+                    <small>Its path</small>
+                    {selectedBodyDetail.path}
                   </span>
                 )}
                 {selectedBodyDetail.ephemerisStatus === undefined ? null : (
@@ -3120,62 +4745,133 @@ export function App() {
                     {selectedBodyDetail.ephemerisStatus}
                   </span>
                 )}
-                {selectedBodyDetail.diameterKm === undefined ? null : (
+                {selectedBodyDetail.mass === undefined ? null : (
                   <span>
-                    <small>Diameter</small>
-                    {selectedBodyDetail.diameterKm.toLocaleString(undefined, {
-                      maximumFractionDigits: 0,
-                    })}{" "}
-                    km
+                    <small>How heavy</small>
+                    {selectedBodyDetail.mass}
                   </span>
                 )}
-                {selectedBodyDetail.rotationHours === undefined ? null : (
-                  <span>
-                    <small>Sidereal rotation</small>
-                    {selectedBodyDetail.rotationHours.toLocaleString(
-                      undefined,
-                      {
-                        maximumFractionDigits: 2,
-                      },
-                    )}{" "}
-                    h
+                {selectedBodyDetail.surface === undefined ? null : (
+                  <span
+                    className={
+                      selectedBodyDetail.surfaceTechnical === undefined
+                        ? "selected-body-surface"
+                        : undefined
+                    }
+                    title={selectedBodyDetail.surfaceTechnical}
+                  >
+                    <small>Surface</small>
+                    {selectedBodyDetail.surface}
                   </span>
                 )}
-                {selectedBodyDetail.primeMeridianDeg === undefined ? null : (
-                  <span>
-                    <small>Rotation angle</small>
-                    {selectedBodyDetail.primeMeridianDeg.toLocaleString(
-                      undefined,
-                      { maximumFractionDigits: 1 },
-                    )}
-                    °
+                {selectedBodyDetail.speed === undefined ? null : (
+                  <span className="selected-body-speed">
+                    <small>
+                      {selectedBodyDetail.speedLabel ?? "Relative speed"}
+                    </small>
+                    {formatSpeedWithJetComparison(selectedBodyDetail.speed)}
                   </span>
                 )}
-                <span>
-                  <small>Mass</small>
-                  {selectedBodyDetail.mass}
-                </span>
-                <span className="selected-body-surface">
-                  <small>Surface</small>
-                  {selectedBodyDetail.surface}
-                </span>
-                <span className="selected-body-composition">
-                  <small>
-                    <span>Composition</span>
-                    {selectedBodyDetail.composition === undefined ? null : (
-                      <a
-                        href={selectedBodyDetail.composition.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Source: ${selectedBodyDetail.composition.authority}`}
-                      >
-                        Source
-                      </a>
-                    )}
-                  </small>
-                  {selectedBodyDetail.composition?.summary ??
-                    "Not provided by the installed authority snapshot"}
-                </span>
+                {selectedBodyDetail.distanceRows === undefined &&
+                selectedBodyDetail.surfaceTechnical === undefined &&
+                selectedBodyDetail.technicalRows === undefined &&
+                selectedBodyDetail.composition === undefined ? null : (
+                  <details className="selected-body-more">
+                    <summary>More detail</summary>
+                    <div className="selected-body-more-grid">
+                      {selectedBodyDetail.composition === undefined ? null : (
+                        <span className="selected-body-composition">
+                          <small>
+                            <span>Composition</span>
+                            <a
+                              href={selectedBodyDetail.composition.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Source: ${selectedBodyDetail.composition.authority}`}
+                            >
+                              Source
+                            </a>
+                          </small>
+                          {selectedBodyDetail.composition.summary}
+                        </span>
+                      )}
+                      {selectedBodyDetail.distanceRows === undefined ? null : (
+                        <span>
+                          <small>
+                            {
+                              selectedBodyDetail.distanceRows.exactDistance
+                                .label
+                            }
+                          </small>
+                          {selectedBodyDetail.distanceRows.exactDistance.value}
+                        </span>
+                      )}
+                      {selectedBodyDetail.exactMass === undefined ? null : (
+                        <span>
+                          <small>Mass</small>
+                          {selectedBodyDetail.exactMass}
+                        </span>
+                      )}
+                      {selectedBodyDetail.technicalRows?.map((row) => (
+                        <span key={row.label}>
+                          <small>{row.label}</small>
+                          {row.value}
+                        </span>
+                      ))}
+                      {selectedBodyDetail.distanceRows?.distanceAu ===
+                      undefined ? null : (
+                        <span title="1 AU is Earth's average distance from the Sun: 149,597,870.7 km">
+                          <small>Distance from the Sun in AU (live)</small>
+                          {selectedBodyDetail.distanceRows.distanceAu}
+                        </span>
+                      )}
+                      {selectedBodyDetail.surfaceTechnical ===
+                      undefined ? null : (
+                        <>
+                          <span>
+                            <small>Diameter</small>
+                            {selectedBodyDetail.diameterKm.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 0 },
+                            )}{" "}
+                            km
+                          </span>
+                          {selectedBodyDetail.liveOrbitalPeriod ===
+                          undefined ? null : (
+                            <span title="Two-body period from the simulated position and speed at this moment; it wobbles as other bodies pull">
+                              <small>{"This moment's orbit (live)"}</small>
+                              {selectedBodyDetail.liveOrbitalPeriod}
+                            </span>
+                          )}
+                          <span>
+                            <small>Sidereal rotation</small>
+                            {selectedBodyDetail.rotationHours.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 2 },
+                            )}{" "}
+                            h
+                          </span>
+                          <span>
+                            <small>Rotation angle</small>
+                            {selectedBodyDetail.primeMeridianDeg.toLocaleString(
+                              "en-GB",
+                              { maximumFractionDigits: 1 },
+                            )}
+                            °
+                          </span>
+                          <span
+                            data-surface-classification={
+                              selectedBodyDetail.surfaceClassification
+                            }
+                          >
+                            <small>Surface map</small>
+                            {selectedBodyDetail.surfaceTechnical}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </details>
+                )}
                 {selectedApolloSite === undefined ? null : (
                   <span className="apollo-mission-detail">
                     <small>Mission record</small>
@@ -3227,6 +4923,11 @@ export function App() {
                 )}
               </div>
             )}
+            {cardMoreBelow ? (
+              <div className="selected-body-more-below" aria-hidden="true">
+                More below ↓
+              </div>
+            ) : null}
           </aside>
         )}
 
@@ -3352,7 +5053,10 @@ export function App() {
                   />
                 </label>
               )}
-              <output className="exposure-readout" aria-live="polite">
+              {/* An output is a live status region by default. Readouts that
+                  follow the scene every frame (exposure, magnification, orbit,
+                  clock) are silent; readouts of the child's own slider speak. */}
+              <output className="exposure-readout" aria-live="off">
                 {exposureStatus.mode === "auto" ? "Auto" : "Manual"}{" "}
                 {exposureStatus.ev >= 0 ? "+" : ""}
                 {exposureStatus.ev.toFixed(2)} EV · {"×"}
@@ -3577,15 +5281,19 @@ export function App() {
                 </output>
               </label>
               <span className="audio-status" role="status">
-                {audio.narrationStatus === "error"
-                  ? "Tour narration could not be loaded"
-                  : audio.narrationStatus === "playing"
-                    ? "Tour narration playing"
-                    : audio.status === "running"
-                      ? "Audio active"
-                      : audio.status === "unavailable"
-                        ? "Audio unavailable in this browser"
-                        : "Starts after your next interaction"}
+                {!audio.settings.musicEnabled &&
+                !audio.settings.effectsEnabled &&
+                !audio.settings.narrationEnabled
+                  ? "Sound is off"
+                  : audio.narrationStatus === "error"
+                    ? "Tour narration could not be loaded"
+                    : audio.narrationStatus === "playing"
+                      ? "Tour narration playing"
+                      : audio.status === "running"
+                        ? "Audio active"
+                        : audio.status === "unavailable"
+                          ? "Audio unavailable in this browser"
+                          : "Starts after your next interaction"}
               </span>
             </div>
           </section>
@@ -3792,7 +5500,7 @@ export function App() {
                       <span>°</span>
                     </span>
                   </label>
-                  <output className="orbit-flight-readout">
+                  <output className="orbit-flight-readout" aria-live="off">
                     {orbitReadout?.kind === "hover"
                       ? `Station keeping ${orbitReadout.accelerationMps2.toFixed(4)} m/s²`
                       : orbitReadout?.kind === "orbit"
@@ -3851,7 +5559,7 @@ export function App() {
                     )
                   }
                 />
-                <output>
+                <output aria-live="off">
                   {viewMagnification < 0.001
                     ? viewMagnification.toExponential(2)
                     : viewMagnification < 0.1
@@ -3912,23 +5620,45 @@ export function App() {
               </label>
               {(
                 [
-                  ["Orbit guides", showOrbitGuides, setShowOrbitGuides],
+                  [
+                    "Orbit guides",
+                    "showOrbitGuides",
+                    showOrbitGuides,
+                    setShowOrbitGuides,
+                  ],
                   [
                     "Tactical overlay",
+                    "showTacticalOverlay",
                     showTacticalOverlay,
                     setShowTacticalOverlay,
                   ],
-                  ["Ecliptic grid", showEclipticPlane, setShowEclipticPlane],
-                  ["Zodiac signs", showZodiac, setShowZodiac],
-                  ["Apollo landing sites", showApolloSites, setShowApolloSites],
+                  [
+                    "Ecliptic grid",
+                    "showEclipticPlane",
+                    showEclipticPlane,
+                    setShowEclipticPlane,
+                  ],
+                  ["Zodiac signs", null, showZodiac, setShowZodiac],
+                  [
+                    "Apollo landing sites",
+                    null,
+                    showApolloSites,
+                    setShowApolloSites,
+                  ],
                 ] as const
-              ).map(([label, checked, setter]) => (
+              ).map(([label, shotSetting, checked, setter]) => (
                 <label className="switch-control guide-only" key={label}>
                   <input
                     type="checkbox"
                     checked={checked}
                     disabled={viewMode === "schematic"}
-                    onChange={(event) => setter(event.currentTarget.checked)}
+                    onChange={(event) => {
+                      const value = event.currentTarget.checked;
+                      if (shotSetting !== null) {
+                        keepViewChoiceAfterShot({ [shotSetting]: value });
+                      }
+                      setter(value);
+                    }}
                   />
                   <span>{label}</span>
                 </label>
@@ -3948,9 +5678,11 @@ export function App() {
                   type="checkbox"
                   checked={showLabels}
                   disabled={viewMode === "schematic"}
-                  onChange={(event) =>
-                    setShowLabels(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showLabels: value });
+                    setShowLabels(value);
+                  }}
                 />
                 <span>Labels</span>
               </label>
@@ -3963,11 +5695,11 @@ export function App() {
                     max="100"
                     step="1"
                     value={bodyVisibilityPercent}
-                    onChange={(event) =>
-                      setBodyVisibilityPercent(
-                        Number(event.currentTarget.value),
-                      )
-                    }
+                    onChange={(event) => {
+                      const value = Number(event.currentTarget.value);
+                      keepViewChoiceAfterShot({ bodyVisibilityPercent: value });
+                      setBodyVisibilityPercent(value);
+                    }}
                   />
                   <output>
                     {bodyVisibilityPercent === 0
@@ -4017,6 +5749,16 @@ export function App() {
                 one-pixel object larger than its physical apparent size.
               </small>
             ) : null}
+            <h3>This computer</h3>
+            <div className="control-section">
+              <button type="button" onClick={startFresh}>
+                Start fresh
+              </button>
+              <small className="control-note">
+                Forgets the hidden surprises found and the sound settings, so
+                the next child starts from the beginning.
+              </small>
+            </div>
           </section>
 
           <section
@@ -4031,9 +5773,11 @@ export function App() {
                 <input
                   type="checkbox"
                   checked={showPlanetTrails}
-                  onChange={(event) =>
-                    setShowPlanetTrails(event.currentTarget.checked)
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    keepViewChoiceAfterShot({ showPlanetTrails: value });
+                    setShowPlanetTrails(value);
+                  }}
                 />
                 <span>Planet trails</span>
               </label>
@@ -4115,8 +5859,13 @@ export function App() {
 
         <section className="timeline-dock" aria-label="Time controls">
           <div className="time-readout">
-            <output data-time-seconds={state?.timeSeconds ?? 0}>
-              TDB {formatSimulationOffset(state?.timeSeconds ?? 0)}
+            {/* Plain words for a child; the exact TDB offset for an adult. */}
+            <output
+              data-time-seconds={state?.timeSeconds ?? 0}
+              aria-live="off"
+              title={`TDB ${formatSimulationOffset(state?.timeSeconds ?? 0)} since the snapshot epoch`}
+            >
+              {formatPlainSimulationOffset(state?.timeSeconds ?? 0)}
             </output>
             <span
               className="run-status"
@@ -4177,18 +5926,27 @@ export function App() {
               min="0"
               max={String(USER_TIME_RATE_INDEXES.length - 1)}
               step="1"
-              value={Math.max(0, playbackRateSliderIndex)}
+              value={playbackRateSliderIndex}
+              aria-valuetext={selectedTimeRate.label}
               onChange={(event) => {
                 const selectedIndex =
                   USER_TIME_RATE_INDEXES[Number(event.currentTarget.value)];
                 if (selectedIndex === undefined) {
                   throw new Error("Selected playback rate is unavailable");
                 }
+                // The child's own rate ends a cool shot and outlasts it.
+                playbackBeforeShotRef.current = null;
+                endCinematicShot();
                 setTimeRateIndex(selectedIndex);
               }}
             />
             <output>{selectedTimeRate.label}</output>
           </label>
+          {clockMoveNotice === null ? null : (
+            <p className="clock-move-notice" role="status">
+              {clockMoveNotice}
+            </p>
+          )}
         </section>
       </section>
     </main>

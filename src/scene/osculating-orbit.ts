@@ -1,4 +1,5 @@
 import type { BodyState } from "../physics/contracts";
+import { boundTwoBodyOrbit } from "../physics/two-body-propagator";
 
 type Vector3 = readonly [number, number, number];
 
@@ -86,4 +87,21 @@ export function osculatingOrbitPositionsM(
     );
     return add(parent.positionM, relativePosition);
   });
+}
+
+/**
+ * Osculating two-body period of the live state, with μ = GM_parent + GM_body.
+ * Returns undefined for an unbound (parabolic or hyperbolic) state.
+ */
+export function osculatingOrbitalPeriodSeconds(
+  body: BodyState,
+  parent: BodyState,
+): number | undefined {
+  return boundTwoBodyOrbit(
+    {
+      positionM: subtract(body.positionM, parent.positionM),
+      velocityMps: subtract(body.velocityMps, parent.velocityMps),
+    },
+    body.gravitationalParameterM3S2 + parent.gravitationalParameterM3S2,
+  )?.periodSeconds;
 }

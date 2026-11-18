@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedBy": "scripts/derive-solar-photosphere.mjs",
+  "note": "Linear sRGB, brightest channel 1. Per channel c, I_c(mu) = centreLinearSrgb_c * (1 - u_c - v_c + u_c mu + v_c mu^2) with mu the cosine of the angle from disc centre. The disc integrates to the effective-temperature blackbody, whose colour is discMeanSrgbHex.",
+  "effectiveTemperatureK": 5772,
+  "centreLinearSrgb": [1, 0.9079, 0.907],
+  "limbDarkeningU": [0.8111, 0.9239, 0.9821],
+  "limbDarkeningV": [-0.2, -0.2181, -0.1556],
+  "discMeanLinearSrgb": [1, 0.8767, 0.8204],
+  "discMeanSrgbHex": "#fff1ea",
+  "sources": [
+    "IAU 2015 Resolution B3: nominal solar effective temperature 5772 K",
+    "CIE 1931 2 degree colour matching functions, 360 to 830 nm at 1 nm, CVRL via colour-science v0.4.7 (data/cie-1931-2deg-cmf.csv)",
+    "Limb darkening u(lambda), v(lambda): SolarSoft darklimb_u.pro and darklimb_v.pro (D. Alexander, 1996), polynomial fits to Allen's Astrophysical Quantities, valid 400 to 1500 nm; held at the 400 nm value below 400 nm",
+    "IEC 61966-2-1:1999 sRGB: XYZ to linear sRGB matrix and transfer function"
+  ]
+}

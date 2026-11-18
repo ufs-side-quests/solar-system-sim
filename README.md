@@ -23,11 +23,52 @@ The three-dimensional funnel is an energy-landscape visualization, not a claim t
 The camera uses standard orbit controls: left drag orbits, right drag pans, and wheel or pinch dollies toward or away from the current target.
 Flight mode provides low, equatorial, polar, synchronous, high-observation, powered-hover, and custom orbit presets around bodies with sourced radius and gravity data.
 Circular speed and period are derived from the live gravitational parameter, while powered hover reports the continuous station-keeping acceleration it requires.
+The selected-body card answers children's questions first: width compared with Earth from sourced mean radii, one trip around the parent from a sourced sidereal orbital period (NASA NSSDC fact sheets for planets, Pluto and the Moon; JPL SSD satellite mean elements for moons), one sidereal spin with "spins backwards" or "spins on its side" for planets, and speed compared with a named, rounded 900 km/h jet airliner reference.
+Card distances come from live states, are rounded so they do not change with camera zoom, and say what they are from:
+
+- Planets, Pluto, the Tesla Roadster and both Voyagers show "From the Sun" and "Sunlight".
+  Earth shows its plain distance, such as "about 150 million km".
+  Bodies beyond 1.1 AU compare with 1 AU, Earth's average distance, such as "about 30 times as far as Earth (about 4.5 billion km)".
+  Mercury and Venus put their own distance first, such as "about 58 million km. Earth is about 2.6 times as far."
+  Between 0.9 and 1.1 AU, which the Roadster reaches near perihelion, the row reads "about as far as Earth".
+  Sunlight time reads in whole minutes under an hour, as "about 1 hour 20 minutes" to the nearest 5 minutes up to 90 minutes, and in whole hours after that.
+- Moons show "From Earth", "From Jupiter" and so on: the surface-to-surface gap, from the live centre distance less both sourced mean radii, compared with the parent's width.
+  It reads "the gap is about 28 times as wide as Earth", "the gap is almost as wide as Mars" below 0.95 widths, or "the gap is less than half as wide as Mars" below 0.5 widths.
+- The ISS, known satellites and fictional objects show their centre-to-centre distance in plain words, such as "about 6,800 km".
+- "More detail" holds the exact live centre-to-centre kilometres on every card with a distance, and the live distance in AU for every Sun orbiter.
+
+"Compare sizes" on the selected-body card opens a lineup that draws Mercury to Neptune, the Moon and Pluto at one true scale from the same sourced mean radii, with only the edge of the Sun because its full disc would not fit.
+Each body is a small lit globe rendered once from the surface map the 3D globe uses (Uranus from its sourced plain colour), with the 3D globe's flattening; the Sun is a plain disc in the scene's sunlight colour.
+Saturn's Cassini rings reach past its globe at their true radii, and the comparison line repeats the card's plain surface wording, such as the Venus radar map.
+Tapping a body selects it as the Focus box does, and a picture that fails to load is named in the dialog.
+While the lineup is open, Tab and Shift+Tab stay inside it.
+"Guess first" turns the dialog into a size duel: two globes at the same size and a question such as "Which is wider: the Moon or Pluto?".
+For Saturn and Jupiter the question adds "Rings do not count.", because Saturn with its rings is wider than Jupiter.
+After the child taps one, the narrower globe shrinks to its true size, a "Wider" tag marks the winner, and the same line says how much wider the winner is; the winner and the ratio come from the sourced mean radii, and a right guess plays the discovery chime.
+"Next pair" steps through six fixed pairs, and "See all" returns to the lineup.
+Each surface map has its own plain wording, such as "Radar map of the ground under the clouds" for Venus.
+The card's "How heavy" row compares the sourced mass with Earth's, such as "As heavy as 318 Earths" for Jupiter or "Earth is about 81 times heavier" for the Moon.
+Exact mass in kilograms, exact diameter, the live osculating two-body period of the current orbit, sidereal period, rotation angle, and the kind of surface map in plain words (such as "Real spacecraft pictures joined into one map") remain under More detail.
+The ISS card says "From the centre of Earth" and, under "Its path", whether its orbit data is up to date for the day; its SGP4 model and ±7 day OMM window are under More detail.
+Spacecraft and fictional cards use the same plain rows: "How big", "Its path" (such as "Real: NASA's tracking of its path round Earth" or "From a story: a simple circle around Io, 400 km up"), and "How heavy" in tonnes or kilograms (such as "About 11 tonnes"), or that a made-up object weighs nothing here.
+The exact mass and the orbit data (the Horizons solution, interpolation, or the fictional orbit's model) are under More detail.
+The time controls say how far the clock is from the start in plain words, such as "4 hours after the start"; the exact TDB offset is the line's tooltip.
 The cool-shot presets apply a coherent focus, viewpoint, scale, orientation, overlay set, and simulation rate for Earth and Moon, Saturn, Jupiter from Io, Discovery One, Voyager, and the planetary system.
 The camera also supports logarithmic 1/64x to 128x optical zoom, grouped searchable named-body focus, continuous tracking, and one-action view reset.
-An always-visible camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, and a guided scale tour.
+Outside a tour, a camera dock provides Back, Zoom out, Zoom in, Re-centre, Home, the guided scale tour, the eclipse story, and a one-tap Planets racing shot.
+Zoom in turns off at the zoom floor and Zoom out at the farthest distance, where a press would not move the camera.
+On a phone the dock has two rows of four buttons, because eight 44 px buttons do not fit one row of a 360 px screen.
+Planets racing switches to Orrery, looks down on the Sun from 6 AU above the ecliptic so Mercury to Mars fill the view, turns on orbit guides, planet trails and labels, and runs the clock forward at 30 days per second, so Mercury laps Earth about every 4 seconds.
+In a portrait view, cool shots move the camera out by the scene aspect ratio, because the field of view is vertical, so the same region fits across the narrow width; on a 390 by 844 phone the race camera sits about 10.8 AU above the Sun.
+The race restarts the simulation from the snapshot epoch with a fresh physics worker, the same way "Restart simulation" does, so the first tap starts it at once from any date.
+When it reaches 360 days after the epoch it restarts from the epoch again and clears the trails, so each loop shows Mercury lap Earth about 3 times inside the validated ±1 year ephemeris window.
+While a cool shot is active, the clock runs, and no discovery message shows, a caption names it, says what to watch, and offers Stop; Stop, Home, a tour, a new focus, a view-mode change, a new playback rate, or running or stepping the clock backward ends the shot.
+A camera drag, wheel, or pinch only moves the camera, and the shot runs on.
+Stop flies back to the object the child had in focus and selected before the shot, or to the Solar System overview when the shot started there.
+When a shot ends, the view settings from before the shot (view mode, body size, labels, orbit guides, overlays, and planet trails) come back, except one the child changed in the Display panel during the shot.
+The playback rate and direction from before the shot come back too, unless the child chose a rate during the shot, so the race's 30 days per second does not carry the clock out of the validated window.
 The compact Reality navigation plot uses live simulation positions in a Sun-centred J2000 ecliptic projection, with selectable 2 to 300,000 AU radii plus an automatic range.
-Its destination list covers the Sun, planets, major moons, installed spacecraft, and clearly labelled fictional references; selecting an entry identifies it without moving, while Travel or a map double-click uses the same orient, coast, and decelerate camera journey as every other focus change.
+Its destination list covers the Sun, planets, major moons, installed spacecraft, and the easter eggs a child has found; selecting an entry identifies it without moving, while Fly there or a second click on the selected map target uses the same orient, coast, and decelerate camera journey as every other focus change.
 Each tour change uses a slow logarithmic-distance journey through the smallest useful context view, holds that overview long enough to establish location, and then settles into the next composition.
 Earth-to-Moon and planet-to-moon moves remain inside their local system, while interplanetary moves reveal only the wider scale they need.
 Every guided scene remains on screen for twenty-eight seconds, including a twelve-second depart-coast-arrive camera journey, and selects a forward simulation rate that makes the relevant rotation or orbital motion visible.
@@ -45,36 +86,64 @@ Every guided scene keeps body radii physical; the tour never inflates moons or p
 Focusing an object now uses a true 1× fit instead of silently applying additional optical magnification.
 The View angle panel provides seven direct buttons for 3D, above, side, sunlit, parent, path, and orbital-plane views.
 Each button explains the resulting camera position, while free drag changes the current view to Custom.
+A press on the scene counts as a tap until it moves more than 8 px, so a tap never takes the camera, pauses a tour, or stops a camera journey.
 Reality view uses sourced physical radii on the same scale as body separation and draws no geometry below one CSS pixel in diameter.
 Objects without installed radii, including catalogue-only moons and the asteroid and comet snapshot, do not receive false one-pixel markers in Reality.
+The one exception is a focused catalogue moon: a locator ring marks where it is, and the camera looks across the line to its parent planet from far enough out that the planet sits half way from the centre to the edge of the narrower side of the view; the moon's name sits on the side away from the planet, and its card claims no size.
 Orrery view provides the continuous body-size boost, readable markers, and instantaneous osculating orbit guides derived from the current solver position and velocity, while Map view uses logarithmic spacing and retains each body's live orbital phase.
+Map view draws on a square, so each body sits on its orbit, and it pans so the focused body, or the planet whose system holds it, sits at the centre, or in the open sky beside or above an open card that covers the centre, by the same rule as the lens shift below.
 The tactical overlay derives adaptive distance rings, parent direction, velocity direction, and ecliptic-plane offset from the current physical state.
 Semantic zoom changes label density and unit precision as the camera moves from the complete Solar System into a planetary, moon, or surface-scale view.
-Collision-aware labels retain all overview planets and move overlapping labels onto nearby leader lines rather than hiding the body or inflating it into a false large sphere.
-Body and wayfinder labels are borderless transparent annotations; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
+Collision-aware labels retain all overview planets and move overlapping labels, including any that would sit under the Sun's guide label, onto nearby leader lines; a guide label moves a body label but never hides it rather than hiding the body or inflating it into a false large sphere.
+A guide label never lies on the focused body's disc: when its usual place would, the guide ends at the nearest place around the disc where its label is clear.
+Zoomed out past 150 AU, the "Sun · Solar System origin" label sits centred under the Sun, below the Sun guide's label, and body labels move clear of it.
+Body and wayfinder labels are borderless transparent annotations at 0.7rem or larger; colour and font weight distinguish the selected target without adding opaque boxes over the scene.
+A label focused from the keyboard shows a 2 px accent ring on a dark chip, which keeps the ring readable over the Sun's disc; the navigation map shows the same ring.
 The time controls support paused, stepped, and continuous forward or backward integration from one second per real second through one simulated year per real second.
 The explorer starts at one simulated hour per real second so surface rotation remains visually traceable; Pause freezes orbital and rotational state together.
 Playback rate is independent of solver keyframe size: continuous playback integrates one simulated day or less per REBOUND endpoint and uses velocity-constrained Hermite interpolation only between completed states.
 REBOUND double-buffers batches in its Worker while the current batch is displayed.
 If rendering falls behind, the clock advances to the newest due exact endpoint while every skipped display endpoint still contributes to the trails; the toolbar reports requested and measured achieved rates separately.
+Pause or Run backward stops the planets at the state on screen before the next paint, and a new direction or rate takes the solver back to that time, so endpoints computed ahead of a slow screen never carry the planets on.
+The trails keep their points up to that time.
 The Orrery body-size control continuously and geometrically interpolates between true physical radii and a disclosed maximum-readable transformation.
-It also caps enhanced radii against the nearest major-body separation, preventing a readability setting from merging neighboring bodies.
+At full boost every planet, dwarf planet and moon has a readable radius of 0.02 AU times the square root of its radius in Earth radii.
+The Sun has a fixed readable radius of 0.1 AU, larger than Jupiter (about 0.066 AU) and clear of Mercury at perihelion.
+Natural bodies form systems: the Sun, and each planet or dwarf planet with its moons.
+The open system is the one that holds the focus; a spacecraft counts with the body it orbits, and the overview, the Sun and heliocentric objects open no system.
+The Sun, every planet and dwarf planet, and every moon of the open system (catalogue moons as points) take part in the scale rule: each pair fills at most 40% of the distance between their centres.
+Every body uses one shared factor on its readable radius, the smallest that the scale rule needs, and no body is drawn smaller than its true radius.
+Because the factor is shared, the drawn Sun, planets, dwarf planets and moons keep their true size order, in the overview and in every focus view.
+A moon of any other system, whether a major moon or a catalogue point, is not drawn when it and an enlarged body would fill more than 40% of their separation; in the overview at full boost this hides the Moon inside Earth and the large moons inside the giant planets.
+So every drawn pair of the Sun, planets, dwarf planets and moons fills at most 40% of the distance between their centres, unless one of them is drawn at its true radius.
+Such a pair still does not overlap while the bodies sit farther apart than 1.67 true radii of the larger one; at the snapshot epoch the closest sourced pair is Jupiter and Metis, at about 1.8 Jupiter radii.
+A unit test checks these rules over the snapshot epoch positions in the overview and in Jupiter, Earth and Pluto focus views.
+Spacecraft and fictional objects never limit the drawn size of a natural body.
 
 The International Space Station is a separate massless spacecraft state around the live REBOUND Earth position.
 Its installed CelesTrak Orbit Mean-Elements Message is propagated with SGP4 in UTC, transformed from TEME through true equator of date into the J2000 mean-equator frame, and then translated by Earth's barycentric state.
-Selecting the ISS seeks to the installed 2 August 2026 element epoch because the Solar System snapshot begins on 1 January 2026.
+Selecting the ISS seeks to the installed 2 August 2026 element epoch because the Solar System snapshot begins on 1 January 2026, and stops the clock.
+The time controls then say so in plain words: "We only know where the International Space Station is near 2 August 2026, so the clock jumped there. Pick something else to go back to 1 January 2026."
+Hubble, JWST and the Roadster do the same when the clock is outside their Horizons coverage.
+Picking another object or Home brings back the date and the running or stopped clock from before the jump; a tour, a cool shot or Back leaves the clock where it is.
 The station is not drawn outside the declared seven-day element window.
-Its official NASA 3D model is normalized to NASA's 109 metre maximum end-to-end dimension on the same physical scale as its orbit, so it disappears below one pixel from an Earth-system view and becomes visible only from a close spacecraft focus.
+Its official NASA 3D model is normalized to NASA's 109 metre maximum end-to-end dimension on the same physical scale as its orbit, so it disappears below one pixel when the camera zooms out from it and becomes visible only from a close spacecraft focus.
+Four warm floodlights at the ends of its main truss and its module stack are decorative: the real station carries floodlights and camera lights, but no public source places them on this model.
 
 Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF states at the common 2026 epoch and then run inside REBOUND as massless test particles.
 Their official NASA model attitude continuously points the high-gain antenna's local boresight toward the live Earth position.
-Hubble and JWST use published NASA/JPL Horizons position and velocity samples with cubic Hermite interpolation only inside their installed 2026 coverage windows.
+JWST uses published NASA/JPL Horizons barycentric position and velocity samples with cubic Hermite interpolation only inside its installed 2026 coverage window.
+Hubble orbits Earth in about 95 minutes, faster than any practical barycentric sample step, so it uses NASA/JPL Horizons geocentric samples every 30 minutes.
+Its drawn position is the simulation's integrated Earth plus a two-body orbit around Earth from the nearest sample, so Hubble stays on the Earth the scene draws although that Earth sits 116 to 151 km from JPL's Earth over the window.
+The two-body orbit ignores Earth's oblateness (J2) and drag: over the 15 minutes from the nearest sample this gives at most about 5 km against one day of one-minute Horizons samples, inside a tested 10 km bound.
 Hubble and JWST are not passed through the N-body solver because their real operational trajectories include drag, stationkeeping, and manoeuvres that an uncommanded gravity-only model cannot reproduce.
 The Tesla Roadster and Starman use NASA/JPL Horizons solution 11 across its published 2018-2090 interval, including the fitted radial solar-radiation-pressure acceleration, and disappear rather than extrapolate outside that coverage.
 The Roadster visual uses the detailed MIT-licensed SpaceDock model by TheBigElon, with the Starman mesh credited to Oranhunter, normalized to the Roadster's 3.946 metre maximum dimension.
+Its headlights and tail lights are lit as a playful fiction: the real car in space has no power, so its lamps are dark.
 Horizons tracks the car, payload fitting, and attached Falcon Heavy upper-stage stack rather than the car alone.
 ISS, both Voyagers, Hubble, and JWST use checksummed official NASA 3D models at sourced physical dimensions.
 The model loader fails visibly instead of replacing a missing authority asset with procedural geometry.
+Every 3D model and the Death Star I textures load only when the object is focused, selected, or large enough on screen to draw, so the first load fetches no model.
 
 The Moon carries selectable markers for Apollo 11, 12, 14, 15, 16, and 17 at LRO-derived planetocentric landing coordinates.
 Each site includes physical-scale Lunar Module descent-stage, flag, deployed experiment and retroreflector geometry; Apollo 15, 16 and 17 also include a physical-scale Lunar Roving Vehicle.
@@ -85,6 +154,8 @@ Major-body rotation uses the complete NAIF PCK pole, nutation, and prime-meridia
 ICRF positions and body axes are transformed into the Three.js y-up scene with a right-handed basis, and the WebGPU small-body path uses the same transform.
 Surface presentation uses 32 locally snapshotted NASA, JPL, and USGS texture products with explicit source URLs, source and output dimensions, coverage, projection, limitations, byte lengths, and SHA-256 hashes.
 Twenty-nine colour maps cover every non-stellar major body except Uranus, while separate Earth-cloud and Moon-topography products provide auxiliary detail.
+A body's maps, including the Earth night lights and clouds, load only once the first REBOUND state has placed it and it is focused, targeted, or large enough on screen; until that state arrives the scene draws no major body, label, or marker.
+The 19 KB Cassini Saturn ring profile is the one texture that loads with the scene.
 Mercury uses the USGS 23,040 by 11,520 pixel MESSENGER end-of-mission global colour mosaic, while Pluto uses the 24,888 by 12,444 pixel USGS/New Horizons observational mosaic; both are reduced to 4,096 pixels for a bounded browser GPU footprint.
 The Moon, Ganymede, Enceladus, and Charon also use authority masters reduced to the same browser limit.
 Ariel, Miranda, Titania, Umbriel, and Triton use the higher-resolution global textures embedded in NASA VTAD's official glTF models; their Voyager-observed terrain and authority-reconstructed coverage are distinguished in the manifest.
@@ -99,29 +170,68 @@ These dusty systems remain appropriately faint in Reality; Orrery applies a disc
 
 Two high-detail Death Star references orbit Callisto and Ganymede at physical scale.
 Death Star I uses the original integrated model.
-Death Star II uses an optimised CC BY model with complete colour, normal, occlusion, metallic, roughness, and emissive maps.
+Death Star II uses a CC BY model, modified for this scene: its colour, normal, and roughness maps show at full value on a painted, non-metallic hull, its windows glow at the calibrated 300 cd/m2 interior luminance, and its superlaser dish faces the viewer.
+The model has no superlaser glow, and its occlusion map has no visible effect because the scene has no ambient light.
 
 An optimised CC BY physical-scale Discovery One model orbits Io, where 2010 places the ship.
 Its command sphere, pod bays, truss spine, external tanks, high-gain antenna, and propulsion module are lit by the same inverse-square Sun source as the real objects.
+A red port lamp and a green starboard lamp on the command sphere and a white beacon on the propulsion module are authored, because the film shows no running lights.
 Because no precise trajectory is published, its displayed 400 kilometre circular orbit is clearly identified as an authored massless two-body reference rather than historical ephemeris.
 They are explicitly fictional massless visualizations on hypothetical circular two-body paths derived from each moon's live gravity and state, and they never enter or perturb the REBOUND integration.
 
 Deep Space Nine uses a high-detail CC BY model at its 1.45 kilometre reference diameter.
+Red beacons blink at the tips of its six docking pylons, the upper and lower pylons in turn, and steady lamps light Ops, the base of the core and the docking ring.
+These lamps, and those on the Roadster, Discovery One and the ISS, are drawn at runtime on the unmodified model files and follow each model's position and turn.
+Each is a hot core at its assumed luminance (50,000 to 1,000,000 cd/m2, against 300 cd/m2 for a lit window) inside a glow in the lamp's colour, and the hull in front of a lamp hides it.
+The lamps blink on the wall clock, not the simulation clock, and stay on under reduced motion.
 The application places it in a clearly labelled hypothetical circular exhibit orbit around Callisto because its fictional Bajoran system is outside this Solar System model.
 The USS Defiant uses a textured high-detail free model at its 170.68 metre production reference length.
 It follows an explicit 30 minute defensive patrol around the station.
 The station mass is not published, so the patrol uses no invented gravitational parameter and never enters the REBOUND integration.
+
+These references, and the real Tesla Roadster, are easter eggs.
+When the focused or selected body is an egg's parent (Callisto, Ganymede, Io, Jupiter, or Earth, Mars and the Sun for the Roadster), an egg in front of the camera and not behind that body shows a "? Hidden surprise" label.
+The label uses game wording so that a child never reads it as a real astronomical discovery.
+While that body has an unfound egg, its selected-body card also says "Something hidden is out there. Look closely!", because on a phone the card can cover the label.
+Guided tour steps never show these hints.
+The first selection reveals the real name, shows a short "You found" message with the egg's origin, and plays a three-note chime through the interface sound effects setting.
+Found eggs are remembered in browser storage under `solar-explorer.found-eggs.v1`; without storage the finds last for the session.
+Until an egg is found it is absent from the Focus list, partial search, Next object and the map destination list and dots.
+The Focus list ends with a "Hidden surprises · 2 of 7 found" group: found eggs by name, and each unfound egg as a clue row such as "? Near Callisto" that flies to the clue body, not to the egg.
+The Roadster's clue, "? Circles the Sun between Earth and Mars", flies to the Solar System overview and selects the Sun: the Roadster is usually far from both planets, a focused Sun fills the view, and from the overview its hint is in view.
+Once found, the Roadster joins the map's Spacecraft list as a real craft.
+Typing an egg's full name and pressing Enter still selects it, as a way in for a parent, and counts as a find.
+The "You found" message shows the count, and the last find adds "You found every hidden surprise!".
 Coverage-filled, reconstructed, unobserved, enhanced-colour, and visualization regions remain explicit in the manifest rather than being presented as uniformly measured imagery.
 Planet surfaces use inverse-square solar lighting without global ambient fill.
+A focused spacecraft or fictional model also gets planetshine: the sunlit planet or moon it orbits lights its shadow side, as Earth lights the side of the real ISS that faces it.
+The light comes from an environment map of the model's sky that holds only the parent's disc at its true angular radius, asin(R / d), so no planet or moon gets it and no night side is lit.
+Each point of the disc has the brightness that the parent's reflectance law gives for the live Sun and view directions: a Lambert surface with the NSSDCA Bond albedo for Earth and Jupiter, and the Lommel-Seeliger law of airless regolith with the NSSDCA visual geometric albedo for Io, Ganymede and Callisto.
+The light takes the mean colour of the parent's installed surface map, and its strength follows the same inverse-square sunlight as the model, so metal hulls reflect the parent and ambient occlusion maps darken its light in crevices.
+On a surface that faces a fully lit parent the fill is about 0.26 of the direct sunlight at the ISS, 0.51 at Discovery One, 0.34 at Death Star II, 0.16 at Death Star I and 0.008 at Deep Space Nine, which stays nearly black.
+The map is redrawn only when the parent's apparent size changes by 1% or its phase by 1 degree, and at most four times a second.
 Automatic exposure adapts to focus distance, while manual mode gives direct exposure-value control.
+Lit surfaces and models use a hue-keeping tone curve: ACES Filmic's curve applied to one brightness number per colour, so the colour's channel ratios, and with them its hue and saturation, stay as the scene shades them.
+Mars stays orange red, Io yellow and Saturn butterscotch, where ACES Filmic, used before, drew Mars 9 degrees towards yellow and Io and Saturn nearly white.
+Every grey lit by the Sun shows exactly as under ACES, so an 18% grey facing the Sun is still sRGB 177 and light-grey hulls keep ACES's long highlight roll-off.
+Only colours brighter than the sunlight's own luminance on screen (0.899) are mixed towards white, so a lamp core still reads white hot.
+The Sun's disc, the corona, the atmospheres, the rings, the stars and the lamp glow are not tone mapped.
 One finite solar-disc model darkens every major-body surface and atmosphere during partial, annular, or total occlusion.
 Atmospheres integrate view and solar optical depth through body-specific exponential Rayleigh and Mie density profiles.
 The Earth uses NASA Black Marble night emission and Blue Marble-derived roughness, while the Moon uses a LOLA-derived normal map.
 Saturn's observed Cassini ring profile is lit from the live solar incidence angle, includes mutual planet-ring shadowing, and uses a bounded unresolved-particle scattering approximation so low-incidence rings do not become a false solid-black sheet.
 The Display panel offers Battery, Balanced, and Photographic rendering profiles that explicitly trade pixel density, texture filtering, atmosphere sampling strength, and solar-corona density.
-The command bar includes a native Full screen action that expands the simulation to the display, hides application controls and interactive scene labels, and restores the complete interface when the user exits with the corner action or browser Escape key.
+The command bar includes a native Full screen action that expands the simulation to the display, hides application controls, the navigation map and the date (kept during the Eclipse story, whose steps happen at named times), keeps the scene's labels and guides, and restores the complete interface when the user exits with the corner action or browser Escape key.
+A tour hides the command bar, so the tour card has its own Full screen button, and leaving full screen puts the keyboard focus back on it.
+The F key opens and closes full screen too, also during a tour.
+In full screen a running tour keeps its card, its labels and the shot caption, so a class on a projector can follow it.
+For a presentation clicker, Page Down and Page Up move a tour to the next and previous step from any control, because a tour hides every text box, list and slider; a held key moves one step, and with Ctrl, Cmd or Alt the keys stay with the browser.
+B or the full stop blanks the window and pauses the tour, its narration and the clock behind it until any key or click, which play on as before; a held key, a modifier alone, a browser shortcut or a media key leaves the cover in place.
+Start fresh in Display › View asks first, then forgets the hidden surprises found and the sound settings on this computer and reloads, so the next child starts from the beginning.
 Major-body spheres use shared 256 by 192 segment geometry so close orbital views do not expose coarse planetary facets, while retaining the checksummed authority textures and bounded browser texture resolution.
-The Sun combines a limb-darkened granular photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
+The Sun combines a computed photosphere, a subtle chromosphere, and a three-dimensional electron-scattering corona.
+The photosphere is white at the centre and darker and redder toward the edge: `scripts/derive-solar-photosphere.mjs` passes a 5772 K blackbody (IAU 2015 Resolution B3) with Allen's wavelength-dependent limb darkening through the CIE 1931 2 degree observer, so the whole disc integrates to the blackbody colour, and writes the centre colour and per-channel limb coefficients to `src/data/solar-photosphere.snapshot.json`.
+No measured granule map exists for an arbitrary time, so the disc draws none; in the tour view a granule is about a fifth of a pixel.
 The renderer does not invent prominence or flare geometry because no generic animation can truthfully claim the Sun's actual activity at arbitrary simulation times.
 The background contains 8,789 stars from the ESA Hipparcos catalogue with Johnson V magnitude below 6.5.
 Catalogue ICRS positions are propagated from J1991.25 to the simulation date using the published proper-motion components where both are available, while missing motion remains explicitly unknown and fixed at the catalogue epoch.
@@ -155,7 +265,9 @@ pnpm data:horizons-satellites
 pnpm data:sbdb
 pnpm data:naif
 pnpm data:nasa-assets
+pnpm data:lineup-globes
 pnpm data:stars
+pnpm data:solar-photosphere
 pnpm data:horizons-regression
 pnpm complete
 pnpm dev
@@ -163,6 +275,13 @@ pnpm dev
 
 The data commands refresh authority snapshots and therefore require network access.
 They are not required for an ordinary build because validated snapshots and assets are committed locally.
+`pnpm data:solar-photosphere` needs no network: it reads the committed CIE table `data/cie-1931-2deg-cmf.csv`.
+`pnpm data:lineup-globes` needs no network but needs Blender; set `BLENDER` to its executable when `blender` is not on the path, for example `BLENDER=/Applications/Blender.app/Contents/MacOS/Blender`.
+It checks each installed surface map against its snapshot sha256, renders the size-lineup globes with `scripts/render-lineup-globes.py` (Cycles on the CPU with a fixed camera, light, sample count and seed, without adaptive sampling or denoising, so a rerun on the same Blender build and platform writes identical files), and records each picture's source hash, output hash, byte length, render settings and platform in `src/data/lineup-globes.snapshot.json`.
+`pnpm models:repair` needs the git history: it reads the original ISS and Discovery One models by their git blob ids.
+It downloads the original Deep Space Nine model once from the Objaverse archive into `.tmp/model-originals/`, so its first run needs network access.
+It checks each original's sha256 before use and rewrites the repaired files in `public/models/` (the changes are listed in `THIRD_PARTY_NOTICES.md`).
+A rerun writes identical files; copy the printed sha256 and byte lengths into the model manifests.
 
 Open the URL printed by Vite.
 
@@ -181,21 +300,41 @@ The eclipse-story journey checks all seven 12 August 2026 scenes at their exact 
 It verifies London contact geometry, apparent solar and lunar diameters, live disc overlap, and a physical centre-line comparison in northern Spain.
 The gravity-field journey verifies positive-GM superposition, sourced-radius surface capping, physical joules-per-kilogram diagnostics, contour and surface rendering, local-detail and absolute-comparison scaling, and synchronization with simulation time.
 The photographic-rendering journey verifies the three rendering profiles, bounded device-pixel ratios, inverse-square illumination metadata, smooth auto-exposure, Sun-facing close-view framing, live atmosphere and Saturn-ring lighting models, and measured browser frame diagnostics before capturing Earth, Saturn, and the close Sun.
-The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, camera controls, observer panel, timeline, and interactive labels are hidden, then exits and verifies the complete interface and keyboard focus are restored.
+It also checks that the sunlit disc of Mars keeps the hue of its installed map within 3 degrees and its saturation within 10%, in OKLab.
+The tone-mapping journey draws an 18% grey facing the Sun through the app's tone curve and ACES Filmic on the GPU and checks they agree within 2 sRGB levels.
+The lineup-globe unit test checks every rendered picture against its recorded sha256, byte length and size, the source map hashes and radii against the installed snapshots, and the 400 KB total download budget.
+It also decodes each picture and measures the opaque globe across and down against the frame half width and the sourced radii within 2 px, so a render with a wrong camera scale fails.
+The size-lineup journey measures every drawn globe, the Sun's edge included, against the sourced radius ratio within 1 percent and checks Saturn's rings and their source line, tap targets, the camera dock's 44 px buttons at 390 and 360 px wide, and a visible error for a picture that fails to load.
+The size-duel journey checks the equal globes while guessing, that one live region carries the lineup line, each question and each result, the keyboard guess, the "Wider" tag, the dashed wrong guess and accented right guess, the drawn Moon to Pluto ratio within 1 percent under reduced motion, the rings rule for Saturn and Jupiter, the return to the lineup, and that only a right guess plays the chime.
+The immersive-mode journey enters the browser's native fullscreen presentation from a live surface observer, proves the command bar, navigation map, date, camera controls, observer panel, and timeline are hidden, then exits and verifies the complete interface and keyboard focus are restored; a full screen of the overview keeps the Earth label and the Sun guide.
+The classroom journey keeps the Scale tour card and its labels in full screen, opens full screen with F during the Eclipse story, steps the tour with Page Down and Page Up (from a tour button too, without moving the rate), blanks the window with B or the full stop with the tour paused behind it, ignores Ctrl+Page Down, a held Page Down, and browser shortcuts, checks that a tour hides the search box and the Display button, and checks that Start fresh shows 0 of 7 surprises and the default narration volume after the reload and that Cancel keeps both stored settings.
 
 The Display panel independently filters planets and dwarf planets, moons, spacecraft, asteroids, comets, and catalogue stars.
-The same panel independently controls ambient music, interface feedback, tour narration, and their volume levels.
+The same panel independently controls ambient music, interface feedback, tour narration, and their volume levels; with all three off the audio stops and the panel says "Sound is off".
 The initial Reality overview uses physical scale, so labels identify bodies whose geometry is too small to resolve without turning them into false visible pixels.
 Asteroid and comet locator layers are available only in Orrery.
 The Sun remains visible as the reference origin even when every category is hidden.
 Every focused view can show physics-derived wayfinders for the Sun and the nearest one or two planets; each endpoint reports live separation and pins to a safe viewport edge when off-screen or behind the camera.
-Click any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
-Use the explicit Focus action or double-click the rendered object or label to travel to it and fit its default view.
+That safe edge stays out from under the time controls and the short facts card (beside them the sky is open to the bottom edge), and wayfinder labels draw below every panel, so a label never covers the facts card or the tour card.
+When the open tour card or selected-body card covers the subject, the picture glides right in about 300 ms so the subject sits in the middle of the open sky beside the card.
+The card covers the subject when it reaches past the subject's left edge and across the rows of the subject and its label, so at 1280 by 800 a focused planet and the Moon's landing-site labels sit right of the card.
+A card along the bottom of a portrait screen, such as the tour card on a phone, that spans the centre and reaches above the bottom of the subject or its label moves the picture up instead, so the subject sits in the open sky above the card; a subject taller than that sky moves up only until its top meets the screen edge, and a card that ends below the subject moves nothing.
+The subject is the target body's disc and rings, or for a shot that frames more (the Earth-Moon system, Jupiter's moons, the heliosphere) a circle as tall as the scene.
+The picture never moves the subject off the canvas or under the open Display panel: when the open sky is too narrow, the subject moves only as far as it still fits, or stays centred.
+The projection itself moves, so labels, picking, wayfinders, trails and the gravity well stay on their bodies; a drag holds the picture still, reduced motion moves it in one step, and a minimised or collapsed card, a card hidden by full screen and the surface view keep it centred, and a phone moves it only up.
+Tap, click, or press Enter on any rendered body, body label, or wayfinder label once to select it and show its facts without moving the camera.
+The same press on the selected body travels to it and fits its default view, as the card's Fly there button does; for an Apollo landing site it is Show on Moon.
+Each label is named for its body, and a polite live region announces the selection with "Select again to fly there".
+The on-screen journey text with its viewpoint speed is hidden from screen readers; a separate polite live region says only "Flying to Mars" when a flight starts and "Arrived at Mars" when it ends.
+A drag that takes the camera clears that message, and a tour flight says nothing because the tour's own narration speaks.
+Readouts that follow the scene every frame (exposure, magnification, orbit flight and the clock) are silent outputs; a readout of a slider the child moves still speaks.
 The Display panel switches wayfinders between Off, Sun, Sun plus nearest planet, and Sun plus two nearest planets.
 
 The keyboard-operable Focus control opens with the complete grouped catalogue after every selection and searches overview, star, planet, moon, major-body, and spacecraft names and categories as the user types.
-Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Focus.
-Focusing the Sun preserves the full-system 90 AU framing while centring the heliocentric reference body.
+Typed text matches the start of a word, never letters inside one: names that start with it come first, then names with a later word that starts with it, such as a moon's planet in "Pan (Saturn)", then whole category words such as "satellite" or "telescope", so "Sat" lists Saturn and its moons.
+Back and Home move the camera through focus history, while Parent and Next object browse the current selection before the user chooses Fly there.
+Home keeps the clock in its current play state. A tour hides Home; its Fly home ends the tour with the clock running, as after Exit.
+Focusing the Sun frames its disc from its own radius, as for every other body; the full-system 90 AU framing belongs to the Solar System overview, which Home and the "Solar System" breadcrumb open.
 Focusing Earth fits Earth itself; the separate Earth-Moon tour shot frames their real separation explicitly.
 Reality starts with trails, orbit guides, the tactical overlay, the ecliptic grid, and gravity surfaces off so the physical scene is not obscured by unexplained lines.
 The optional Moon and planet trails contain only exact physics endpoint samples.
@@ -204,12 +343,39 @@ Trail length and fading are adjustable, and Clear trails removes all accumulated
 The optional Orrery minor-body trail uses fading screen-space history of actual GPU-propagated catalogue positions, resets when the camera changes, and applies to whichever asteroid and comet categories are visible.
 Selecting a body starts with a fitted 1x Sun-facing view so its illuminated hemisphere remains legible; the ordinary zoom and orientation controls remain available.
 The selected-object card reports source-snapshot mass, sourced bulk composition, and names the parent used as the velocity reference, such as "Speed relative to Sun" for Earth and "Speed relative to Earth" for the Moon.
-When the installed Horizons satellite catalogue does not provide mass or composition, the card says so explicitly rather than substituting an estimate.
-Reset, Re-centre, or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
-The camera dock remains visible at narrow widths, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
+When the installed Horizons satellite catalogue does not provide mass, composition or a surface map, the card leaves that row out rather than substituting an estimate.
+The sourced composition sits first under More detail, so the card's face fits a 1280 by 800 screen for most bodies.
+A card still taller than the room between the navigation map and the time controls scrolls inside itself under its fixed heading, and a "More below" cue at its foot shows until the child reaches the end.
+Re-centre or the `R` key restores a known Sun-facing body view when navigation becomes disorienting.
+On a phone (650 px wide or less, or 500 px tall or less), the app always fits the screen, so the page never scrolls; a landscape phone keeps the header on one row and puts the facts card in the right column.
+At every screen size a tour (the Scale tour or the Eclipse story) shows only the clock and the tour card; the command bar, camera dock, time controls, and navigation map come back when it ends.
+On a phone the tour card sits at the bottom and scrolls inside itself with Minimise and Exit always in view.
+On a phone the selected-body card opens short, with the name, Expand, and a size line such as "As wide as 11 Earths · Compare" that opens Compare sizes; every flight makes it short again.
+On a phone the navigation plot folds into a "Mini map" button, and every flight folds it again; a window that grows out of the phone layout opens it.
+Outside a tour, the camera dock remains visible at narrow widths, the Focus box fills its row with 16 px text so iOS does not zoom into it, its open list covers the date, and Re-centre always restores the focused object's intended framing after orbit, pan, wheel, pinch, or optical zoom.
 The fifteen-step Scale of the Solar System tour moves from a close Earth shot through the Earth-Moon gap, the Sun, observer viewpoints, the giant planets, Neptune, both Voyager probes, the heliosphere, the predicted Oort Cloud, and a final linear comparison to the Alpha Centauri system.
 Each step owns its camera distance, orientation, view mode, body-size treatment, and overlay set; any orbital guide it enables is named in the tour card.
+Each tour card leads with one short line for a child, directly under the step title; every number in that line also appears in the step's own sourced text.
 The tour can auto-advance, pause, resume after manual camera control, move step by step, or exit without changing the physics model.
+While the camera flies to a step, the clock waits, and it starts at the step's rate when the camera settles.
+The Scale tour clock waits at the time the step began, because Scale steps set no time, except "Saturn seen from Titan"; the Eclipse story clock waits at the step's time.
+"Saturn seen from Titan" moves the clock to 8 Jan 2026 20:00 UTC, when Titan is on Saturn's sunlit side: over the step's 28 hours the simulated Sun-Saturn-Titan angle falls from about 25 to 4 degrees, and a unit test checks it with the app's REBOUND model.
+Titan orbits within half a degree of Saturn's ring plane, so its card says the rings show edge-on, as a thin line about 12 degrees long.
+A Scale tour that starts with the clock outside the validated ±1 year window first restarts the simulation from the epoch.
+A step's time on screen starts only when its clock has landed and its camera has settled, so a long seek or flight never shortens the step.
+While an Eclipse story step moves the clock, the card says "Moving the clock to 12 Aug 2026…" and hides the live eclipse readouts until the clock lands.
+The shadow step plays 17:40 to 18:28 UTC, inside the time the shadow's axis meets Earth (about 16:59 to 18:32 UTC by astronomy-engine), and a unit test checks that window.
+If the clock leaves that time, the view says "The Moon's dark shadow is not on Earth now" and the camera stays over the spot where the shadow left.
+A seek to a time nearer the snapshot epoch than the current clock starts again from the epoch state, the state every run starts from, instead of integrating back across years.
+A pause during the flight lasts after the camera settles, and Resume moves the camera back to the step only when the child moved it during the pause.
+Any way out of a tour (Exit, Fly home, Escape, or choosing another object) restores the display, surface observer, playback rate, and direction settings from before the tour.
+Every way out of a tour runs the clock, even if it was paused before the tour, so a child never comes back to a frozen screen; Exit and Escape also reset the view of the current object at 1x; on a step that focuses the Sun they land on the Solar System overview instead, as a focused Sun would fill the view.
+A step's clock move that has not landed when the tour ends is dropped, so the clock stays at the time on screen.
+When the last step's time runs out, or the child presses Finish, the card shows an ending in place of the step: Fly home leaves the tour for the Solar System overview, as Home does, the other guided story starts from its first step, and Start again (or Watch again) replays the same one.
+When focus was inside the tour card, it moves to Fly home.
+A Scale tour started from an ending replays from the clock time when the first tour began, or from the epoch when that time lies outside the validated window.
+A story started from an ending keeps the settings from before the first tour, so Fly home always returns to them.
+The Eclipse story ending repeats the eye-safety rule.
 The heliosphere diagram explains the solar wind, termination shock, heliopause, measured Voyager crossings, and the boundary's directional and time-varying nature.
 The following Oort Cloud diagram uses NASA's estimated 2,000-5,000 AU inner edge and 10,000-100,000 AU outer range while identifying every displayed particle as illustrative rather than catalogued.
 The Alpha Centauri scene is an explicitly labelled distance diagram rather than an extension of the live Solar System N-body calculation.
@@ -247,8 +413,9 @@ Voyager 1 and Voyager 2 use NASA/JPL Horizons barycentric ICRF state vectors at 
 They run inside REBOUND as massless test particles, so every massive body deflects their paths while the probes do not perturb the planets.
 Their shared official NASA 3D model uses the published maximum dimension at one physical scale; its attitude is illustrative rather than telemetry-derived.
 
-Hubble and JWST use fixed NASA/JPL Horizons vector snapshots with cubic Hermite interpolation between published position and velocity samples.
-Interpolation stops at the declared coverage boundaries instead of clamping or extrapolating an apparently plausible position.
+JWST uses a fixed NASA/JPL Horizons barycentric vector snapshot with cubic Hermite interpolation between published position and velocity samples.
+Hubble uses a fixed NASA/JPL Horizons geocentric vector snapshot, propagated as a two-body orbit around the simulation's Earth from the nearest published sample.
+Both stop at the declared coverage boundaries instead of clamping or extrapolating an apparently plausible position.
 The application currently installs six spacecraft and artificial payloads and does not claim to contain every active spacecraft or probe in the Solar System.
 
 Small bodies currently use a declared Sun-centred two-body Kepler model on the GPU.

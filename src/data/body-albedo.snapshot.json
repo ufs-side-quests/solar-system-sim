@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "NASA Space Science Data Coordinated Archive (NSSDCA)",
+  "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/",
+  "retrievedAt": "2026-10-15T01:31:01Z",
+  "albedoDefinitions": "Bond albedo: the share of the incident sunlight a body scatters in all directions. Visual geometric albedo: the zero-phase brightness of the disc against a flat white Lambert disc of the same size.",
+  "surfaceColourMethod": "Cosine-latitude weighted mean of the installed equirectangular surface map in linear sRGB; Earth adds its cloud map as white at 0.72 opacity, as the scene draws it",
+  "bodies": [
+    {
+      "id": "earth",
+      "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html",
+      "sourceResponseSha256": "1b06e3ec31249d063d40d1b38837fac89ddcd2f4b25268b38e8a6d5f413e70ef",
+      "reflectance": {
+        "law": "lambert",
+        "bondAlbedo": 0.294,
+        "geometricAlbedo": 0.434
+      },
+      "surfaceColour": {
+        "meanLinearSrgb": [0.24855, 0.24403, 0.23763],
+        "maps": [
+          {
+            "file": "/textures/nasa/earth.webp",
+            "sha256": "d3d09c7c5f738022270e49d3b0aba2c224bb2913bb16e043862389d845b83844"
+          },
+          {
+            "file": "/textures/nasa/earth-clouds.webp",
+            "sha256": "eba922ab5052f6bb202894b178e993dd7ab6b70f165a948006d7566f7ab4f2f0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "jupiter",
+      "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+      "sourceResponseSha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+      "reflectance": {
+        "law": "lambert",
+        "bondAlbedo": 0.343,
+        "geometricAlbedo": 0.538
+      },
+      "surfaceColour": {
+        "meanLinearSrgb": [0.38379, 0.36383, 0.33466],
+        "maps": [
+          {
+            "file": "/textures/nasa/jupiter.webp",
+            "sha256": "d3038c3b076e26c4a64f43aa2c50d10282d48046a38d02dd158d6410b9fb1afd"
+          }
+        ]
+      }
+    },
+    {
+      "id": "io",
+      "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+      "sourceResponseSha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+      "reflectance": {
+        "law": "lommel-seeliger",
+        "geometricAlbedo": 0.62
+      },
+      "surfaceColour": {
+        "meanLinearSrgb": [0.48911, 0.37283, 0.14547],
+        "maps": [
+          {
+            "file": "/textures/nasa/io.webp",
+            "sha256": "6f1aa88f6e519475faf22487bed9a3cc740c1d88d71dd4f504ddb1d7bff44a4a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ganymede",
+      "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+      "sourceResponseSha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+      "reflectance": {
+        "law": "lommel-seeliger",
+        "geometricAlbedo": 0.44
+      },
+      "surfaceColour": {
+        "meanLinearSrgb": [0.191, 0.17762, 0.14482],
+        "maps": [
+          {
+            "file": "/textures/nasa/ganymede.webp",
+            "sha256": "5b2533f29e4f816c5210cefa0ce8a2773887503367975e636bd415b6f4a5f15c"
+          }
+        ]
+      }
+    },
+    {
+      "id": "callisto",
+      "sourceUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+      "sourceResponseSha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+      "reflectance": {
+        "law": "lommel-seeliger",
+        "geometricAlbedo": 0.19
+      },
+      "surfaceColour": {
+        "meanLinearSrgb": [0.27842, 0.27837, 0.27842],
+        "maps": [
+          {
+            "file": "/textures/nasa/callisto.webp",
+            "sha256": "353f388a6ff460254ecaa8bcaf9a8f7eee8de0c852d4b66b94c06de851bb5c25"
+          }
+        ]
+      }
+    }
+  ]
+}

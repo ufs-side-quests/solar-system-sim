@@ -1,13 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { CINEMATIC_SHOTS } from "./cinematic-shots";
+import { VALIDATED_WINDOW_SECONDS } from "../physics/simulation-date";
+import { portraitFitDistanceAu } from "../scene/camera-focus";
+import { CINEMATIC_SHOTS, PLANETS_RACING_SHOT } from "./cinematic-shots";
+
+const DAY_SECONDS = 86_400;
 
 describe("cinematic shots", () => {
   it("keeps every Cool Shot physically scaled in Reality mode", () => {
     expect(CINEMATIC_SHOTS).not.toHaveLength(0);
     for (const shot of CINEMATIC_SHOTS) {
-      expect(shot.viewMode, shot.name).toBe("reality");
       expect(shot.bodyVisibilityPercent, shot.name).toBe(100);
+    }
+    // The planets race is the one Orrery shot.
+    const portraits = CINEMATIC_SHOTS.filter(
+      (shot) => shot !== PLANETS_RACING_SHOT,
+    );
+    expect(portraits).toHaveLength(CINEMATIC_SHOTS.length - 1);
+    expect(portraits).not.toHaveLength(0);
+    for (const shot of portraits) {
+      expect(shot.viewMode, shot.name).toBe("reality");
     }
   });
 
@@ -27,5 +39,67 @@ describe("cinematic shots", () => {
     const moon = CINEMATIC_SHOTS.find((shot) => shot.id === "moon-daylight");
     expect(moon?.orientation).toBe("sun-facing");
     expect(moon?.cameraDistanceAu).toBeGreaterThan(0);
+  });
+
+  it("shows the inner planets racing round the Sun from above", () => {
+    expect(CINEMATIC_SHOTS).toContain(PLANETS_RACING_SHOT);
+    expect(PLANETS_RACING_SHOT).toMatchObject({
+      focusBodyId: "sun",
+      orientation: "overhead",
+      viewMode: "orrery",
+      orbitGuides: true,
+      planetTrails: true,
+      labels: true,
+    });
+    // Mars aphelion is about 1.67 AU: the overhead camera must sit far enough
+    // out to frame Mercury to Mars, and close enough that Earth's orbit is large.
+    expect(PLANETS_RACING_SHOT.cameraDistanceAu).toBeGreaterThan(4);
+    expect(PLANETS_RACING_SHOT.cameraDistanceAu).toBeLessThan(8);
+    // Mercury (NASA year 87.97 days) laps Earth (365.26 days) once per
+    // synodic period of about 115.9 days: the caption and README promise a
+    // lap about every 4 seconds.
+    const synodicDays = 1 / (1 / 87.97 - 1 / 365.26);
+    const lapSeconds =
+      synodicDays /
+      (PLANETS_RACING_SHOT.timeRateSecondsPerSecond / DAY_SECONDS);
+    expect(lapSeconds).toBeGreaterThan(3);
+    expect(lapSeconds).toBeLessThan(5);
+    expect(PLANETS_RACING_SHOT.description).toBe(
+      "Closer planets go round faster. Watch Mercury lap Earth.",
+    );
+  });
+
+  it("repeats the race inside the validated ephemeris window", () => {
+    // The race restarts from the epoch (time zero), so its loop end is the
+    // whole span it shows.
+    const end = PLANETS_RACING_SHOT.loopEndTimeSeconds;
+    if (end === null) {
+      throw new Error("Planets racing must loop");
+    }
+    expect(end).toBeGreaterThan(0);
+    expect(end).toBeLessThanOrEqual(VALIDATED_WINDOW_SECONDS);
+    // Each loop shows Mercury lap Earth at least three times (one synodic
+    // period is about 115.9 days).
+    const synodicDays = 1 / (1 / 87.97 - 1 / 365.26);
+    expect(end / DAY_SECONDS / synodicDays).toBeGreaterThanOrEqual(3);
+    expect(
+      CINEMATIC_SHOTS.filter((shot) => shot.loopEndTimeSeconds !== null),
+    ).toEqual([PLANETS_RACING_SHOT]);
+  });
+
+  it("fits Mars's orbit across a portrait phone view", () => {
+    const distanceAu = PLANETS_RACING_SHOT.cameraDistanceAu;
+    if (distanceAu === undefined) {
+      throw new Error("Planets racing must set a camera distance");
+    }
+    expect(portraitFitDistanceAu(distanceAu, 1024 / 704)).toBe(distanceAu);
+    // The camera's field of view is 45 degrees vertically. Mars's orbit
+    // reaches about 1.67 AU from the Sun.
+    const halfFieldTangent = Math.tan((22.5 * Math.PI) / 180);
+    for (const aspect of [390 / 844, 390 / 703, 768 / 1024]) {
+      const halfWidthAu =
+        portraitFitDistanceAu(distanceAu, aspect) * halfFieldTangent * aspect;
+      expect(halfWidthAu, String(aspect)).toBeGreaterThan(1.67);
+    }
   });
 });

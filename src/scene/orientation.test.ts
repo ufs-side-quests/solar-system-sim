@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bodyOrientationAngles,
   bodyOrientationQuaternion,
+  planetSpinNote,
   siderealRotationPeriodHours,
   siderealRotationRateRadPerSecond,
 } from "./orientation";
@@ -45,6 +46,29 @@ describe("NAIF body orientation", () => {
       7,
     );
     expect(siderealRotationPeriodHours(venus) / 24).toBeCloseTo(243.018, 3);
+  });
+
+  it("words backwards and sideways spin for planets only", () => {
+    const notes = Object.fromEntries(
+      majorBodySnapshot.bodies.map((body) => [body.id, planetSpinNote(body)]),
+    );
+    expect(notes["venus"]).toBe("spins backwards");
+    expect(notes["uranus"]).toBe("spins on its side");
+    for (const bodyId of [
+      "mercury",
+      "earth",
+      "mars",
+      "jupiter",
+      "saturn",
+      "neptune",
+    ]) {
+      expect(notes[bodyId], bodyId).toBeUndefined();
+    }
+    // Negative NAIF rates on moons and the dwarf planet stay unworded.
+    expect(siderealRotationRateRadPerSecond("triton")).toBeLessThan(0);
+    for (const bodyId of ["triton", "miranda", "moon", "pluto", "sun"]) {
+      expect(notes[bodyId], bodyId).toBeUndefined();
+    }
   });
 
   it("returns a normalized scene quaternion for the Moon", () => {

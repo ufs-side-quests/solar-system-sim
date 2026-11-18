@@ -5,7 +5,7 @@ import {
   majorBodySnapshot,
   naifPhysicalSnapshot,
 } from "../physics/solar-system";
-import { icrfToScene } from "./reference-frames";
+import { icrfToScene, J2000_MEAN_OBLIQUITY_RAD } from "./reference-frames";
 
 const J2000_JULIAN_DAY = 2_451_545;
 const DAYS_PER_JULIAN_CENTURY = 36_525;
@@ -121,4 +121,38 @@ export function siderealRotationRateRadPerSecond(bodyId: string): number {
     throw new Error(`NAIF rotation rate is missing body ${bodyId}`);
   }
   return (rateDegPerDay * Math.PI) / 180 / SECONDS_PER_DAY;
+}
+
+const ON_ITS_SIDE_MAX_POLE_ELEVATION_DEG = 30;
+
+/**
+ * Plain spin wording for the planets only. For planets the IAU pole is the one
+ * on the north side of the invariable plane, so a negative NAIF rate means the
+ * planet spins backwards. A pole within 30° of the ecliptic plane (the J2000
+ * ecliptic stands in for the planet's own orbit plane, at most 7° away) means
+ * it spins on its side. Moons are excluded on purpose: their raw rate sign
+ * follows the same IAU pole convention and would call synchronous moons of
+ * Uranus or Triton "backwards", which is not what a child would understand.
+ */
+export function planetSpinNote(body: MajorBodyDefinition): string | undefined {
+  if (body.type !== "planet") {
+    return undefined;
+  }
+  const angles = bodyOrientationAngles(body.id, 0);
+  const declination = angles.poleDeclinationDeg * DEG_TO_RAD;
+  const rightAscension = angles.poleRightAscensionDeg * DEG_TO_RAD;
+  // Ecliptic north in ICRF is (0, -sin ε, cos ε).
+  const poleDotEclipticNorth =
+    -Math.cos(declination) *
+      Math.sin(rightAscension) *
+      Math.sin(J2000_MEAN_OBLIQUITY_RAD) +
+    Math.sin(declination) * Math.cos(J2000_MEAN_OBLIQUITY_RAD);
+  const poleElevationDeg =
+    Math.abs(Math.asin(poleDotEclipticNorth)) / DEG_TO_RAD;
+  if (poleElevationDeg < ON_ITS_SIDE_MAX_POLE_ELEVATION_DEG) {
+    return "spins on its side";
+  }
+  return siderealRotationRateRadPerSecond(body.id) < 0
+    ? "spins backwards"
+    : undefined;
 }

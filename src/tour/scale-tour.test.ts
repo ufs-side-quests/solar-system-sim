@@ -11,6 +11,7 @@ import {
   SCALE_TOUR_STEPS,
   SCALE_TOUR_STEP_DURATION_MS,
   SCALE_TOUR_TRANSITION_DURATION_MS,
+  type ScaleTourStep,
 } from "./scale-tour";
 
 describe("Solar System scale tour", () => {
@@ -160,5 +161,51 @@ describe("Solar System scale tour", () => {
         expect(step.visualKey.toLocaleLowerCase(), step.id).toMatch(/orbit/u);
       }
     }
+  });
+
+  it("states only size and walking comparisons that the numbers support", () => {
+    const stepById = (id: string): ScaleTourStep => {
+      const step = SCALE_TOUR_STEPS.find((candidate) => candidate.id === id);
+      if (step === undefined) throw new Error(`Step ${id} must exist`);
+      return step;
+    };
+    const radiusKm = (id: string): number => {
+      const body = majorBodySnapshot.bodies.find(
+        (candidate) => candidate.id === id,
+      );
+      if (body === undefined) throw new Error(`Body ${id} must exist`);
+      return body.meanRadiusM / 1_000;
+    };
+
+    // 40,075 km at a 5 km/h walk is under a year.
+    const walkingDays = 40_075 / 5 / 24;
+    expect(walkingDays).toBeLessThan(365);
+    const earth = stepById("earth");
+    expect(earth.description).not.toMatch(/more than a year/u);
+    expect(earth.description).toContain("5 km/h");
+    expect(earth.description).toContain(
+      `about ${String(Math.round(walkingDays / (365.25 / 12)))} months`,
+    );
+
+    // NASA's Moon fact sheet: 384,400 km on average, 405,500 km at apogee.
+    const planetRowKm = [
+      "mercury",
+      "venus",
+      "earth",
+      "mars",
+      "jupiter",
+      "saturn",
+      "uranus",
+      "neptune",
+    ].reduce((sum, id) => sum + 2 * radiusKm(id), 0);
+    const apogeeGapKm = 405_500 - radiusKm("earth") - radiusKm("moon");
+    expect(planetRowKm).toBeGreaterThan(384_400);
+    expect(planetRowKm).toBeLessThan(apogeeGapKm);
+    const moonGap = stepById("moon-gap");
+    expect(moonGap.description).not.toMatch(/could fit side by side across/u);
+    expect(moonGap.description).toContain(
+      `about ${Math.round(planetRowKm / 1_000).toLocaleString("en-GB")},000 km`,
+    );
+    expect(moonGap.description).toContain("405,500 km");
   });
 });

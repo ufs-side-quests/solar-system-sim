@@ -52,6 +52,43 @@ export type RelativeOrbitalState = Readonly<{
   velocityMps: Vector3Tuple;
 }>;
 
+export type BoundTwoBodyOrbit = Readonly<{
+  inverseSemiMajorAxisPerM: number;
+  periodSeconds: number;
+}>;
+
+/**
+ * Vis-viva 1/a = 2/r - v²/μ and Kepler T = 2π √(a³/μ) for one relative state.
+ * Returns undefined for an unbound (parabolic or hyperbolic) state and throws
+ * when the state or μ cannot describe an orbit.
+ */
+export function boundTwoBodyOrbit(
+  state: RelativeOrbitalState,
+  gravitationalParameterM3S2: number,
+): BoundTwoBodyOrbit | undefined {
+  const radius = magnitude(state.positionM);
+  const speedSquared = dot(state.velocityMps, state.velocityMps);
+  if (
+    !Number.isFinite(gravitationalParameterM3S2) ||
+    gravitationalParameterM3S2 <= 0 ||
+    !Number.isFinite(radius) ||
+    radius <= 0 ||
+    !Number.isFinite(speedSquared)
+  ) {
+    throw new Error("Two-body orbit state is physically invalid");
+  }
+  const inverseSemiMajorAxisPerM =
+    2 / radius - speedSquared / gravitationalParameterM3S2;
+  if (inverseSemiMajorAxisPerM <= 0) {
+    return undefined;
+  }
+  const periodSeconds =
+    2 *
+    Math.PI *
+    Math.sqrt(1 / inverseSemiMajorAxisPerM ** 3 / gravitationalParameterM3S2);
+  return { inverseSemiMajorAxisPerM, periodSeconds };
+}
+
 /**
  * Propagates one Kepler two-body state with universal variables.
  * The calculation is deterministic and reversible for positive or negative time.
@@ -74,25 +111,13 @@ export function propagateTwoBody(
     return initial;
   }
   const radius0 = magnitude(initial.positionM);
-  const speedSquared0 = dot(initial.velocityMps, initial.velocityMps);
   const radialVelocity0 = dot(initial.positionM, initial.velocityMps) / radius0;
-  const alpha = 2 / radius0 - speedSquared0 / gravitationalParameterM3S2;
-  if (!Number.isFinite(alpha) || alpha <= 0) {
-    throw new Error(
-      "Known-moon two-body model requires a bound elliptic state",
-    );
+  const orbit = boundTwoBodyOrbit(initial, gravitationalParameterM3S2);
+  if (orbit === undefined) {
+    throw new Error("Two-body model requires a bound elliptic state");
   }
-  const semiMajorAxisM = 1 / alpha;
-  const orbitalPeriodSeconds =
-    2 *
-    Math.PI *
-    Math.sqrt(
-      (semiMajorAxisM * semiMajorAxisM * semiMajorAxisM) /
-        gravitationalParameterM3S2,
-    );
-  if (!Number.isFinite(orbitalPeriodSeconds) || orbitalPeriodSeconds <= 0) {
-    throw new Error("Known-moon two-body orbital period is invalid");
-  }
+  const alpha = orbit.inverseSemiMajorAxisPerM;
+  const orbitalPeriodSeconds = orbit.periodSeconds;
   const periodRemainder = elapsedSeconds % orbitalPeriodSeconds;
   const propagationSeconds =
     periodRemainder > orbitalPeriodSeconds / 2
@@ -147,7 +172,7 @@ export function propagateTwoBody(
     evaluateUniversalEquation(lowerAnomaly).value > 0 ||
     evaluateUniversalEquation(upperAnomaly).value < 0
   ) {
-    throw new Error("Known-moon two-body propagation root is not bracketed");
+    throw new Error("Two-body propagation root is not bracketed");
   }
   let universalAnomaly = Math.min(
     upperAnomaly,
@@ -184,7 +209,7 @@ export function propagateTwoBody(
     }
   }
   if (!converged) {
-    throw new Error("Known-moon two-body propagation did not converge");
+    throw new Error("Two-body propagation did not converge");
   }
   const anomalySquared = universalAnomaly * universalAnomaly;
   const z = alpha * anomalySquared;
@@ -207,9 +232,7 @@ export function propagateTwoBody(
     scale(initial.velocityMps, gDot),
   );
   if ([...positionM, ...velocityMps].some((value) => !Number.isFinite(value))) {
-    throw new Error(
-      "Known-moon two-body propagation returned non-finite state",
-    );
+    throw new Error("Two-body propagation returned non-finite state");
   }
   return { positionM, velocityMps };
 }
